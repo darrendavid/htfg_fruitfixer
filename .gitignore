@@ -1,0 +1,26 @@
+# Content archive (45+ GB of source images and parsed output)
+content/
+
+# Dependencies
+node_modules/
+
+# Claude Code settings (contain API tokens)
+.claude/settings.local.json
+.claude/settings.json
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

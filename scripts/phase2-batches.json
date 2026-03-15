@@ -1,0 +1,1230 @@
+{
+  "generated": "2026-03-15T01:05:31.918Z",
+  "total_batches": 8,
+  "batches": [
+    {
+      "id": 1,
+      "label": "HawaiiFruit.Net subdirs (04foodex - crm)",
+      "paths": [
+        {
+          "path": "HawaiiFruit. Net/04foodex",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/05bonnenkai",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/11-0712tpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/12Tconfpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/12trees",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/12Tslowfood",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/2010htfgconfpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/305tadpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/33p",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/7-7-0712t",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/912f",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/A Need for Commitment_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/A_blancoi",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/acflu116",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/agdc",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/aghpai",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/aichipom",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/anconaR",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/avofin_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/AVOVAR",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/B2",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/backtocomo",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/BananaPix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/banangar",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/basho",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/bc",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/bfmkt",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/biashop",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/biwa",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/biwa2",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/BOAToComo",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Bolognaday",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/borgh",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/bowen68",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/cdL",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/CDPieve1",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/cepix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/cf",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/CHEZMFARM1",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/chibafigs",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/CoconutSyrup_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/confweekpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/COOL.ppt_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/coop_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/costcafigs",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/CRFG_Wolfskill_Day",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/crm",
+          "glob": "**/*"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "label": "HawaiiFruit.Net subdirs (dalfig - inmarang)",
+      "paths": [
+        {
+          "path": "HawaiiFruit. Net/dalfig",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/dot",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/eddiepixmike",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/ESL",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/EZprogram_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/F_Terrine_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fcoop1_1",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fig",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/figbrixpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/figfinalreportV2_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/figpotting",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/figs101707",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Figsblk",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/figstation",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/finkiosks_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/FOODEx",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/forthebirds",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fpj12t",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fpj12tpp",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fruitdata",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fruitmarkets.ppt_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fruitparkandstores",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fruittrees_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fsigns",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/fxpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/geotextile",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/GFItaly1",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/glutenfreejapan",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Gondola",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/gonv",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/gr",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/grafted",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Grilled-figs_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/grumichama",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/gs1stplanting6-20",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/hamakinkan",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/hamazakuro",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/hapai807",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/hfm",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/htfg07conf",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/HTFGBoard_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/htfgconf_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/htfgmemform09_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/images",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/images (caldwell)",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/incubator_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/inmarang",
+          "glob": "**/*"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "label": "HawaiiFruit.Net subdirs (IPM_files - Production technologies2.ppt_files)",
+      "paths": [
+        {
+          "path": "HawaiiFruit. Net/IPM_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/JaboticabaJelly_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/jackfest.ppt_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/jcitrus",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/jellyrecipes_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/kahaluuavo11-07",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Kazkaz",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/kinkan",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/KITCHENWORK",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/klpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Konalime-salmon-canape_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/konalimepie_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/KonaLimeSauce_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/lastsupperday",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Lychee",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Manami",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/mauhpf",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/may05off",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/midyim",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/miscmarg",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/mlahi",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/MoreBadBoxes",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/morebananapix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/MPul",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/MRe_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/munchen2",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/munich_fruit",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/mysore",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/newf",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/NewGFThailand",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/NRCSV",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/nuts",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Oahutrees",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/onhorses",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/orvietostreets",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/ow",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/parmaconserves",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/pcards",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/peachpix2",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/plumpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/po2",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/poha",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/pome",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Postharvest Technologies Sep07.ppt_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/prcof",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/procure_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Production technologies2.ppt_files",
+          "glob": "**/*"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "label": "HawaiiFruit.Net subdirs (products - yfp)",
+      "paths": [
+        {
+          "path": "HawaiiFruit. Net/products",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/proofs",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/pubs to upl",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Raspberry_Butter_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/RECAC",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/research_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/rialtofruit",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/SAREconfweb_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/SDIM2Sul_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/sopix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/spain",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/spedpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/strawg",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/sumohawaii",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/sumoup",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/surinam",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/sweetfigwonton_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/tads_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/taiwanfigs",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/tamarillo",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/tbiwa",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/testavo",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/tfc",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/togo5",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/togofig",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/togokinkan",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/togopark",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/TOMIURABIWACLUB",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/triangle",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/Tropical_Apricot_Curry_Sa_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/uhFigsapril1908",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/unknut",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/usdarurdev.ppt_files",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/vapp",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/veggieparade",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/vittoriosfarm",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/vol",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/vsprune",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/WB",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/whana",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/wiredmysore",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/workdaypix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/wsareSFpix",
+          "glob": "**/*"
+        },
+        {
+          "path": "HawaiiFruit. Net/yfp",
+          "glob": "**/*"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "label": "HawaiiFruit.Net root files",
+      "paths": [
+        {
+          "path": "HawaiiFruit. Net",
+          "glob": "*"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "label": "original subdirs (05Fruitshoot - bignay)",
+      "paths": [
+        {
+          "path": "original/05Fruitshoot",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2-4 pix",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2003 fruit shoot 2003",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2005 fruit shoot",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2007 fruit shoot",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2008 fruit shoot",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2009 fruit shoot",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2009 fruit shoot to UPLU",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2011 fruit shoot",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2012 fruitshoot ",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2019 fruit shoot two",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/2020 fruit shoot",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/5-07 pix",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/abiu",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/acerola",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/aglia spp",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/akee",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/alien labels",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/alupag",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/amazon tree grape",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/anchote",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/annona reticulata",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/apple of sodom",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/assai palm",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/atamoya",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/avocados",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/baccaurea sapida",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/bael fruit",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/bagskohi",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/bakupari",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/banana pokka",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/bananas",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/Bananaspapaya",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/barringtonia edulis",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/betel nuts",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/bignay",
+          "glob": "**/*"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "label": "original subdirs (bilimbi - Eugenia uvalha)",
+      "paths": [
+        {
+          "path": "original/bilimbi",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/biwa file",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/black pepper",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/blackberryjam",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/blancoi",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/blk surinam cherry",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/buddahs hand",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/cacao files",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/calabash tree",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/calamondin files",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/cannonball tree",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/cashew09",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/champedek",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/cherimoya",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/chico",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/chili sauce",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/choco sapote",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/choice martmobi signs",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/chupachupa",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/citrus poster start",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/coffeepix",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/coffees",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/cupasau",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/date farm",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/datepalms",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/deannafig 09",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/Dimocarpus longan subsp. malesianus var. echinatus",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/dovylis",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/dragon fruit  files",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/dragon fruit pix",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/durian",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/Durian products'",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/eggfruit",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/emblic",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/emperor lychee",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/Eugenia uvalha",
+          "glob": "**/*"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "label": "original subdirs (fig troubles - rukam copy)",
+      "paths": [
+        {
+          "path": "original/fig troubles",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/figs",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/figs  green",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/FIJIAN longon",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/fijian longon2",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/fingerlimes",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/flowers",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/frankies",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/frankies 6-07",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/freijoa folder",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/fruit display",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/fruit pix",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/fruit pix 5-17",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/fruit pix on power hd",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/fruit shoot",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/fruit trees",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/galangal",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/gentum",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/giant passionflower",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/giant tangerine",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/glass company",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/gourka",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/gov plum files",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/grapefruit",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/green sapote",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/grumi",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/grumichamatart",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/guarana",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/guava folder",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/mango gold nugget ",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/monkey jack copy",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/pickle lables",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/plantains copy",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/raisen tree copy",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/rambutan 9-17-10",
+          "glob": "**/*"
+        },
+        {
+          "path": "original/rukam copy",
+          "glob": "**/*"
+        }
+      ]
+    }
+  ]
+}
