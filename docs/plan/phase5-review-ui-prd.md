@@ -7,7 +7,7 @@ Build a mobile-friendly web application that enables multiple simultaneous revie
 1. **Swipe Confirmation (Part B)** — A Tinder-like interface for confirming or rejecting 6,518 Phase 4B fuzzy-matched inferences, plus reviewing 5,031 Phase 4 auto-classified images
 2. **Unclassified Review (Part A)** — A classification interface for 8,361 images that couldn't be matched to any plant, including options to create new plant entries
 
-The app is authored in Node.js (Vite + React + ShadCN), hosted in Docker, with NocoDB as the data store accessed via REST API.
+The app is authored in Node.js (Vite + React + ShadCN), hosted in Docker, with SQLite as the embedded data store.
 
 ---
 
@@ -35,36 +35,39 @@ Manual classification by a domain expert is the only path forward. The UI must b
 ## System Architecture
 
 ```
-┌─────────────────────────────────────┐
-│           Docker Container          │
-│                                     │
-│  ┌──────────┐    ┌──────────────┐   │
-│  │  Vite    │    │   Express    │   │
-│  │  React   │───>│   API Server │   │
-│  │  ShadCN  │    │   (Node.js)  │   │
-│  └──────────┘    └──────┬───────┘   │
-│                         │           │
-│  ┌──────────────────────┴────────┐  │
-│  │  Express Static Middleware    │  │
-│  │  /images → content/parsed/    │  │
-│  └──────────────────────┬────────┘  │
-│                         │           │
-└─────────────────────────┼───────────┘
-                          │ bind-mount
-            ┌─────────────┴──────────────┐
-            │  content/parsed/           │
-            │    plants/{id}/images/     │
-            │    unclassified/images/    │
-            └────────────────────────────┘
-
-            ┌────────────────────────────┐
-            │  NocoDB (external)         │
-            │    HTFG Base               │
-            │    - ReviewQueue           │
-            │    - ReviewDecisions       │
-            │    - NewPlantRequests      │
-            │    - Plants (Phase 6)      │
-            └────────────────────────────┘
+┌──────────────────────────────────────────┐
+│           Docker Container               │
+│                                          │
+│  ┌──────────┐    ┌──────────────┐        │
+│  │  Vite    │    │   Express    │        │
+│  │  React   │───>│   API Server │        │
+│  │  ShadCN  │    │   (Node.js)  │        │
+│  └──────────┘    └──────┬───────┘        │
+│                         │                │
+│  ┌──────────────────────┴────────┐       │
+│  │  Express Static Middleware    │       │
+│  │  /images → content/parsed/    │       │
+│  └──────────────────────┬────────┘       │
+│                         │                │
+│  ┌──────────────────────┴────────┐       │
+│  │  SQLite (better-sqlite3)      │       │
+│  │    review_queue               │       │
+│  │    review_decisions           │       │
+│  │    new_plant_requests         │       │
+│  │    plants (from registry)     │       │
+│  │  File: /data/db/review.db     │       │
+│  └───────────────────────────────┘       │
+│                                          │
+└──────────────────────┬───────────────────┘
+                       │ bind-mounts
+         ┌─────────────┴──────────────┐
+         │  content/parsed/  (ro)     │
+         │    plants/{id}/images/     │
+         │    unclassified/images/    │
+         ├────────────────────────────┤
+         │  data/db/  (rw)           │
+         │    review.db              │
+         └────────────────────────────┘
 ```
 
 ### Tech Stack
@@ -74,7 +77,7 @@ Manual classification by a domain expert is the only path forward. The UI must b
 | Frontend | Vite + React 18 + TypeScript | Fast dev, simple Docker build |
 | UI Components | ShadCN/ui (Tailwind CSS) | Clean, accessible, Bootstrap-like aesthetic |
 | API Server | Express.js | Serves SPA, API routes, and static images |
-| Data Store | NocoDB REST API | Existing infrastructure, accessible to Phase 6 |
+| Data Store | SQLite via better-sqlite3 | Embedded, zero-config, no external service needed |
 | Containerization | Docker + docker-compose | Single container for app, bind-mount for images |
 | Gestures | react-swipeable or similar | Mobile swipe support for Tinder flow |
 | Thumbnails | Sharp | Generate 400px-wide JPEG thumbnails during import |
@@ -82,78 +85,107 @@ Manual classification by a domain expert is the only path forward. The UI must b
 ### Environment Variables (Docker)
 
 ```
-NOCODB_BASE_URL=http://nocodb-host:8080
-NOCODB_API_TOKEN=<token>
-NOCODB_TABLE_PREFIX=htfg_
 IMAGE_MOUNT_PATH=/data/images
+DB_PATH=/data/db/review.db
 PORT=3000
 ```
 
 ---
 
-## Data Model (NocoDB Tables)
+## Data Model (SQLite)
 
-### Table: `ReviewQueue`
+The database file (`review.db`) is persisted via a bind-mounted volume so review state survives container restarts. Schema is created automatically on first startup using `better-sqlite3` (synchronous, fast, zero-config).
+
+### Table: `review_queue`
 
 Holds every image that needs or has received review. Populated on first app startup by importing from Phase 4/4B JSON files.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| Id | AutoNumber | Primary key |
-| image_path | SingleLineText | Relative path within content/parsed/ (serves as unique key) |
-| source_path | SingleLineText | Original path in content/source/ |
-| queue | SingleLineText | `swipe` (Part B) or `classify` (Part A) |
-| status | SingleLineText | `pending`, `in_progress`, `completed`, `skipped` |
-| current_plant_id | SingleLineText | Plant ID from Phase 4/4B (null for unclassified) |
-| suggested_plant_id | SingleLineText | Phase 4B inference suggestion (null if none) |
-| confidence | SingleLineText | `high`, `medium`, `low`, or null |
-| match_type | SingleLineText | Phase 4B match strategy used |
-| reasoning | LongText | Phase 4B reasoning string |
-| thumbnail_path | SingleLineText | Relative path to 400px-wide thumbnail |
-| file_size | Number | Bytes |
-| sort_key | SingleLineText | Computed key for queue ordering (plant_id + confidence rank) |
-| source_directories | LongText | JSON array of parent directory names |
-| locked_by | SingleLineText | Reviewer name if in_progress (soft lock) |
-| locked_at | DateTime | When lock was acquired |
-| created_at | DateTime | When record was created |
+```sql
+CREATE TABLE review_queue (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  image_path        TEXT NOT NULL UNIQUE,       -- relative path within content/parsed/
+  source_path       TEXT,                        -- original path in content/source/
+  queue             TEXT NOT NULL,               -- 'swipe' or 'classify'
+  status            TEXT NOT NULL DEFAULT 'pending', -- pending, in_progress, completed, skipped
+  current_plant_id  TEXT,                        -- plant ID from Phase 4/4B (null for unclassified)
+  suggested_plant_id TEXT,                       -- Phase 4B inference suggestion
+  confidence        TEXT,                        -- high, medium, low, auto, or null
+  match_type        TEXT,                        -- Phase 4B match strategy
+  reasoning         TEXT,                        -- Phase 4B reasoning string
+  thumbnail_path    TEXT,                        -- relative path to 400px-wide thumbnail
+  file_size         INTEGER,                     -- bytes
+  sort_key          TEXT,                        -- computed key for queue ordering
+  source_directories TEXT,                       -- JSON array of parent directory names
+  locked_by         TEXT,                        -- reviewer name if in_progress
+  locked_at         TEXT,                        -- ISO 8601 timestamp
+  created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_queue_status ON review_queue(queue, status, sort_key);
+CREATE INDEX idx_queue_lock ON review_queue(status, locked_at);
+CREATE INDEX idx_queue_plant ON review_queue(current_plant_id);
+```
 
 **Initial population**:
 - 6,518 records from `phase4b_inferences.json` → queue=`swipe`, status=`pending`, with confidence/reasoning
 - 5,031 records from `phase4_image_manifest.json` where plant_id is not null → queue=`swipe`, status=`pending`, confidence=`auto` (Phase 4 direct match)
 - 8,361 records from `phase4b_still_unclassified.json` → queue=`classify`, status=`pending`
 
-### Table: `ReviewDecisions`
+### Table: `review_decisions`
 
 Audit log of every review action. One image may have multiple decisions (e.g., rejected in swipe, then classified in Part A).
 
-| Field | Type | Description |
-|-------|------|-------------|
-| Id | AutoNumber | Primary key |
-| image_path | SingleLineText | FK to ReviewQueue.image_path |
-| reviewer | SingleLineText | Display name of reviewer |
-| action | SingleLineText | `confirm`, `reject`, `classify`, `discard`, `new_plant` |
-| plant_id | SingleLineText | Plant assigned (null for discard) |
-| discard_category | SingleLineText | If discarded: `event`, `graphics`, `travel`, `duplicate`, `poor_quality` |
-| notes | LongText | Optional reviewer notes |
-| decided_at | DateTime | Timestamp |
+```sql
+CREATE TABLE review_decisions (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  image_path        TEXT NOT NULL,               -- FK to review_queue.image_path
+  reviewer          TEXT NOT NULL,               -- display name of reviewer
+  action            TEXT NOT NULL,               -- confirm, reject, classify, discard, new_plant
+  plant_id          TEXT,                        -- plant assigned (null for discard)
+  discard_category  TEXT,                        -- event, graphics, travel, duplicate, poor_quality
+  notes             TEXT,                        -- optional reviewer notes
+  decided_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
-### Table: `NewPlantRequests`
+CREATE INDEX idx_decisions_image ON review_decisions(image_path);
+CREATE INDEX idx_decisions_reviewer ON review_decisions(reviewer, decided_at);
+```
+
+### Table: `new_plant_requests`
 
 When a reviewer creates a new plant entry during classification.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| Id | AutoNumber | Primary key |
-| common_name | SingleLineText | Required |
-| botanical_name | SingleLineText | Optional |
-| category | SingleLineText | fruit, nut, spice, flower, other |
-| aliases | LongText | Comma-separated |
-| requested_by | SingleLineText | Reviewer name |
-| status | SingleLineText | `pending`, `approved`, `merged` |
-| generated_id | SingleLineText | Auto-generated slug from common_name |
-| phase4b_rerun_needed | Checkbox | Flag indicating this plant contributes toward Phase 4B re-run threshold |
-| created_at | DateTime | Timestamp |
-| first_image_path | SingleLineText | The image that triggered this request |
+```sql
+CREATE TABLE new_plant_requests (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  common_name         TEXT NOT NULL,
+  botanical_name      TEXT,
+  category            TEXT NOT NULL DEFAULT 'fruit', -- fruit, nut, spice, flower, other
+  aliases             TEXT,                          -- comma-separated
+  requested_by        TEXT NOT NULL,
+  status              TEXT NOT NULL DEFAULT 'pending', -- pending, approved, merged
+  generated_id        TEXT NOT NULL,                 -- auto-generated slug from common_name
+  phase4b_rerun_needed INTEGER NOT NULL DEFAULT 1,   -- boolean: contributes toward re-run threshold
+  created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  first_image_path    TEXT                           -- the image that triggered this request
+);
+```
+
+### Table: `plants`
+
+Local copy of the plant registry for autocomplete search. Populated from `plant_registry.json` during import. Read-only reference — not the source of truth (the JSON file is).
+
+```sql
+CREATE TABLE plants (
+  id              TEXT PRIMARY KEY,              -- e.g. 'avocado'
+  common_name     TEXT NOT NULL,
+  botanical_names TEXT,                          -- JSON array
+  aliases         TEXT,                          -- JSON array
+  category        TEXT NOT NULL DEFAULT 'fruit'
+);
+
+CREATE INDEX idx_plants_name ON plants(common_name);
+```
 
 ---
 
@@ -347,7 +379,7 @@ For the 8,361 unclassified images + any rejects from the swipe queue.
 ```
 
 When a new plant is created:
-1. Insert into `NewPlantRequests` table with `phase4b_rerun_needed: true`
+1. Insert into `new_plant_requests` table with `phase4b_rerun_needed: true`
 2. Assign the current image to the new plant
 3. The new plant immediately becomes available in the autocomplete search
 4. When 5 or more new plants with `phase4b_rerun_needed: true` accumulate, a banner appears on the Dashboard recommending a Phase 4B re-run. After a re-run is executed (manually), the flags are cleared and the counter resets.
@@ -451,14 +483,14 @@ Progress tracking and management.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/admin/import` | Import Phase 4/4B JSON files into NocoDB (one-time setup) |
+| `POST` | `/api/admin/import` | Import Phase 4/4B JSON files into SQLite (one-time setup) |
 | `GET` | `/api/admin/import-status` | Check import progress |
 
 ---
 
 ## Data Import Pipeline
 
-On first startup (or via admin endpoint), the app reads the Phase 4/4B JSON files, generates thumbnails, and populates the NocoDB `ReviewQueue` table:
+On first startup (or via admin endpoint), the app reads the Phase 4/4B JSON files, generates thumbnails, and populates the SQLite `review_queue` table. Because `better-sqlite3` is synchronous, bulk inserts are wrapped in a transaction for speed (~19,910 rows insert in under 1 second).
 
 **Step 1: Thumbnail Generation**
 - Walk all image files in the bind-mounted `content/parsed/` directory
@@ -497,7 +529,7 @@ To handle multiple simultaneous reviewers:
 
 3. On decision (confirm/reject/classify/discard):
    - Sets `status=completed`, clears lock fields
-   - Creates a `ReviewDecisions` record
+   - Creates a `review_decisions` record
 
 4. On skip/release:
    - Sets `status=pending`, clears lock fields
@@ -536,10 +568,10 @@ services:
       - "3000:3000"
     volumes:
       - d:/Sandbox/Homegrown/htfg_fruit/content/parsed:/data/images:ro
+      - ./data/db:/data/db
     environment:
-      - NOCODB_BASE_URL=http://host.docker.internal:8080
-      - NOCODB_API_TOKEN=${NOCODB_API_TOKEN}
       - IMAGE_MOUNT_PATH=/data/images
+      - DB_PATH=/data/db/review.db
       - PORT=3000
 ```
 
@@ -553,7 +585,7 @@ The build should be executed using specialized subagents in the following order:
 
 | Step | Agent | Task |
 |------|-------|------|
-| 1.1 | `nocodb-data-loader` | Create NocoDB tables (ReviewQueue, ReviewDecisions, NewPlantRequests) with schemas defined above |
+| 1.1 | `backend-api-developer` | Create SQLite schema (review_queue, review_decisions, new_plant_requests, plants) with migrations and indexes |
 | 1.2 | Main session | Scaffold Vite + React + TypeScript project with ShadCN setup |
 | 1.3 | Main session | Create Express server with static middleware and API route stubs |
 
@@ -561,8 +593,8 @@ The build should be executed using specialized subagents in the following order:
 
 | Step | Agent | Task |
 |------|-------|------|
-| 2.1 | `backend-api-developer` | Build NocoDB API client wrapper (CRUD operations, search, soft lock logic) |
-| 2.2 | `backend-api-developer` | Build data import script (generate thumbnails via Sharp, read Phase 4/4B JSONs → populate ReviewQueue with sort keys) |
+| 2.1 | `backend-api-developer` | Build SQLite data access layer (prepared statements, transactions, soft lock queries) |
+| 2.2 | `backend-api-developer` | Build data import script (generate thumbnails via Sharp, read Phase 4/4B JSONs → populate review_queue with sort keys) |
 | 2.3 | `backend-api-developer` | Build all API endpoints (queue, review, plants, admin) |
 
 ### Stage 3: UI Components (Parallel)
@@ -611,7 +643,7 @@ The build should be executed using specialized subagents in the following order:
 - Image cropping or editing
 - Bulk operations (select multiple images at once)
 - Phase 4B re-run automation (flagged only, run manually)
-- Physical file moves (review state lives in NocoDB; Phase 6 will reconcile)
+- Physical file moves (review state lives in SQLite; Phase 6 will reconcile)
 - Undo last action (v2 consideration)
 - Image deduplication beyond what Phase 4 already detected
 
