@@ -1,0 +1,23 @@
+services:
+  review-ui:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./content/parsed:/data/images:ro
+      - ./data/db:/data/db
+    environment:
+      - IMAGE_MOUNT_PATH=/data/images
+      - DB_PATH=/data/db/review.db
+      - PORT=3000
+      - APP_URL=http://localhost:3000
+      - COOKIE_SECRET=change-me-to-a-random-secret-min-32-chars
+      - ADMIN_EMAIL=admin@example.com
+      - ADMIN_PASSWORD=change-me
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_SECURE=true
+      - SMTP_USER=authuser@example.com
+      - SMTP_PASS=change-me
+      - SMTP_FROM=noreply@domain.com
+      - REMINDER_INACTIVE_DAYS=3

@@ -4,6 +4,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { config } from './config.js';
+import { startScheduler } from './lib/scheduler.js';
+import { requireAuth, requireAdmin } from './middleware/index.js';
 import authRouter from './routes/auth.js';
 import queueRouter from './routes/queue.js';
 import reviewRouter from './routes/review.js';
@@ -23,20 +25,21 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser(config.COOKIE_SECRET));
 
 // ── Static: images and thumbnails ────────────────────────────────────────────
-app.use('/images', express.static(config.IMAGE_MOUNT_PATH));
+app.use('/images', requireAuth, express.static(config.IMAGE_MOUNT_PATH));
 app.use(
   '/thumbnails',
+  requireAuth,
   express.static(path.join(config.IMAGE_MOUNT_PATH, '.thumbnails')),
 );
 
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
-app.use('/api/queue', queueRouter);
-app.use('/api/review', reviewRouter);
-app.use('/api/plants', plantsRouter);
-app.use('/api/admin', adminRouter);
-app.use('/api/leaderboard', leaderboardRouter);
-app.use('/api/me', meRouter);
+app.use('/api/queue', requireAuth, queueRouter);
+app.use('/api/review', requireAuth, reviewRouter);
+app.use('/api/plants', requireAuth, plantsRouter);
+app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
+app.use('/api/leaderboard', requireAuth, leaderboardRouter);
+app.use('/api/me', requireAuth, meRouter);
 
 // ── Production: serve built client ───────────────────────────────────────────
 if (process.env.NODE_ENV === 'production') {
@@ -60,6 +63,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 const server = app.listen(config.PORT, () => {
   console.log(`[server] listening on http://localhost:${config.PORT}`);
   console.log(`[server] IMAGE_MOUNT_PATH: ${config.IMAGE_MOUNT_PATH}`);
+  startScheduler();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
