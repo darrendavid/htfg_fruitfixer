@@ -2,15 +2,15 @@
 
 ## Overview
 
-This document expands the PRD's 5-stage subagent breakdown into 22 granular, independently executable tasks. Each task is scoped for a single subagent invocation (30 min to 1.5 hours), specifies exact files to create/modify, inputs, outputs, and dependencies. Tasks that share no dependency can run in parallel.
+28 granular, independently executable tasks. Each is scoped for a single subagent invocation (30 min to 1.5 hours), specifies exact files to create/modify, inputs, outputs, and dependencies.
 
-- **Total tasks**: 22
-- **Critical path length**: 8 sequential steps (T01 → T02 → T04 → T08 → T14 → T15 → T20 → T21)
-- **Maximum parallelism**: 5 tasks simultaneously (Stage 3, Group C)
+- **Total tasks**: 28
+- **Critical path**: T01 → T02 → T04 → T07 → T06 → T09 → T12 → T21 → T22 → T27 → T28 (11 steps)
+- **Maximum parallelism**: 6 tasks simultaneously (Stage 4 UI group)
 
-**Tech stack**: Vite + React 18 + TypeScript + ShadCN/ui, Express.js, SQLite (better-sqlite3), Docker
+**Tech stack**: Vite + React 18 + TypeScript + ShadCN/ui, Express.js, SQLite (better-sqlite3), Nodemailer, node-cron, Docker
 
-**App location**: `d:/Sandbox/Homegrown/htfg_fruit/review-ui/` (new subproject, no code exists yet)
+**App location**: `d:/Sandbox/Homegrown/htfg_fruit/review-ui/` (new subproject)
 
 ---
 
@@ -19,10 +19,9 @@ This document expands the PRD's 5-stage subagent breakdown into 22 granular, ind
 | Convention | Detail |
 |------------|--------|
 | **Agent types** | `main-session`, `backend-api-developer`, `test-writer` |
-| **File paths** | Relative to `review-ui/` unless prefixed with the full repo root `d:/Sandbox/Homegrown/htfg_fruit/` |
-| **Source data** | `d:/Sandbox/Homegrown/htfg_fruit/content/parsed/` (read-only, bind-mounted into Docker at `/data/images`) |
-| **SQLite DB** | `review-ui/data/db/review.db` (bind-mounted into Docker at `/data/db/review.db`) |
-| **Node.js** | v20 (Docker image `node:20-alpine`); review-ui uses TypeScript |
+| **File paths** | Relative to `review-ui/` unless prefixed with full repo root |
+| **Source data** | `d:/Sandbox/Homegrown/htfg_fruit/content/parsed/` (read-only, bind-mounted at `/data/images`) |
+| **SQLite DB** | `review-ui/data/db/review.db` (bind-mounted at `/data/db/review.db`) |
 
 ---
 
@@ -30,27 +29,29 @@ This document expands the PRD's 5-stage subagent breakdown into 22 granular, ind
 
 ```
 T01 (Scaffold)
-  ├── T02 (Express Server) ─────────────────────────────────────────────────┐
-  │     └── T04 (SQLite Schema + DAL) ──┬── T05 (Import Script) ───────────┤
-  │                                      ├── T06 (Queue API) ──────────────┤
-  │                                      ├── T07 (Review API) ─────────────┤
-  │                                      └── T08 (Plants + Admin API) ─────┤
-  │                                                                        │
-  └── T03 (ShadCN Init) ──── T09 (UI Requirements Analysis) ──────────────┤
-                               ├── T10 (Shared Components) ────────────────┤
-                               ├── T11 (Swipe Screen) ────────────────────┤
-                               ├── T12 (Classify Screen) ─────────────────┤
-                               └── T13 (Dashboard Screen) ────────────────┤
-                                                                           │
-                           ┌───────────────────────────────────────────────┘
-                           v
-                    T14 (API Client Layer) ─── T15 (Routing + Wiring) ─────┐
-                           │                          │                     │
-                    T16 (Backend Tests)        T17 (Frontend Tests)        │
-                                                      │                     │
-                                               T18 (UX Polish)             │
-                                                                            │
-                    T19 (Docker Config) ───── T20 (Data Import) ── T21 (Verification)
+  ├── T02 (Express Server) ──────────────────────────────────────────────────────────┐
+  │     └── T04 (SQLite Schema) ──┬── T05 (Auth Middleware) ──────────────────────┐ │
+  │                                ├── T07 (Email Service) ──┬── T06 (Auth API) ──┤ │
+  │                                │                          └── T08 (Cron Jobs)  │ │
+  │                                └── T09 (DAL) ──┬── T10 (Import Script) ───────┤ │
+  │                                                  ├── T11 (Queue API) ──────────┤ │
+  │                                                  ├── T12 (Review API) ─────────┤ │
+  │                                                  └── T13 (Plants+Admin API) ───┤ │
+  │                                                                                │ │
+  └── T03 (ShadCN Init) ── T14 (UI Requirements) ──┬── T15 (Shared+AuthGuards) ──┤ │
+                                                     ├── T16 (Login/Register UI) ──┤ │
+                                                     ├── T17 (Swipe Screen) ───────┤ │
+                                                     ├── T18 (Classify Screen) ────┤ │
+                                                     ├── T19 (Leaderboard Screen) ─┤ │
+                                                     └── T20 (Admin Dashboard) ────┤ │
+                                                                                   │ │
+                           ┌───────────────────────────────────────────────────────┘ │
+                           v                                                          │
+                    T21 (API Client) ── T22 (Routing + Wiring) ──┬── T24 (FE Tests) │
+                                                                   └── T25 (UX Polish)│
+                    T23 (Backend Tests)                                               │
+                    T26 (Docker Config) ────────────────────────────────────────────-┘
+                    T27 (Import) ── T28 (Verification)
 ```
 
 ---
@@ -66,13 +67,12 @@ T01 (Scaffold)
 | **ID** | T01 |
 | **Agent** | `main-session` |
 | **Dependencies** | None |
-| **Estimated time** | 30 min |
 
-**Objective**: Create the `review-ui/` subproject with Vite + React 18 + TypeScript, install all dependencies, and establish directory structure.
+**Objective**: Initialize the `review-ui/` subproject with all dependencies and directory structure.
 
 **Actions**:
 
-1. Initialize project:
+1. Initialize Vite project:
    ```bash
    cd "d:/Sandbox/Homegrown/htfg_fruit"
    npm create vite@latest review-ui -- --template react-ts
@@ -81,24 +81,22 @@ T01 (Scaffold)
 
 2. Install runtime dependencies:
    ```bash
-   npm install express better-sqlite3 sharp react-swipeable react-router-dom
+   npm install express better-sqlite3 sharp react-swipeable react-router-dom nodemailer node-cron cookie-parser
    ```
 
 3. Install dev dependencies:
    ```bash
-   npm install -D @types/express @types/better-sqlite3 @types/node
-   npm install -D tailwindcss @tailwindcss/vite
-   npm install -D tsx concurrently
+   npm install -D @types/express @types/better-sqlite3 @types/node @types/nodemailer @types/cookie-parser
+   npm install -D tailwindcss @tailwindcss/vite tsx concurrently
    ```
 
 4. Configure `tsconfig.json`:
-   - Add path alias: `"@/*": ["./src/*"]`
-   - Ensure `"moduleResolution": "bundler"`
+   - Path alias: `"@/*": ["./src/*"]`
+   - `"moduleResolution": "bundler"`
 
-5. Add `tsconfig.server.json` for server-side TypeScript:
+5. Add `tsconfig.server.json`:
    - `"target": "ES2022"`, `"module": "ESNext"`, `"moduleResolution": "bundler"`
-   - Include: `["server/**/*.ts"]`
-   - `"outDir": "./dist/server"`
+   - Include: `["server/**/*.ts"]`, `"outDir": "./dist/server"`
 
 6. Add npm scripts to `package.json`:
    ```json
@@ -119,13 +117,14 @@ T01 (Scaffold)
    review-ui/
      src/
        components/
-         ui/            # ShadCN components (auto-generated)
+         ui/            # ShadCN auto-generated
          layout/
+         auth/
          swipe/
          classify/
-         dashboard/
+         leaderboard/
+         admin/
          images/
-         session/
        hooks/
        lib/
        pages/
@@ -134,40 +133,45 @@ T01 (Scaffold)
      server/
        routes/
        lib/
+       middleware/
+       services/
        scripts/
        data/
        __tests__/
      data/
-       db/              # SQLite DB file location (gitignored)
+       db/              # SQLite DB (gitignored)
    ```
 
-8. Create `review-ui/.gitignore`:
+8. Create `review-ui/.env.example`:
    ```
-   node_modules/
-   dist/
-   data/db/
-   *.db
-   .env
-   ```
-
-9. Create `review-ui/.env.example`:
-   ```
+   # App
    IMAGE_MOUNT_PATH=d:/Sandbox/Homegrown/htfg_fruit/content/parsed
    DB_PATH=./data/db/review.db
    PORT=3001
+   APP_URL=http://localhost:3001
+   COOKIE_SECRET=change-me-to-a-random-secret-min-32-chars
+
+   # Admin account (credentials for the admin login page)
+   ADMIN_EMAIL=admin@example.com
+   ADMIN_PASSWORD=change-me
+
+   # SMTP (external mail server for magic links, reminders, daily summary)
+   SMTP_HOST=smtp.example.com
+   SMTP_PORT=587
+   SMTP_SECURE=true
+   SMTP_USER=authuser@example.com
+   SMTP_PASS=change-me
+   SMTP_FROM=noreply@hawaiifruit.net
+
+   # Reminders
+   REMINDER_INACTIVE_DAYS=3
    ```
 
-**Files created**:
-- `review-ui/package.json`
-- `review-ui/tsconfig.json`
-- `review-ui/tsconfig.server.json`
-- `review-ui/vite.config.ts`
-- `review-ui/.env.example`
-- `review-ui/.gitignore`
-- `review-ui/src/main.tsx` (Vite entry)
-- `review-ui/src/App.tsx` (placeholder)
+9. Create `review-ui/.gitignore`: node_modules, dist, data/db, *.db, .env
 
-**Verification**: `cd review-ui && npm run dev` opens browser with React placeholder.
+**Files created**: `package.json`, `tsconfig.json`, `tsconfig.server.json`, `vite.config.ts`, `.env.example`, `.gitignore`, `src/main.tsx`, `src/App.tsx` (placeholder)
+
+**Verification**: `npm run dev` shows React placeholder in browser.
 
 ---
 
@@ -178,63 +182,47 @@ T01 (Scaffold)
 | **ID** | T02 |
 | **Agent** | `main-session` |
 | **Dependencies** | T01 |
-| **Estimated time** | 45 min |
 
-**Objective**: Create the Express server that serves the SPA, static images/thumbnails, and provides API route stubs.
+**Objective**: Create the Express server with static middleware, cookie parsing, and all API route stubs (including auth stubs).
 
 **Actions**:
 
 1. Create `server/config.ts`:
-   - Read and validate environment variables: `PORT` (default 3001), `DB_PATH` (default `./data/db/review.db`), `IMAGE_MOUNT_PATH` (required)
-   - Fail fast with clear error if `IMAGE_MOUNT_PATH` is missing
-   - Export typed config object
+   - Validate and export: `PORT`, `DB_PATH`, `IMAGE_MOUNT_PATH` (required), `APP_URL`, `COOKIE_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, all `SMTP_*` vars, `REMINDER_INACTIVE_DAYS` (default: 3)
+   - Fail fast with descriptive error if required vars missing
 
 2. Create `server/index.ts`:
-   - Initialize Express app
    - JSON body parser (1MB limit)
-   - Mount static middleware:
-     - `/images/*` serves files from `config.IMAGE_MOUNT_PATH` (read-only intent)
-     - `/thumbnails/*` serves files from `path.join(config.IMAGE_MOUNT_PATH, '.thumbnails')`
-   - Mount API route groups:
+   - `cookie-parser` middleware initialized with `config.COOKIE_SECRET`
+   - Static middleware:
+     - `/images/*` → `config.IMAGE_MOUNT_PATH` (read-only intent)
+     - `/thumbnails/*` → `.thumbnails/` subdirectory of IMAGE_MOUNT_PATH
+   - Mount API routes:
+     - `/api/auth` → `routes/auth.ts`
      - `/api/queue` → `routes/queue.ts`
      - `/api/review` → `routes/review.ts`
      - `/api/plants` → `routes/plants.ts`
      - `/api/admin` → `routes/admin.ts`
-   - In production: serve Vite build output from `dist/client/`
-   - SPA fallback: non-API, non-static GET requests serve `index.html`
-   - Global error handler middleware (returns `{ error: string }` JSON)
-   - Graceful shutdown on SIGTERM/SIGINT
-   - Listen on `config.PORT`
+     - `/api/leaderboard` → `routes/leaderboard.ts`
+     - `/api/me` → `routes/me.ts`
+   - In production: serve `dist/client/` as static files
+   - SPA fallback for non-API GETs
+   - Global JSON error handler
 
-3. Create stub route files (all return 501 "Not Implemented"):
+3. Create stub route files (all return 501):
+   - `server/routes/auth.ts` — POST `/register`, POST `/login`, GET `/verify/:token`, POST `/logout`, GET `/me`, POST `/admin/login`
    - `server/routes/queue.ts` — GET `/next`, GET `/stats`, POST `/:id/release`
-   - `server/routes/review.ts` — POST `/confirm`, `/reject`, `/classify`, `/discard`
+   - `server/routes/review.ts` — POST `/confirm`, `/reject`, `/classify`, `/discard`, `/idk`
    - `server/routes/plants.ts` — GET `/`, GET `/:id/reference-images`, POST `/new`, GET `/csv-candidates`
-   - `server/routes/admin.ts` — POST `/import`, GET `/import-status`
+   - `server/routes/admin.ts` — GET `/stats`, GET `/leaderboard`, GET `/log`, GET `/idk-flagged`, GET `/users`, POST `/import`, GET `/import-status`
+   - `server/routes/leaderboard.ts` — GET `/`
+   - `server/routes/me.ts` — GET `/stats`
 
-4. Update `vite.config.ts` with dev proxy:
-   ```typescript
-   server: {
-     proxy: {
-       '/api': 'http://localhost:3001',
-       '/images': 'http://localhost:3001',
-       '/thumbnails': 'http://localhost:3001',
-     }
-   }
-   ```
+4. Update `vite.config.ts` with dev proxy for all `/api`, `/images`, `/thumbnails` paths to port 3001
 
-**Files created**:
-- `review-ui/server/index.ts`
-- `review-ui/server/config.ts`
-- `review-ui/server/routes/queue.ts`
-- `review-ui/server/routes/review.ts`
-- `review-ui/server/routes/plants.ts`
-- `review-ui/server/routes/admin.ts`
+**Files created**: `server/index.ts`, `server/config.ts`, all route stubs
 
-**Files modified**:
-- `review-ui/vite.config.ts` (proxy config)
-
-**Verification**: `npm run dev:server` starts Express on port 3001. `curl http://localhost:3001/api/queue/stats` returns 501.
+**Verification**: `npm run dev:server` starts on 3001. All stub routes return 501.
 
 ---
 
@@ -245,1100 +233,1149 @@ T01 (Scaffold)
 | **ID** | T03 |
 | **Agent** | `main-session` |
 | **Dependencies** | T01 |
-| **Estimated time** | 20 min |
 | **Parallel with** | T02 |
 
-**Objective**: Initialize ShadCN/ui with Tailwind CSS and install the base component set.
+**Objective**: Initialize ShadCN/ui with Tailwind CSS and install the full component set needed across all screens.
 
 **Actions**:
 
-1. Run ShadCN init:
-   ```bash
-   npx shadcn@latest init
-   ```
-   Select: New York style, Slate base color, CSS variables enabled
+1. Run `npx shadcn@latest init` (New York style, Slate base color, CSS variables enabled)
 
-2. Install initial component batch:
+2. Install all components needed for all screens in one pass:
    ```bash
-   npx shadcn@latest add button card badge input dialog progress separator tabs skeleton
+   npx shadcn@latest add button card badge input dialog progress separator skeleton \
+     command radio-group select textarea sonner label form alert alert-dialog tabs
    ```
 
-3. Customize CSS variables in `src/index.css`:
-   - Light theme only (no dark mode toggle)
-   - Add semantic color tokens:
-     - `--color-confirm` (green, for confirm actions)
-     - `--color-reject` (red, for reject actions)
-     - `--color-pending` (amber, for pending/warning states)
-     - `--color-auto` (blue, for Phase 4 auto-matched items)
+3. Customize `src/index.css`:
+   - Add semantic tokens: `--color-confirm` (green), `--color-reject` (red), `--color-pending` (amber), `--color-auto` (blue)
+   - Light theme only
 
-4. Verify `src/lib/utils.ts` exists with `cn()` utility
+**Files created**: `components.json`, `src/components/ui/*.tsx`, `src/index.css`, `src/lib/utils.ts`
 
-5. Smoke-test: render a ShadCN Button in App.tsx, confirm styling works
-
-**Files created/modified**:
-- `review-ui/components.json` (ShadCN config)
-- `review-ui/src/components/ui/*.tsx` (ShadCN component files)
-- `review-ui/src/index.css` (Tailwind layers + custom tokens)
-- `review-ui/src/lib/utils.ts`
-
-**Verification**: ShadCN Button renders with correct styling in dev browser.
+**Verification**: ShadCN Button renders with styling in dev browser.
 
 ---
 
-## Stage 2: Data Layer (Parallel after T02 completes)
+## Stage 2: Auth & Email (Sequential — must complete before UI work)
 
 ---
 
-### T04 — SQLite Schema and Data Access Layer
+### T04 — SQLite Schema
 
 | Field | Value |
 |-------|-------|
 | **ID** | T04 |
 | **Agent** | `backend-api-developer` |
 | **Dependencies** | T02 |
-| **Estimated time** | 1.5 hours |
 
-**Objective**: Create the complete SQLite schema (4 tables, all indexes) and a typed data access layer with prepared statements.
+**Objective**: Create the complete SQLite schema (7 tables) with all indexes and a typed `db` singleton. This is the foundation for all other backend tasks.
 
-**Critical context for the agent**: This is for the HTFG Review UI project — NOT the Holualectrons/circuit_mapper project. There is no NocoDB. The data store is SQLite via `better-sqlite3` (synchronous API). The schema mirrors the PRD's table definitions (ReviewQueue, ReviewDecisions, NewPlantRequests) plus a Plants table.
+**Critical context**: HTFG Review UI project. NOT Holualectrons. Use `better-sqlite3` (synchronous API). WAL mode required.
 
 **Actions**:
 
-1. Create `server/lib/db.ts`:
+1. Create `server/lib/schema.ts` — export `SCHEMA_SQL` with all CREATE TABLE IF NOT EXISTS and CREATE INDEX statements:
+
+   ```sql
+   -- Users
+   CREATE TABLE users (
+     id             INTEGER PRIMARY KEY AUTOINCREMENT,
+     email          TEXT NOT NULL UNIQUE,
+     first_name     TEXT NOT NULL,
+     last_name      TEXT NOT NULL,
+     role           TEXT NOT NULL DEFAULT 'reviewer',
+     last_active_at TEXT,
+     last_reminded_at TEXT,
+     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE UNIQUE INDEX idx_users_email ON users(email);
+
+   -- Magic links
+   CREATE TABLE magic_links (
+     id         INTEGER PRIMARY KEY AUTOINCREMENT,
+     email      TEXT NOT NULL,
+     token      TEXT NOT NULL UNIQUE,
+     expires_at TEXT NOT NULL,
+     used       INTEGER NOT NULL DEFAULT 0,
+     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX idx_magic_token ON magic_links(token);
+
+   -- Sessions
+   CREATE TABLE sessions (
+     id         TEXT PRIMARY KEY,
+     user_id    INTEGER NOT NULL REFERENCES users(id),
+     expires_at TEXT NOT NULL,
+     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX idx_sessions_user ON sessions(user_id);
+
+   -- Review queue
+   CREATE TABLE review_queue (
+     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+     image_path         TEXT NOT NULL UNIQUE,
+     source_path        TEXT,
+     queue              TEXT NOT NULL,
+     status             TEXT NOT NULL DEFAULT 'pending',
+     current_plant_id   TEXT,
+     suggested_plant_id TEXT,
+     confidence         TEXT,
+     match_type         TEXT,
+     reasoning          TEXT,
+     thumbnail_path     TEXT,
+     file_size          INTEGER,
+     sort_key           TEXT,
+     source_directories TEXT,
+     idk_count          INTEGER NOT NULL DEFAULT 0,
+     locked_by          INTEGER REFERENCES users(id),
+     locked_at          TEXT,
+     created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX idx_queue_status ON review_queue(queue, status, sort_key);
+   CREATE INDEX idx_queue_lock ON review_queue(status, locked_at);
+   CREATE INDEX idx_queue_plant ON review_queue(current_plant_id);
+
+   -- Review decisions
+   CREATE TABLE review_decisions (
+     id               INTEGER PRIMARY KEY AUTOINCREMENT,
+     image_path       TEXT NOT NULL,
+     user_id          INTEGER NOT NULL REFERENCES users(id),
+     action           TEXT NOT NULL,
+     plant_id         TEXT,
+     discard_category TEXT,
+     notes            TEXT,
+     decided_at       TEXT NOT NULL DEFAULT (datetime('now'))
+   );
+   CREATE INDEX idx_decisions_image ON review_decisions(image_path);
+   CREATE INDEX idx_decisions_user ON review_decisions(user_id, decided_at);
+
+   -- New plant requests
+   CREATE TABLE new_plant_requests (
+     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+     common_name         TEXT NOT NULL,
+     botanical_name      TEXT,
+     category            TEXT NOT NULL DEFAULT 'fruit',
+     aliases             TEXT,
+     requested_by        INTEGER NOT NULL REFERENCES users(id),
+     status              TEXT NOT NULL DEFAULT 'pending',
+     generated_id        TEXT NOT NULL,
+     phase4b_rerun_needed INTEGER NOT NULL DEFAULT 1,
+     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+     first_image_path    TEXT
+   );
+
+   -- Plants (read-only reference from plant_registry.json)
+   CREATE TABLE plants (
+     id              TEXT PRIMARY KEY,
+     common_name     TEXT NOT NULL,
+     botanical_names TEXT,
+     aliases         TEXT,
+     category        TEXT NOT NULL DEFAULT 'fruit'
+   );
+   CREATE INDEX idx_plants_name ON plants(common_name);
+   ```
+
+2. Create `server/lib/db.ts`:
    - Import `better-sqlite3`
-   - Read `DB_PATH` from config
-   - Create parent directory if it doesn't exist (`fs.mkdirSync` with `recursive: true`)
-   - Initialize database connection
-   - Enable WAL mode: `db.pragma('journal_mode = WAL')`
-   - Run schema creation (CREATE TABLE IF NOT EXISTS for all 4 tables)
-   - Export singleton `db` instance
+   - `fs.mkdirSync(path.dirname(DB_PATH), { recursive: true })`
+   - Initialize DB, set `PRAGMA journal_mode = WAL`
+   - Run `SCHEMA_SQL`
+   - Export singleton `db`
 
-2. Create `server/lib/schema.ts`:
-   - Export `SCHEMA_SQL` string constant containing all CREATE TABLE and CREATE INDEX statements:
-     - `review_queue` (id INTEGER PRIMARY KEY AUTOINCREMENT, image_path TEXT UNIQUE, source_path, queue CHECK(queue IN ('swipe','classify')), status DEFAULT 'pending' CHECK(status IN ('pending','in_progress','completed','skipped')), current_plant_id, suggested_plant_id, confidence CHECK(confidence IN ('high','medium','low','auto',NULL)), match_type, reasoning, thumbnail_path, file_size INTEGER, sort_key, source_directories, locked_by, locked_at, created_at DEFAULT (datetime('now')))
-     - `review_decisions` (id INTEGER PRIMARY KEY AUTOINCREMENT, image_path TEXT NOT NULL, reviewer TEXT NOT NULL, action TEXT CHECK(action IN ('confirm','reject','classify','discard','new_plant')), plant_id, discard_category, notes, decided_at DEFAULT (datetime('now')))
-     - `new_plant_requests` (id INTEGER PRIMARY KEY AUTOINCREMENT, common_name TEXT NOT NULL, botanical_name, category DEFAULT 'fruit', aliases, requested_by TEXT NOT NULL, status DEFAULT 'pending', generated_id TEXT UNIQUE, phase4b_rerun_needed INTEGER DEFAULT 1, created_at DEFAULT (datetime('now')), first_image_path)
-     - `plants` (id TEXT PRIMARY KEY, common_name TEXT NOT NULL, botanical_names TEXT, aliases TEXT, category DEFAULT 'fruit')
-   - All relevant indexes: `review_queue(status, queue, sort_key)`, `review_queue(locked_at)`, `review_decisions(image_path)`, `review_decisions(reviewer, decided_at)`, `plants(common_name)`
+3. Create `server/types.ts` with TypeScript interfaces for all DB rows:
+   - `User`, `MagicLink`, `Session`
+   - `QueueItem` (with `locked_by: number | null`, `idk_count: number`)
+   - `ReviewDecision` (with `user_id: number`, action includes `'idk'`)
+   - `NewPlantRequest` (with `requested_by: number`)
+   - `Plant`
+   - API response types: `QueueStats`, `AdminStats`, `LeaderboardEntry`, `UserStats`
 
-3. Create `server/types.ts`:
-   - TypeScript interfaces for all database row types:
-     ```typescript
-     interface QueueItem {
-       id: number;
-       image_path: string;
-       source_path: string | null;
-       queue: 'swipe' | 'classify';
-       status: 'pending' | 'in_progress' | 'completed' | 'skipped';
-       current_plant_id: string | null;
-       suggested_plant_id: string | null;
-       confidence: 'high' | 'medium' | 'low' | 'auto' | null;
-       match_type: string | null;
-       reasoning: string | null;
-       thumbnail_path: string | null;
-       file_size: number | null;
-       sort_key: string | null;
-       source_directories: string | null;  // JSON array string
-       locked_by: string | null;
-       locked_at: string | null;
-       created_at: string;
-     }
-     ```
-   - Similar interfaces for `ReviewDecision`, `NewPlantRequest`, `Plant`
-   - API response types: `QueueStats`, `DashboardStats`, `PlantSearchResult`
+**Files created**: `server/lib/schema.ts`, `server/lib/db.ts`, `server/types.ts`
 
-4. Create `server/lib/dal.ts` (Data Access Layer):
-   - All methods use prepared statements (cached by better-sqlite3)
-   - **Queue operations**:
-     - `getNextPendingItem(queue: string, reviewer: string): QueueItem | null` — within a transaction: find next item where `status='pending'` OR (`status='in_progress'` AND `locked_at` < 5 min ago), ordered by `sort_key`; update it to `status='in_progress'`, `locked_by=reviewer`, `locked_at=now`; return the item
-     - `releaseItem(id: number): void` — set `status='pending'`, clear `locked_by` and `locked_at`
-     - `getQueueStats(): QueueStats` — aggregate counts by queue+status, count decisions by action, count decisions by reviewer for today and all-time, count new_plant_requests with phase4b_rerun_needed=1
-     - `expireStaleLocks(): number` — update all items where `status='in_progress'` AND `locked_at` < 5 minutes ago to `status='pending'`, clear lock fields; return count of expired
-   - **Review operations**:
-     - `confirmItem(imagePath: string, reviewer: string): void` — transaction: update review_queue set status='completed' where image_path=?; insert into review_decisions (image_path, reviewer, action='confirm', plant_id from suggested_plant_id or current_plant_id)
-     - `rejectItem(imagePath: string, reviewer: string): void` — transaction: update review_queue set status='completed'; insert review_decisions with action='reject'; if image_path does not already exist in review_queue with queue='classify', insert new row with queue='classify', status='pending', copying image_path, source_path, thumbnail_path, file_size, source_directories
-     - `classifyItem(imagePath: string, plantId: string, reviewer: string): void` — transaction: update review_queue set status='completed'; insert review_decisions with action='classify', plant_id
-     - `discardItem(imagePath: string, category: string, notes: string | null, reviewer: string): void` — transaction: update review_queue set status='completed'; insert review_decisions with action='discard', discard_category
-   - **Plant operations**:
-     - `searchPlants(query: string): Plant[]` — LIKE search on common_name, botanical_names, aliases; also search new_plant_requests; combined results limited to 20
-     - `getAllPlants(): Plant[]` — return all plants ordered by common_name
-     - `getPlantById(id: string): Plant | null`
-     - `createNewPlantRequest(data: Omit<NewPlantRequest, 'id' | 'created_at' | 'status'>): NewPlantRequest`
-     - `getNewPlantRerunCount(): number` — count where phase4b_rerun_needed=1 AND status='pending'
-   - **Import operations**:
-     - `bulkInsertQueueItems(items: Partial<QueueItem>[]): number` — wrapped in transaction, returns count inserted (uses INSERT OR IGNORE for idempotency)
-     - `bulkInsertPlants(plants: Plant[]): number` — wrapped in transaction with INSERT OR REPLACE
-     - `getImportCounts(): { plants: number, swipe: number, classify: number, total: number }`
-
-**Files created**:
-- `review-ui/server/lib/db.ts`
-- `review-ui/server/lib/schema.ts`
-- `review-ui/server/lib/dal.ts`
-- `review-ui/server/types.ts`
-
-**Verification**: Import db module, confirm tables are created. Insert a test plant, query it back. Insert a queue item, lock it, confirm it with a decision.
+**Verification**: `tsx server/lib/db.ts` creates DB with all 7 tables. Confirm with SQLite client.
 
 ---
 
-### T05 — Data Import Script
+### T05 — Auth Middleware
 
 | Field | Value |
 |-------|-------|
 | **ID** | T05 |
 | **Agent** | `backend-api-developer` |
 | **Dependencies** | T04 |
-| **Estimated time** | 1.5 hours |
+| **Parallel with** | T07, T09 |
 
-**Objective**: Build a standalone script that reads Phase 4/4B JSON files, generates thumbnails via Sharp, and populates the SQLite database. The import must be idempotent.
-
-**Critical context for the agent**: Source JSON files are at `d:/Sandbox/Homegrown/htfg_fruit/content/parsed/`. See Appendix at the bottom of this document for exact field structures per JSON file. The `path` field in `phase4b_inferences.json` and `phase4b_still_unclassified.json` matches the `source` field in `phase4_image_manifest.json` — this cross-reference is needed to get the `dest` path and `size`.
+**Objective**: Build Express middleware for session validation and role enforcement. All protected routes depend on this.
 
 **Actions**:
 
-1. Create `server/scripts/import.ts`:
+1. Create `server/middleware/auth.ts`:
 
-   **CLI interface**:
-   - `--data-dir <path>` (default: `IMAGE_MOUNT_PATH` env var)
-   - `--db-path <path>` (default: `DB_PATH` env var)
-   - `--skip-thumbnails` flag for fast testing
+   **`requireAuth` middleware**:
+   - Read `session_id` from `req.signedCookies.session_id`
+   - If missing → `401 { error: "Authentication required" }`
+   - Query `sessions` table: `SELECT s.*, u.* FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND s.expires_at > datetime('now')`
+   - If no result → `401 { error: "Session expired or invalid" }`
+   - Attach `req.user = { id, email, first_name, last_name, role }` to request
+   - Continue with `next()`
 
-   **Step 1 — Load source data**:
-   - Read all 5 JSON files from `data-dir`:
-     - `phase4b_inferences.json` (top-level key: `inferences`, 6,518 items)
-     - `phase4b_still_unclassified.json` (top-level key: `files`, 8,361 items)
-     - `phase4_image_manifest.json` (top-level key: `files`, 15,403 items)
-     - `phase4b_new_plants.json` (top-level key: `plants`, 72 items)
-     - `plant_registry.json` (top-level key: `plants`, 140 items)
-   - Log counts for each file
+   **`requireAdmin` middleware** (use AFTER `requireAuth`):
+   - Check `req.user.role === 'admin'`
+   - If not → `403 { error: "Admin access required" }`
+   - Continue with `next()`
 
-   **Step 2 — Build manifest lookup**:
-   - Create a `Map<string, ManifestEntry>` keyed by `source` from `phase4_image_manifest.json`
-   - Each entry: `{ source, dest, plant_id, size }`
+   **`optionalAuth` middleware** (for public routes that benefit from user context):
+   - Same as `requireAuth` but calls `next()` even if no session (sets `req.user = null`)
 
-   **Step 3 — Populate plants table**:
-   - Map `plant_registry.json` plants to DB schema:
-     - `id`, `common_name`, `JSON.stringify(botanical_names)`, `JSON.stringify(aliases)`, `category`
-   - Call `dal.bulkInsertPlants(mappedPlants)`
+2. Create `server/middleware/index.ts`:
+   - Export `requireAuth`, `requireAdmin`, `optionalAuth`
 
-   **Step 4 — Build swipe queue records**:
+3. Add `req.user` type to Express Request in `server/types.ts`:
+   ```typescript
+   declare global {
+     namespace Express {
+       interface Request {
+         user?: { id: number; email: string; first_name: string; last_name: string; role: string };
+       }
+     }
+   }
+   ```
 
-   From `phase4b_inferences.json` (6,518 records):
-   - Look up each `path` in manifest map to get `dest` and `size`
-   - Map to QueueItem:
-     - `image_path` = `dest` (organized path)
-     - `source_path` = `path` (original source path)
-     - `queue` = `'swipe'`
-     - `status` = `'pending'`
-     - `current_plant_id` = `null` (these are inferences, not confirmed)
-     - `suggested_plant_id` = `inferred_plant_id`
-     - `confidence` = inference confidence
-     - `match_type` = inference match_type
-     - `reasoning` = inference reasoning
-     - `file_size` = manifest size
-     - `source_directories` = JSON.stringify of directory names extracted from path
+4. Apply middleware to all route stubs in `server/index.ts`:
+   - Auth routes (`/api/auth`): no middleware (public)
+   - All other `/api/*` routes: `requireAuth` applied at router level
+   - `/api/admin/*` routes: `requireAdmin` applied at router level
+   - Static image routes (`/images/*`, `/thumbnails/*`): `requireAuth` applied
 
-   From `phase4_image_manifest.json` where `plant_id` is not null (5,031 records):
-   - Map to QueueItem:
-     - `image_path` = `dest`
-     - `source_path` = `source`
-     - `queue` = `'swipe'`
-     - `status` = `'pending'`
-     - `current_plant_id` = `plant_id`
-     - `suggested_plant_id` = `plant_id`
-     - `confidence` = `'auto'`
-     - `match_type` = `'phase4_direct'`
-     - `reasoning` = `'Phase 4 auto-classification by directory name'`
-     - `file_size` = `size`
+**Files created**: `server/middleware/auth.ts`, `server/middleware/index.ts`
+**Files modified**: `server/types.ts`, `server/index.ts`
 
-   **Step 5 — Build classify queue records**:
-   From `phase4b_still_unclassified.json` (8,361 records):
-   - Look up each `path` in manifest map to get `dest` and `size`
-   - Map to QueueItem:
-     - `image_path` = `dest`
-     - `source_path` = `path`
-     - `queue` = `'classify'`
-     - `status` = `'pending'`
-     - `source_directories` = `JSON.stringify(directories)`
-     - `file_size` = manifest size (or null if not found)
-
-   **Step 6 — Compute sort_key**:
-   For swipe queue items only:
-   - Define confidence order: `{ high: 1, medium: 2, low: 3, auto: 4 }`
-   - Group all swipe items by `suggested_plant_id` (or `current_plant_id`)
-   - For each plant group, find the best (lowest) confidence order value
-   - Assign sort_key: `${plant_group_priority_padded}:${plant_id}:${confidence_order}:${image_path}`
-     - Pad plant_group_priority to 3 digits (e.g., `001`)
-   - This ensures: plant groups ordered by best confidence first; within each group, high confidence items come first
-
-   For classify queue items: sort_key = `classify:${first_source_dir}:${image_path}`
-
-   **Step 7 — Compute thumbnail_path**:
-   For each record: `thumbnail_path` = `.thumbnails/${relative_dest_path}`
-   - Strip any leading `content/parsed/` prefix from `dest` to get the relative path
-
-   **Step 8 — Generate thumbnails** (unless `--skip-thumbnails`):
-   - For each unique image (by `dest` path), using Sharp:
-     - Input: image at `path.join(data_dir, relative_dest_path)` (strip `content/parsed/` prefix from dest)
-     - Output: `path.join(data_dir, '.thumbnails', relative_dest_path)`
-     - Create parent directories as needed
-     - Sharp pipeline: `.resize({ width: 400, withoutEnlargement: true }).jpeg({ quality: 80, progressive: true })`
-     - Skip if output file already exists (idempotent)
-     - Log progress every 500 images
-     - Catch and log errors per-image (don't abort on corrupt files)
-   - Report: total generated, total skipped, total errors
-
-   **Step 9 — Bulk insert**:
-   - Call `dal.bulkInsertQueueItems(allSwipeItems)` — 11,549 items
-   - Call `dal.bulkInsertQueueItems(allClassifyItems)` — 8,361 items
-
-   **Step 10 — Save CSV candidates**:
-   - Write `phase4b_new_plants.json` plants array to `server/data/csv-candidates.json` for runtime use
-
-   **Step 11 — Report**:
-   - Log final counts from `dal.getImportCounts()`
-   - Log expected vs actual comparison
-   - Exit with code 0 on success, 1 on any critical error
-
-2. Export a `runImport(options)` function for programmatic use by the admin API endpoint.
-
-**Files created**:
-- `review-ui/server/scripts/import.ts`
-
-**Files generated at runtime**:
-- `review-ui/server/data/csv-candidates.json`
-- Thumbnails at `{IMAGE_MOUNT_PATH}/.thumbnails/**`
-
-**Verification**: Run `npm run import -- --skip-thumbnails` with `DATA_DIR` pointing to `content/parsed/`. Confirm: 140 plants, 11,549 swipe queue items, 8,361 classify queue items (19,910 total). Verify sort_key ordering with a SQLite query.
+**Verification**: Add `requireAuth` to a test route, confirm 401 without cookie, 200 with valid session cookie.
 
 ---
 
-### T06 — Queue API Endpoints
+### T06 — Auth API Endpoints
 
 | Field | Value |
 |-------|-------|
 | **ID** | T06 |
 | **Agent** | `backend-api-developer` |
-| **Dependencies** | T04 |
-| **Estimated time** | 45 min |
-| **Parallel with** | T05, T07, T08 |
+| **Dependencies** | T04, T07 (email service needed to send magic links) |
 
-**Objective**: Implement the 3 queue management API endpoints.
+**Objective**: Implement all authentication endpoints: registration, magic link login, token verification, logout, and admin password login.
 
 **Actions**:
 
-1. **`GET /api/queue/next?type=swipe|classify&reviewer=Name`** in `server/routes/queue.ts`:
-   - Validate: `type` must be `'swipe'` or `'classify'` (400 if invalid)
-   - Validate: `reviewer` must be non-empty string (400 if missing)
-   - Call `dal.expireStaleLocks()` to clear stale locks
-   - Call `dal.getNextPendingItem(type, reviewer)`
-   - If no item found: return `200 { item: null, remaining: 0 }`
-   - If found: also query remaining count for this queue
-   - Augment response with `current_plant_name` and `suggested_plant_name` by joining plants table
-   - Return `200 { item: QueueItem & { current_plant_name, suggested_plant_name }, remaining: number }`
+Implement `server/routes/auth.ts`:
 
-2. **`GET /api/queue/stats`** in `server/routes/queue.ts`:
-   - Call `dal.getQueueStats()`
-   - Return 200 with full stats object
+1. **`POST /api/auth/register`** (public):
+   - Body: `{ email: string, first_name: string, last_name: string }`
+   - Validate all 3 fields present; validate email format
+   - Check if `users` table already has this email → `409 { error: "Email already registered" }`
+   - Insert user: `INSERT INTO users (email, first_name, last_name) VALUES (?, ?, ?)`
+   - Generate magic link token: `crypto.randomUUID()`
+   - Insert into `magic_links`: email, token, `expires_at = datetime('now', '+15 minutes')`
+   - Call `emailService.sendMagicLink(email, first_name, token)` (from T07)
+   - Return `200 { message: "Check your email for a login link" }`
 
-3. **`POST /api/queue/:id/release`** in `server/routes/queue.ts`:
-   - Validate: `id` must be a positive integer (400 if invalid)
-   - Call `dal.releaseItem(id)`
+2. **`POST /api/auth/login`** (public):
+   - Body: `{ email: string }`
+   - If user not found in `users` table → `404 { error: "No account found for this email. Please register first." }`
+   - Generate magic link (same as above, insert into `magic_links`)
+   - Call `emailService.sendMagicLink(email, first_name, token)`
+   - Return `200 { message: "Check your email for a login link" }`
+
+3. **`GET /api/auth/verify/:token`** (public):
+   - Look up token in `magic_links` where `used=0` AND `expires_at > datetime('now')`
+   - If not found or expired → redirect to `/login?error=expired`
+   - Look up user by email
+   - Mark token `used=1`
+   - Create session: `INSERT INTO sessions (id, user_id, expires_at) VALUES (uuid, user_id, datetime('now', '+30 days'))`
+   - Set cookie: `res.cookie('session_id', sessionId, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', signed: true, maxAge: 30 * 24 * 60 * 60 * 1000 })`
+   - Redirect to `/swipe`
+
+4. **`POST /api/auth/logout`** (session required via `requireAuth`):
+   - Delete session from DB: `DELETE FROM sessions WHERE id = ?`
+   - `res.clearCookie('session_id')`
    - Return `200 { success: true }`
 
-**Files modified**:
-- `review-ui/server/routes/queue.ts` (replace 501 stubs)
+5. **`GET /api/auth/me`** (session required):
+   - Return `200 { user: req.user }` (id, email, first_name, last_name, role)
 
-**Verification**: After import: `curl "localhost:3001/api/queue/next?type=swipe&reviewer=test"` returns an item with a lock. `curl "localhost:3001/api/queue/stats"` returns correct structure.
+6. **`POST /api/auth/admin/login`** (public):
+   - Body: `{ email: string, password: string }`
+   - Compare against `config.ADMIN_EMAIL` and `config.ADMIN_PASSWORD` (exact string match — no bcrypt needed)
+   - If no match → `401 { error: "Invalid credentials" }`
+   - Upsert admin user in `users` table with `role='admin'` (INSERT OR REPLACE approach, or check existence first)
+   - Create session (same as verify) with admin user's id
+   - Set session cookie
+   - Return `200 { user: { email, first_name: 'Admin', last_name: '', role: 'admin' } }`
+
+**Files modified**: `server/routes/auth.ts` (replace 501 stubs)
+
+**Verification**: POST register → email queued. POST login with registered email → email queued. GET verify with valid token → sets cookie, redirects. POST admin/login with env creds → sets cookie.
 
 ---
 
-### T07 — Review Action API Endpoints
+### T07 — Email Service
 
 | Field | Value |
 |-------|-------|
 | **ID** | T07 |
 | **Agent** | `backend-api-developer` |
-| **Dependencies** | T04 |
-| **Estimated time** | 45 min |
-| **Parallel with** | T05, T06, T08 |
+| **Dependencies** | T02 (needs config) |
+| **Parallel with** | T04, T05 |
 
-**Objective**: Implement the 4 review action endpoints.
+**Objective**: Build the Nodemailer email service with SMTP transport and templates for magic links, inactivity reminders, and daily admin summary.
 
 **Actions**:
 
-1. **`POST /api/review/confirm`**:
-   - Body: `{ image_path: string, reviewer: string }`
-   - Validate both fields (400 if missing)
-   - Call `dal.confirmItem(imagePath, reviewer)`
-   - Return `200 { success: true }`
+1. Create `server/services/email.ts`:
 
-2. **`POST /api/review/reject`**:
-   - Body: `{ image_path: string, reviewer: string }`
-   - Call `dal.rejectItem(imagePath, reviewer)`
-   - Return `200 { success: true }`
+   **SMTP transport initialization**:
+   - Create `nodemailer.createTransport({ host, port, secure, auth: { user, pass } })` from config
+   - Export `transporter`
+   - Graceful degradation: if SMTP not configured (empty host), log a warning and skip sending (return mock success). This allows the app to run without email in development.
 
-3. **`POST /api/review/classify`**:
-   - Body: `{ image_path: string, plant_id: string, reviewer: string }`
-   - Validate all 3 fields
-   - Verify `plant_id` exists in `plants` table OR `new_plant_requests` (404 if not found)
-   - Call `dal.classifyItem(imagePath, plantId, reviewer)`
-   - Return `200 { success: true }`
+   **`sendMagicLink(email: string, firstName: string, token: string): Promise<void>`**:
+   - Subject: "HTFG Review — Your Login Link"
+   - HTML template:
+     ```html
+     <p>Hi {firstName},</p>
+     <p>Click the link below to sign in to HTFG Image Review. This link expires in 15 minutes.</p>
+     <p><a href="{APP_URL}/api/auth/verify/{token}">Sign in to HTFG Review</a></p>
+     <p>If you didn't request this, you can ignore this email.</p>
+     ```
+   - From: `config.SMTP_FROM`
 
-4. **`POST /api/review/discard`**:
-   - Body: `{ image_path: string, category: string, notes?: string, reviewer: string }`
-   - Validate `category` is one of: `event`, `graphics`, `travel`, `duplicate`, `poor_quality` (400 if invalid)
-   - Call `dal.discardItem(imagePath, category, notes || null, reviewer)`
-   - Return `200 { success: true }`
+   **`sendInactivityReminder(email: string, firstName: string, daysSinceActive: number): Promise<void>`**:
+   - Subject: "HTFG Review — We miss you!"
+   - Brief friendly message noting they haven't reviewed in N days, with a CTA link to `APP_URL`
 
-5. Add a simple `validateRequired(body, fields)` helper — returns 400 with field names if any are missing.
+   **`sendDailySummary(stats: DailySummaryStats): Promise<void>`**:
+   - To: `config.ADMIN_EMAIL`
+   - Subject: "HTFG Review — Daily Summary {YYYY-MM-DD}"
+   - HTML table containing:
+     - Total reviews completed today (by action type: confirm, reject, classify, discard, idk)
+     - Per-reviewer breakdown (name + count)
+     - Queue progress percentages (swipe X%, classify Y%)
+     - New plants created today
+     - Images escalated via IDK today
+     - Link to admin dashboard: `APP_URL/admin`
 
-**Files modified**:
-- `review-ui/server/routes/review.ts` (replace 501 stubs)
+2. Create `server/services/index.ts` — re-export `emailService`
 
-**Verification**: POST to each endpoint with valid data returns success. Check `review_decisions` table has entries.
+**Files created**: `server/services/email.ts`, `server/services/index.ts`
+
+**Verification**: Call `sendMagicLink` with test values; confirm email arrives (or mock log appears if SMTP not configured). Confirm template renders valid HTML.
 
 ---
 
-### T08 — Plants and Admin API Endpoints
+### T08 — Scheduled Tasks
 
 | Field | Value |
 |-------|-------|
 | **ID** | T08 |
 | **Agent** | `backend-api-developer` |
-| **Dependencies** | T04, T05 (for csv-candidates.json) |
-| **Estimated time** | 1 hour |
-| **Parallel with** | T06, T07 (T08 can start on the plants endpoints before T05 finishes; only csv-candidates needs T05) |
+| **Dependencies** | T07 (email service), T04 (schema for querying users) |
+| **Parallel with** | T06, T09 |
 
-**Objective**: Implement plant search, reference images, new plant creation, CSV candidate search, and admin import endpoints.
+**Objective**: Implement node-cron scheduled jobs for inactivity reminders and daily admin summary emails.
 
 **Actions**:
 
-1. **`GET /api/plants?search=avo`** in `server/routes/plants.ts`:
-   - If `search` param >= 2 chars: call `dal.searchPlants(query)`
-   - If no search or < 2 chars: call `dal.getAllPlants()`
-   - Return `200 { plants: Plant[] }`
+1. Create `server/lib/scheduler.ts`:
 
-2. **`GET /api/plants/:id/reference-images`** in `server/routes/plants.ts`:
-   - Construct directory path: `path.join(config.IMAGE_MOUNT_PATH, 'plants', id, 'images')`
-   - Read directory with `fs.readdirSync` (catch ENOENT → return empty array)
-   - Filter to image extensions: `.jpg`, `.jpeg`, `.png`, `.gif`
-   - Randomly select up to 6 (use Fisher-Yates shuffle, take first 6)
-   - Map to response objects:
-     ```json
-     {
-       "images": [
-         {
-           "path": "plants/avocado/images/alpha.jpg",
-           "thumbnail": ".thumbnails/plants/avocado/images/alpha.jpg"
-         }
-       ]
-     }
-     ```
-   - Return `200 { images: [...] }`
+   **Inactivity reminder job** (runs once per day at 09:00):
+   - Query: `SELECT * FROM users WHERE role='reviewer' AND (last_reminded_at IS NULL OR last_reminded_at < datetime('now', '-{DAYS} days')) AND (last_active_at IS NULL OR last_active_at < datetime('now', '-{DAYS} days'))` where DAYS = `config.REMINDER_INACTIVE_DAYS`
+   - For each matching user: call `emailService.sendInactivityReminder(user.email, user.first_name, daysSince)`
+   - Update `last_reminded_at = datetime('now')` for each user emailed
+   - Log count sent
 
-3. **`POST /api/plants/new`** in `server/routes/plants.ts`:
-   - Body: `{ common_name: string, botanical_name?: string, category?: string, aliases?: string, requested_by: string, first_image_path?: string }`
-   - Validate `common_name` and `requested_by` (400 if missing)
-   - Generate `generated_id`: lowercase, trim, replace spaces/special chars with hyphens, collapse consecutive hyphens
-   - Check for duplicates in both `plants` and `new_plant_requests` tables
-   - If duplicate: return `409 { error: "Plant already exists", existing_id: "..." }`
-   - Call `dal.createNewPlantRequest(data)`
-   - Return `201 { success: true, plant: { id: generated_id, common_name, ... } }`
+   **Daily summary job** (runs at 18:00 every day):
+   - Query stats for the current day:
+     - Decision counts by action (from `review_decisions` WHERE `decided_at >= date('now')`)
+     - Per-reviewer breakdown (JOIN users)
+     - Queue progress counts
+     - New plants created today
+     - IDK escalations today
+   - Call `emailService.sendDailySummary(stats)`
 
-4. **`GET /api/plants/csv-candidates?search=term`** in `server/routes/plants.ts`:
-   - Load `server/data/csv-candidates.json` (cache in module-level variable after first read)
-   - If file doesn't exist yet: return `200 { candidates: [] }`
-   - Filter by `fruit_type` or `scientific_name` containing search term (case-insensitive)
-   - Return `200 { candidates: CsvCandidate[] }`
+2. Create `server/lib/scheduler.ts`:
+   - Use `node-cron` syntax: `cron.schedule('0 9 * * *', inactivityJob)`
+   - Export `startScheduler()` function
+   - Both jobs catch and log errors without crashing
 
-5. **`POST /api/admin/import`** in `server/routes/admin.ts`:
-   - Body: `{ data_dir?: string, skip_thumbnails?: boolean }`
-   - Use `data_dir` from body or fall back to `config.IMAGE_MOUNT_PATH`
-   - Check if import is already running (module-level flag) → return `409 { error: "Import already in progress" }`
-   - Start import asynchronously (call `runImport()` from import script, don't await)
-   - Track progress in module-level state object
-   - Return `202 { status: "started" }`
+3. Call `startScheduler()` from `server/index.ts` on startup (after DB is initialized)
 
-6. **`GET /api/admin/import-status`** in `server/routes/admin.ts`:
-   - Return current import state:
-     ```json
-     {
-       "status": "idle|running|completed|error",
-       "progress": {
-         "plants": 140,
-         "swipe_queue": 11549,
-         "classify_queue": 8361,
-         "thumbnails": { "done": 5000, "total": 15403 }
-       },
-       "error": null,
-       "counts": { }
-     }
-     ```
+**Files created**: `server/lib/scheduler.ts`
+**Files modified**: `server/index.ts` (add `startScheduler()` call)
 
-**Files modified**:
-- `review-ui/server/routes/plants.ts` (replace 501 stubs)
-- `review-ui/server/routes/admin.ts` (replace 501 stubs)
-
-**Verification**: Plant search returns results. Reference images endpoint returns array. New plant creation succeeds and blocks duplicate. Admin import trigger and status check work.
+**Verification**: Set cron to `* * * * *` temporarily, confirm job runs without error. Confirm email functions are called with correct data shape.
 
 ---
 
-## Stage 3: UI Components (Parallel after T03 + T09)
+## Stage 3: Data Layer (Parallel after T04)
 
 ---
 
-### T09 — ShadCN Component Requirements Analysis
+### T09 — Data Access Layer
 
 | Field | Value |
 |-------|-------|
 | **ID** | T09 |
-| **Agent** | `main-session` |
-| **Dependencies** | T03 |
-| **Estimated time** | 20 min |
+| **Agent** | `backend-api-developer` |
+| **Dependencies** | T04 |
+| **Parallel with** | T05, T07, T08 |
 
-**Objective**: Analyze the PRD's 3 screens and determine which additional ShadCN components are needed, then install them all in one pass before parallel UI work begins.
+**Objective**: Build the typed data access layer using `better-sqlite3` prepared statements. All `reviewer` string parameters from the original design are replaced with `user_id: number` from session.
 
-**Input**: PRD at `d:/Sandbox/Homegrown/htfg_fruit/docs/plan/phase5-review-ui-prd.md`, UI/UX Design section.
+**Critical context**: HTFG Review UI — NOT Holualectrons. Synchronous `better-sqlite3` API. All write operations use transactions. IDK votes only increment `idk_count` if the user hasn't already cast an IDK for that image.
 
 **Actions**:
-1. Review all 3 screen wireframes in the PRD
-2. Identify additional ShadCN components beyond the T03 base set
-3. Install them:
-   ```bash
-   npx shadcn@latest add command radio-group select textarea sonner label form alert
-   ```
-4. Create `review-ui/design-docs/component-requirements.md` documenting:
-   - Component tree for each of the 3 screens
-   - Custom component list (SwipeCard, PlantSearch, QuickPicks, DiscardDialog, NewPlantDialog, etc.)
-   - State management approach: React Context for reviewer session, prop drilling for page-level state
-   - Mobile-first touch target minimums (44px)
 
-**Files created**:
-- `review-ui/design-docs/component-requirements.md`
+Create `server/lib/dal.ts` with the following method groups:
 
-**Verification**: All ShadCN components install without errors. Document covers all 3 screens.
+**Queue operations**:
+- `getNextPendingItem(queue: string, userId: number): QueueItem | null` — transaction: expire stale locks (locked_at < 5 min ago → set pending), find next `pending` item ordered by sort_key, set `status='in_progress'`, `locked_by=userId`, `locked_at=now`, return item
+- `releaseItem(id: number): void` — set `status='pending'`, clear locked_by, locked_at
+- `getQueueStats(): QueueStats` — aggregate counts per (queue × status), decision counts by action, today's counts by user, new_plant_requests rerun count
+- `expireStaleLocks(): number` — inline within getNextPendingItem (see above); also exported for cron/cleanup
+
+**Review operations** (all update `users.last_active_at = datetime('now')` for the acting user):
+- `confirmItem(imagePath: string, userId: number): void` — transaction: mark completed, insert review_decision with action='confirm', plant_id from suggested_plant_id || current_plant_id, update last_active_at
+- `rejectItem(imagePath: string, userId: number): void` — transaction: mark completed, insert decision with action='reject', if no existing classify-queue entry for this image then insert one with queue='classify', status='pending', update last_active_at
+- `classifyItem(imagePath: string, plantId: string, userId: number): void` — mark completed, insert decision action='classify', update last_active_at
+- `discardItem(imagePath: string, category: string, notes: string | null, userId: number): void` — mark completed, insert decision action='discard', update last_active_at
+- `idkItem(imagePath: string, userId: number): { idk_count: number, escalated: boolean }` — transaction:
+  - Check if user already cast IDK for this image: `SELECT id FROM review_decisions WHERE image_path=? AND user_id=? AND action='idk'`
+  - If already voted → return `{ idk_count: current, escalated: false }` (no-op)
+  - Insert review_decision with action='idk'
+  - Increment `idk_count` on review_queue
+  - If new `idk_count >= 3` AND queue='swipe': update `status='flagged_idk'`, queue='classify'
+  - Update last_active_at
+  - Return `{ idk_count: new_count, escalated: new_count >= 3 }`
+
+**Plant operations**:
+- `searchPlants(query: string): Plant[]` — `SELECT ... FROM plants WHERE common_name LIKE ? OR botanical_names LIKE ? OR aliases LIKE ? UNION ... FROM new_plant_requests WHERE common_name LIKE ? AND status IN ('pending','approved')` — both queries use `'%' || query || '%'`; prefix matches ranked first with `ORDER BY CASE WHEN common_name LIKE ? THEN 0 ELSE 1 END`; LIMIT 10
+- `getAllPlants(): Plant[]`
+- `getPlantById(id: string): Plant | null`
+- `createNewPlantRequest(data): NewPlantRequest` — generate slug from common_name, INSERT
+
+**User/stats operations**:
+- `getUserByEmail(email: string): User | null`
+- `getUserById(id: number): User | null`
+- `createUser(email, firstName, lastName): User`
+- `upsertAdminUser(email, firstName): User`
+- `updateLastActive(userId: number): void`
+- `getUserStats(userId: number): { today_count, all_time_count, rank }` — rank computed as COUNT of users with higher all-time count + 1
+- `getLeaderboard(fullNames: boolean): LeaderboardEntry[]` — if fullNames=false: return `first_name[0] + '.' + last_name[0] + '.'`; if fullNames=true: return full names. Query from review_decisions JOIN users, COUNT by user.
+- `getAdminStats(): AdminStats` — queue counts, decision breakdown, today's activity by user (full names), new plant rerun count, IDK-flagged count
+- `getAdminLog(page, limit, filters): { rows: CompletionLogRow[], total: number }` — paginated, filterable
+- `getIdkFlagged(): QueueItem[]` — WHERE status='flagged_idk' OR (queue='classify' AND idk_count >= 3)
+- `getAllUsers(): User[]`
+
+**Import operations**:
+- `bulkInsertQueueItems(items: Partial<QueueItem>[]): number` — transaction, INSERT OR IGNORE
+- `bulkInsertPlants(plants: Plant[]): number` — transaction, INSERT OR REPLACE
+- `getImportCounts(): { plants, swipe, classify, total }`
+
+**Files created**: `server/lib/dal.ts`
+
+**Verification**: Unit test key methods against in-memory DB (tested in T23). Manual: insert test user, IDK an item twice from same user → count only increments once; at 3 unique users, item moves to classify queue.
 
 ---
 
-### T10 — Shared Components
+### T10 — Data Import Script
 
 | Field | Value |
 |-------|-------|
 | **ID** | T10 |
 | **Agent** | `backend-api-developer` |
 | **Dependencies** | T09 |
-| **Estimated time** | 1 hour |
 | **Parallel with** | T11, T12, T13 |
 
-**Objective**: Build the layout shell, bottom navigation, session entry, image components, and shared hooks used across all screens.
+**Objective**: Build the standalone import script that seeds the admin user, reads Phase 4/4B JSON files, computes sort keys, generates thumbnails, and populates SQLite.
 
-**Actions**:
+**This task is largely unchanged from the previous design** except:
+- Step 0 (NEW): Create admin user from env vars before queue import
+  - `dal.upsertAdminUser(config.ADMIN_EMAIL, 'Admin')`
+  - Log "Admin user seeded: {email}"
+- `locked_by` is `null` (INTEGER, not a string) in all inserted records
+- Export `runImport(options)` for programmatic use by admin API
 
-1. **`src/components/layout/AppShell.tsx`**:
-   - Header bar: "HTFG Image Review" title (left), reviewer name (right), queue counts badge
-   - Main content area (`children` prop)
-   - Fixed bottom navigation bar
-   - Mobile-first: full-width, max-w-lg on desktop centered
-   - Accepts `title` and `subtitle` props for dynamic header text
+**Source JSON files** (all in `content/parsed/`):
+- `phase4b_inferences.json` → key `inferences`, 6,518 items → queue='swipe', with inferred_plant_id/confidence/reasoning
+- `phase4_image_manifest.json` → key `files`, 15,403 items → filter plant_id != null → 5,031 records → queue='swipe', confidence='auto'
+- `phase4b_still_unclassified.json` → key `files`, 8,361 items → queue='classify'
+- `phase4b_new_plants.json` → key `plants`, 72 items → write to `server/data/csv-candidates.json`
+- `plant_registry.json` → key `plants`, 140 items → populate plants table
 
-2. **`src/components/layout/BottomNav.tsx`**:
-   - Three tabs: Swipe (ArrowLeftRight icon), Classify (Tag icon), Dashboard (BarChart3 icon)
-   - Active tab highlighted with accent color
-   - Uses `useLocation` from react-router-dom for active state
-   - Uses `useNavigate` for tab clicks
-   - Touch targets >= 48px height
-   - Fixed to bottom of viewport, z-index above content
+**Sort key computation**: group swipe items by suggested_plant_id; rank plant groups by best confidence (high=1,medium=2,low=3,auto=4); sort_key = `{group_rank_padded}:{plant_id}:{confidence_rank}:{image_path}`. Classify sort_key = `classify:{first_dir}:{image_path}`.
 
-3. **`src/components/session/SessionEntry.tsx`**:
-   - ShadCN Dialog (non-dismissable: no close button, no backdrop click dismiss)
-   - "Welcome to HTFG Image Review" title
-   - ShadCN Input for reviewer name
-   - "Start Reviewing" ShadCN Button (disabled when input empty)
-   - On submit: stores name in localStorage key `htfg_reviewer_name`
+**Thumbnail generation**: Sharp `.resize({ width: 400, withoutEnlargement: true }).jpeg({ quality: 80 })` → `{data_dir}/.thumbnails/{relative_dest}`. Skip if exists. Log every 500.
 
-4. **`src/components/images/LazyImage.tsx`**:
-   - Props: `src: string`, `thumbnailSrc?: string`, `alt: string`, `className?: string`
-   - Renders thumbnail by default
-   - Loads full-size on click/tap
-   - ShadCN Skeleton placeholder while loading
-   - Broken image fallback (gray box with icon)
+**Final counts expected**: 140 plants, 11,549 swipe items, 8,361 classify items (19,910 total).
 
-5. **`src/components/images/ReferencePhotoGrid.tsx`**:
-   - Props: `plantId: string`
-   - Fetches from `/api/plants/${plantId}/reference-images`
-   - Renders 3-column grid of LazyImage thumbnails
-   - Loading state: 6 skeleton squares
-   - Empty state: "No reference photos available"
-   - Error state: "Could not load reference photos"
+**Files created**: `server/scripts/import.ts`, `server/data/csv-candidates.json` (at runtime)
 
-6. **`src/components/ui/ConfidenceBadge.tsx`**:
-   - Props: `confidence: 'high' | 'medium' | 'low' | 'auto'`
-   - high: green, "High Confidence", 3 dots
-   - medium: amber, "Medium Confidence", 2 dots
-   - low: red, "Low Confidence", 1 dot
-   - auto: blue, "Auto", checkmark icon
-   - Built on ShadCN Badge with custom variant classes
-
-7. **`src/hooks/useSession.ts`**:
-   - Reads/writes `htfg_reviewer_name` from localStorage
-   - Returns `{ name: string | null, setName: (n: string) => void, isReady: boolean }`
-
-8. **`src/types/api.ts`**:
-   - TypeScript interfaces matching all API response shapes: `QueueItem`, `QueueStats`, `Plant`, `CsvCandidate`, `ReferenceImage`, `NewPlantData`
-
-**Files created**:
-- `review-ui/src/components/layout/AppShell.tsx`
-- `review-ui/src/components/layout/BottomNav.tsx`
-- `review-ui/src/components/session/SessionEntry.tsx`
-- `review-ui/src/components/images/LazyImage.tsx`
-- `review-ui/src/components/images/ReferencePhotoGrid.tsx`
-- `review-ui/src/components/ui/ConfidenceBadge.tsx`
-- `review-ui/src/hooks/useSession.ts`
-- `review-ui/src/types/api.ts`
-
-**Verification**: Each component renders in isolation. AppShell layout correct on 375px mobile viewport. SessionEntry stores name in localStorage.
+**Verification**: `npm run import -- --skip-thumbnails` with IMAGE_MOUNT_PATH set. Confirm counts match.
 
 ---
 
-### T11 — Swipe Confirmation Screen
+### T11 — Queue API Endpoints
 
 | Field | Value |
 |-------|-------|
 | **ID** | T11 |
 | **Agent** | `backend-api-developer` |
-| **Dependencies** | T09, T10 |
-| **Estimated time** | 1.5 hours |
-| **Parallel with** | T12, T13 |
+| **Dependencies** | T09, T05 (auth middleware must be applied before these routes work) |
+| **Parallel with** | T10, T12, T13 |
 
-**Objective**: Build the Swipe Confirmation screen (Part B) with gesture handling, card transitions, and detail mode.
+**Objective**: Implement the 3 queue management endpoints. User identity comes from `req.user` (session), not a query parameter.
 
-**Input**: PRD Screen 1 wireframes (lines 201–276 in PRD). Shared components from T10.
+**Actions** (replace 501 stubs in `server/routes/queue.ts`):
 
-**Actions**:
+1. **`GET /api/queue/next?type=swipe|classify`**:
+   - `requireAuth` already applied at router level in server/index.ts
+   - Validate `type` is 'swipe' or 'classify' (400 if not)
+   - Call `dal.getNextPendingItem(type, req.user.id)`
+   - If null: return `200 { item: null, remaining: 0 }`
+   - Augment item: JOIN plants table to get `current_plant_name` and `suggested_plant_name`
+   - Return `200 { item: augmented_item, remaining: count }`
 
-1. **`src/pages/SwipePage.tsx`**:
-   - Wrapped in AppShell with title "Swipe Review"
-   - State: `currentItem: QueueItem | null`, `isLoading: boolean`, `remaining: number`, `isExpanded: boolean`
-   - Progress counter in header subtitle: "3 of 42 remaining"
-   - Empty queue state: card with "All swipe reviews complete!" message
-   - Error state: "Failed to load" with retry button
-   - On confirm/reject: call handler, fetch next item
+2. **`GET /api/queue/stats`**:
+   - Call `dal.getQueueStats()`
+   - Return `200 { stats }`
 
-2. **`src/components/swipe/SwipeCard.tsx`**:
-   - Uses `useSwipeable` from `react-swipeable`:
-     - `onSwipedRight` (delta > 100) → calls `onConfirm`
-     - `onSwipedLeft` (delta > 100) → calls `onReject`
-     - `onSwipedUp` (delta > 50) → calls `onExpand`
-     - `onSwiping` → applies visual feedback (rotation, color overlay)
-   - Card content:
-     - LazyImage (fills card width, aspect-ratio preserved, max-height 60vh)
-     - Plant name (large, bold): `suggested_plant_name`
-     - ConfidenceBadge
-     - Hint text (muted): "Swipe or use buttons below"
-   - Visual feedback while swiping:
-     - Card translates horizontally
-     - Slight rotation (max ±15 degrees)
-     - Green overlay on right swipe, red overlay on left swipe
-     - Overlay opacity proportional to swipe distance
-   - Props: `item: QueueItem, plantName: string, onConfirm, onReject, onExpand`
+3. **`POST /api/queue/:id/release`**:
+   - Validate id is integer (400 if not)
+   - Call `dal.releaseItem(id)`
+   - Return `200 { success: true }`
 
-3. **`src/components/swipe/SwipeActions.tsx`**:
-   - Two large buttons side by side:
-     - "REJECT" (left, destructive, X icon)
-     - "CONFIRM" (right, green, Check icon)
-   - Both disabled while `isSubmitting` is true
-   - Min height 48px touch targets
-
-4. **`src/components/swipe/DetailPanel.tsx`**:
-   - Slides up from bottom (CSS transform transition 250ms) when `expanded` prop is true
-   - Scrollable content:
-     - "Match Details": match_type, reasoning, source_path
-     - "Reference Photos": ReferencePhotoGrid for matched plant
-   - Sticky hint at top: chevron-down icon + "Scroll up to return"
-   - On scroll to top or tap hint: calls `onCollapse`
-   - Props: `item: QueueItem, plantId: string, onCollapse, expanded: boolean`
-
-5. **Card transition animations** (CSS):
-   - On decision: card slides out (left for reject, right for confirm) + fade (200ms)
-   - New card fades in from center (150ms)
-   - State variable drives transform/opacity
-
-**Files created**:
-- `review-ui/src/pages/SwipePage.tsx`
-- `review-ui/src/components/swipe/SwipeCard.tsx`
-- `review-ui/src/components/swipe/SwipeActions.tsx`
-- `review-ui/src/components/swipe/DetailPanel.tsx`
-
-**Verification**: Page renders with mock item. Swipe gestures trigger callbacks. Card visual feedback works on 375px viewport. Detail panel slides up/down.
+**Files modified**: `server/routes/queue.ts`
 
 ---
 
-### T12 — Classify Screen
+### T12 — Review Action API Endpoints
 
 | Field | Value |
 |-------|-------|
 | **ID** | T12 |
 | **Agent** | `backend-api-developer` |
-| **Dependencies** | T09, T10 |
-| **Estimated time** | 1.5 hours |
-| **Parallel with** | T11, T13 |
+| **Dependencies** | T09, T05 |
+| **Parallel with** | T10, T11, T13 |
 
-**Objective**: Build the Classify screen (Part A) with plant search autocomplete, quick picks, discard dialog, and new plant dialog.
+**Objective**: Implement the 5 review action endpoints. All derive `user_id` from `req.user.id` (no `reviewer` in request body).
 
-**Input**: PRD Screen 2 wireframes (lines 278–387 in PRD). Shared components from T10.
+**Actions** (replace 501 stubs in `server/routes/review.ts`):
 
-**Actions**:
+1. **`POST /api/review/confirm`** — body: `{ image_path }` → `dal.confirmItem(image_path, req.user.id)` → `200 { success: true }`
 
-1. **`src/pages/ClassifyPage.tsx`**:
-   - Wrapped in AppShell with title "Classify"
-   - State: `currentItem`, `isLoading`, `remaining`, `selectedPlant`
-   - LazyImage display, source path text, PlantSearch, QuickPicks, ClassifyActions
-   - Empty queue state: "All images classified!"
+2. **`POST /api/review/reject`** — body: `{ image_path }` → `dal.rejectItem(image_path, req.user.id)` → `200 { success: true }`
 
-2. **`src/components/classify/PlantSearch.tsx`**:
-   - Input with search icon, placeholder: "Search plants..."
-   - Debounced API call (300ms) to `/api/plants?search=query` (min 2 chars)
-   - Dropdown results: common_name (bold), botanical_name (muted subtitle)
-   - Items from `new_plant_requests` marked with "New" badge
-   - On select: calls `onSelect(plant)` callback, closes dropdown
-   - Clear button to reset
-   - Props: `onSelect: (plant: Plant) => void, selectedPlant: Plant | null`
+3. **`POST /api/review/classify`** — body: `{ image_path, plant_id }`:
+   - Verify plant_id exists in `plants` OR `new_plant_requests` (404 if not found)
+   - `dal.classifyItem(image_path, plant_id, req.user.id)` → `200 { success: true }`
 
-3. **`src/components/classify/QuickPicks.tsx`**:
-   - Uses `useRecentPlants` hook (see T10 note — implement in this task if not in T10)
-   - Horizontal scrollable row of ShadCN Buttons (outline variant)
-   - Label: "Recent:"
-   - Hidden when no recent plants
-   - Props: `onSelect: (plant: Plant) => void`
+4. **`POST /api/review/discard`** — body: `{ image_path, category, notes? }`:
+   - Validate category ∈ {event, graphics, travel, duplicate, poor_quality} (400 if invalid)
+   - `dal.discardItem(image_path, category, notes || null, req.user.id)` → `200 { success: true }`
 
-4. **`src/components/classify/DiscardDialog.tsx`**:
-   - ShadCN Dialog
-   - Title: "Why isn't this a plant?"
-   - ShadCN RadioGroup with 5 options: event, graphics, travel, duplicate, poor_quality
-   - Optional ShadCN Textarea for notes
-   - "Discard" button disabled until category selected
-   - Props: `open, onOpenChange, onDiscard: (data: { category, notes }) => void, isSubmitting`
+5. **`POST /api/review/idk`** — body: `{ image_path }`:
+   - `const result = dal.idkItem(image_path, req.user.id)`
+   - Return `200 { idk_count: result.idk_count, escalated: result.escalated }`
+   - Frontend uses `escalated` to optionally show a toast ("This image has been escalated for expert review")
 
-5. **`src/components/classify/NewPlantDialog.tsx`**:
-   - ShadCN Dialog
-   - Form: Common Name (required), Botanical Name (optional), Category (ShadCN Select), Aliases (text)
-   - As user types Common Name (debounced 500ms): query `/api/plants/csv-candidates?search=name`
-   - If match found: info box pre-populating botanical name
-   - Live slug preview below Common Name field
-   - Warning: "This will flag Phase 4B for re-run"
-   - Props: `open, onOpenChange, onCreatePlant: (data) => void, isSubmitting`
-
-6. **`src/components/classify/ClassifyActions.tsx`**:
-   - Vertical stack of 4 buttons:
-     - "Assign to Plant" (primary, disabled when no plant selected)
-     - "New Plant Entry" (secondary, opens NewPlantDialog)
-     - "Not a Plant" (destructive, opens DiscardDialog)
-     - "Skip" (ghost, releases lock, loads next)
-   - Manages dialog open states
-
-7. **`src/hooks/useRecentPlants.ts`** (if not created in T10):
-   - localStorage key: `htfg_recent_plants`
-   - `addRecent(plant: Plant)` — prepend, deduplicate by id, cap at 6
-   - `recent: Plant[]`
-
-**Files created**:
-- `review-ui/src/pages/ClassifyPage.tsx`
-- `review-ui/src/components/classify/PlantSearch.tsx`
-- `review-ui/src/components/classify/QuickPicks.tsx`
-- `review-ui/src/components/classify/DiscardDialog.tsx`
-- `review-ui/src/components/classify/NewPlantDialog.tsx`
-- `review-ui/src/components/classify/ClassifyActions.tsx`
-- `review-ui/src/hooks/useRecentPlants.ts`
-
-**Verification**: All dialogs open/close. Plant search renders results. Discard requires category. New plant slug preview updates live.
+**Files modified**: `server/routes/review.ts`
 
 ---
 
-### T13 — Dashboard Screen
+### T13 — Plants, Admin, and User Stats API Endpoints
 
 | Field | Value |
 |-------|-------|
 | **ID** | T13 |
 | **Agent** | `backend-api-developer` |
-| **Dependencies** | T09, T10 |
-| **Estimated time** | 1 hour |
-| **Parallel with** | T11, T12 |
+| **Dependencies** | T09, T05 |
+| **Parallel with** | T10, T11, T12 |
 
-**Objective**: Build the Dashboard screen with progress stats, activity feed, decision breakdown, re-run banner, and leaderboard.
-
-**Input**: PRD Screen 3 wireframes (lines 389–443 in PRD).
+**Objective**: Implement plant search, reference images, new plant creation, all admin endpoints, the public leaderboard endpoint, and current user stats.
 
 **Actions**:
 
-1. **`src/pages/DashboardPage.tsx`**:
-   - Wrapped in AppShell
-   - Fetches stats from `/api/queue/stats` on mount
-   - Polls every 30 seconds (cleanup on unmount)
-   - Loading skeleton state while first fetch is in-flight
+**`server/routes/plants.ts`**:
+1. `GET /api/plants?search=` — `dal.searchPlants(query)` (min 2 chars) or `dal.getAllPlants()` → `200 { plants }`
+2. `GET /api/plants/:id/reference-images` — read plant images dir, Fisher-Yates shuffle, return up to 6 → `200 { images: [{ path, thumbnail }] }`
+3. `POST /api/plants/new` — body: `{ common_name, botanical_name?, category?, aliases? }` → generate slug, check duplicates (409 if exists), `dal.createNewPlantRequest(data, req.user.id)` → `201 { plant }`
+4. `GET /api/plants/csv-candidates?search=` — load cached `server/data/csv-candidates.json`, filter by search → `200 { candidates }`
 
-2. **`src/components/dashboard/OverallProgress.tsx`**:
-   - ShadCN Card: "Overall Progress" heading, large ShadCN Progress bar, "{completed} / {total} reviewed", percentage text
-   - Props: `total: number, completed: number`
+**`server/routes/admin.ts`** (all require `requireAdmin`):
+5. `GET /api/admin/stats` — `dal.getAdminStats()` → `200 { stats }`
+6. `GET /api/admin/leaderboard` — `dal.getLeaderboard(true)` (full names) → `200 { leaderboard }`
+7. `GET /api/admin/log?page=&limit=&action=&user_id=&date_from=&date_to=` — `dal.getAdminLog(page, limit, filters)` → `200 { rows, total, page, limit }`
+8. `GET /api/admin/idk-flagged` — `dal.getIdkFlagged()` → `200 { images }`
+9. `GET /api/admin/users` — `dal.getAllUsers()` → `200 { users }`
+10. `POST /api/admin/import` — trigger async import, return `202 { status: 'started' }`
+11. `GET /api/admin/import-status` — return module-level import progress state
 
-3. **`src/components/dashboard/QueueProgress.tsx`**:
-   - Two ShadCN Cards side by side: Swipe Queue and Classify Queue
-   - Each shows: progress bar, count text, percentage
-   - Props: `swipe: { total, completed }, classify: { total, completed }`
+**`server/routes/leaderboard.ts`** (requires `requireAuth`):
+12. `GET /api/leaderboard` — `dal.getLeaderboard(false)` (initials only) → `200 { leaderboard }`
 
-4. **`src/components/dashboard/ActivityFeed.tsx`**:
-   - ShadCN Card: "Today's Activity" heading
-   - List of reviewer names with today's counts
-   - Total at bottom
-   - Empty state: "No activity today yet"
-   - Props: `todayStats: { total, by_reviewer: { name, count }[] }`
+**`server/routes/me.ts`** (requires `requireAuth`):
+13. `GET /api/me/stats` — `dal.getUserStats(req.user.id)` → `200 { today_count, all_time_count, rank }`
 
-5. **`src/components/dashboard/DecisionBreakdown.tsx`**:
-   - ShadCN Card: 4 rows with icon, label, count
-   - Checkmark (green) Confirmed, X (red) Rejected, Tag (blue) Classified, Trash (gray) Discarded
-   - Props: `decisions: { confirm, reject, classify, discard }`
-
-6. **`src/components/dashboard/RerunBanner.tsx`**:
-   - If `>= 5`: amber warning banner "Phase 4B Re-run Ready — 5/5 new plants (threshold reached)"
-   - If `> 0 and < 5`: subtle info text "{count}/5 new plants toward re-run threshold"
-   - If `0`: not rendered
-   - Props: `newPlantsPending: number`
-
-7. **`src/components/dashboard/Leaderboard.tsx`**:
-   - ShadCN Card: "Top Reviewers (All Time)" heading
-   - Numbered list, rank + name + count (right-aligned)
-   - Top 3 get subtle gold/silver/bronze styling
-   - Props: `reviewers: { name, count }[]`
-
-**Files created**:
-- `review-ui/src/pages/DashboardPage.tsx`
-- `review-ui/src/components/dashboard/OverallProgress.tsx`
-- `review-ui/src/components/dashboard/QueueProgress.tsx`
-- `review-ui/src/components/dashboard/ActivityFeed.tsx`
-- `review-ui/src/components/dashboard/DecisionBreakdown.tsx`
-- `review-ui/src/components/dashboard/RerunBanner.tsx`
-- `review-ui/src/components/dashboard/Leaderboard.tsx`
-
-**Verification**: Dashboard renders with mock data. Progress bars fill correctly. Re-run banner shows at threshold. Leaderboard displays ranked list.
+**Files modified**: `server/routes/plants.ts`, `server/routes/admin.ts`, `server/routes/leaderboard.ts`, `server/routes/me.ts`
 
 ---
 
-## Stage 4: Integration, Testing, and Polish
+## Stage 4: UI Components (Parallel after T03 + T14)
 
 ---
 
-### T14 — API Client Layer
+### T14 — ShadCN Component Requirements Analysis
 
 | Field | Value |
 |-------|-------|
 | **ID** | T14 |
-| **Agent** | `backend-api-developer` |
-| **Dependencies** | T06, T07, T08, T10 (for types) |
-| **Estimated time** | 45 min |
+| **Agent** | `main-session` |
+| **Dependencies** | T03 |
 
-**Objective**: Create a typed fetch wrapper for all API endpoints.
+**Objective**: Analyze all 5 screens (Login/Register, Swipe, Classify, Leaderboard, Admin Dashboard) and install any remaining ShadCN components not already added in T03.
 
 **Actions**:
-
-1. Create `src/lib/api.ts`:
-   ```typescript
-   // Base fetch wrapper with error handling
-   async function fetchApi<T>(path: string, options?: RequestInit): Promise<T>
-
-   // Queue
-   export async function getNextQueueItem(type, reviewer): Promise<{ item: QueueItem | null, remaining: number }>
-   export async function getQueueStats(): Promise<QueueStats>
-   export async function releaseQueueItem(id: number): Promise<void>
-
-   // Review
-   export async function confirmReview(imagePath, reviewer): Promise<void>
-   export async function rejectReview(imagePath, reviewer): Promise<void>
-   export async function classifyReview(imagePath, plantId, reviewer): Promise<void>
-   export async function discardReview(imagePath, category, notes, reviewer): Promise<void>
-
-   // Plants
-   export async function searchPlants(query): Promise<Plant[]>
-   export async function getReferenceImages(plantId): Promise<{ path, thumbnail }[]>
-   export async function createNewPlant(data): Promise<{ id, common_name }>
-   export async function searchCsvCandidates(query): Promise<CsvCandidate[]>
+1. Review PRD UI/UX section for all screens
+2. Install any missing components:
+   ```bash
+   npx shadcn@latest add table scroll-area popover
    ```
-
-2. Create `src/lib/ApiError.ts`:
-   - Custom error class with `status: number`, `message: string`
-   - `fetchApi` throws `ApiError` on non-2xx responses
-   - Wraps network errors with status 0
-
-**Files created**:
-- `review-ui/src/lib/api.ts`
-- `review-ui/src/lib/ApiError.ts`
-
-**Verification**: TypeScript compiles without errors. Each exported function has correct return type.
+3. Create `review-ui/design-docs/component-requirements.md` documenting:
+   - Component tree per screen
+   - Custom components needed: `AuthGuard`, `SwipeCard`, `PlantSearch`, `QuickPicks`, `DiscardDialog`, `NewPlantDialog`, `CompletionLogTable`, `IdkFlaggedList`
+   - State management: React Context for `AuthContext` (user, loading, logout), prop-drilling for page state
+   - Role-based routing: admin tab hidden from reviewers
+   - Mobile-first touch target minimums (44px)
 
 ---
 
-### T15 — Routing and State Wiring
+### T15 — Shared Components and Auth Infrastructure
 
 | Field | Value |
 |-------|-------|
 | **ID** | T15 |
-| **Agent** | `main-session` |
-| **Dependencies** | T14, T11, T12, T13 |
-| **Estimated time** | 1 hour |
+| **Agent** | `backend-api-developer` |
+| **Dependencies** | T14 |
+| **Parallel with** | T16, T17, T18, T19, T20 |
 
-**Objective**: Wire up React Router, connect all pages to the real API client, ensure end-to-end data flow.
+**Objective**: Build the layout shell, auth context, route guards, role-aware navigation, and shared image components.
 
 **Actions**:
 
-1. Update `src/App.tsx`:
-   - Import BrowserRouter, Routes, Route, Navigate
-   - Import `useSession` hook
-   - Render `SessionEntry` dialog if `!session.isReady`
-   - Routes: `/` → `/swipe`, `/swipe` → SwipePage, `/classify` → ClassifyPage, `/dashboard` → DashboardPage
-   - Add Sonner `<Toaster />` to root
+1. **`src/contexts/AuthContext.tsx`**:
+   - On mount: call `GET /api/auth/me` to check session
+   - State: `user: User | null`, `isLoading: boolean`
+   - Provides: `user`, `isLoading`, `logout()` (calls POST /api/auth/logout, clears user, navigates to /login)
+   - `AuthProvider` wraps the entire app
 
-2. Wire `SwipePage.tsx` to real API:
-   - `api.getNextQueueItem('swipe', session.name)` on mount and after each decision
-   - On confirm: `await api.confirmReview(item.image_path, session.name)`, then fetch next
-   - On reject: `await api.rejectReview(item.image_path, session.name)`, then fetch next
-   - Loading states during API calls (disable SwipeActions buttons)
-   - Error toast on failure
+2. **`src/components/auth/AuthGuard.tsx`**:
+   - If `isLoading`: show full-page skeleton
+   - If `!user`: redirect to `/login`
+   - Otherwise: render children
+   - Props: `children: ReactNode`
 
-3. Wire `ClassifyPage.tsx` to real API:
-   - `api.getNextQueueItem('classify', session.name)` for loading items
-   - `api.searchPlants(query)` in PlantSearch
-   - On assign: `await api.classifyReview(...)`, update recent plants, fetch next
-   - On discard: `await api.discardReview(...)`, fetch next
-   - On new plant: `await api.createNewPlant(data)` then `await api.classifyReview(...)`, fetch next
-   - On skip: `await api.releaseQueueItem(item.id)`, fetch next
-   - `api.searchCsvCandidates(query)` in NewPlantDialog
+3. **`src/components/auth/AdminGuard.tsx`**:
+   - Same as AuthGuard but also checks `user.role === 'admin'`
+   - If not admin: redirect to `/swipe`
 
-4. Wire `DashboardPage.tsx` to real API:
-   - `api.getQueueStats()` on mount and 30s interval
-   - Map response fields to component props
+4. **`src/components/layout/AppShell.tsx`**:
+   - Header: "HTFG Image Review" (left), user's `first_name` (right)
+   - Fixed bottom navigation (see BottomNav)
+   - Accepts `title`, `subtitle` props
 
-5. End-to-end smoke test (manual in browser):
-   - Enter name → swipe screen loads with real item
-   - Swipe confirm/reject works
-   - Navigate to classify → rejected item appears
-   - Assign plant → item classified
-   - Dashboard shows updated counts
+5. **`src/components/layout/BottomNav.tsx`**:
+   - Tabs: Swipe (`/swipe`), Classify (`/classify`), Leaderboard (`/leaderboard`)
+   - If `user.role === 'admin'`: show fourth tab Admin (`/admin`)
+   - Active state via `useLocation`
+   - Min height 48px
 
-**Files modified**:
-- `review-ui/src/App.tsx`
-- `review-ui/src/pages/SwipePage.tsx`
-- `review-ui/src/pages/ClassifyPage.tsx`
-- `review-ui/src/pages/DashboardPage.tsx`
+6. **`src/components/images/LazyImage.tsx`** and **`ReferencePhotoGrid.tsx`** — same as previous design
 
-**Verification**: Full flow works end-to-end with real API and real data.
+7. **`src/components/ui/ConfidenceBadge.tsx`** — high/medium/low/auto variants
+
+8. **`src/hooks/useCurrentUser.ts`** — shorthand for `useContext(AuthContext).user`
+
+9. **`src/types/api.ts`** — TypeScript interfaces matching all API responses: `User`, `QueueItem` (with `idk_count`), `QueueStats`, `Plant`, `CsvCandidate`, `ReferenceImage`, `LeaderboardEntry`, `UserStats`, `AdminStats`, `CompletionLogRow`
+
+**Files created**: All above files
 
 ---
 
-### T16 — Backend API Tests
+### T16 — Login and Registration Screens
 
 | Field | Value |
 |-------|-------|
 | **ID** | T16 |
-| **Agent** | `test-writer` |
-| **Dependencies** | T06, T07, T08 |
-| **Estimated time** | 1.5 hours |
-| **Parallel with** | T14, T15 |
+| **Agent** | `backend-api-developer` |
+| **Dependencies** | T14, T06 (auth endpoints must be stubbed/available) |
+| **Parallel with** | T15, T17, T18, T19, T20 |
 
-**Objective**: Write comprehensive API integration tests using Vitest + Supertest against an in-memory SQLite database.
-
-**Critical context for agent**: HTFG Review UI project. Backend uses Express + better-sqlite3 (no NocoDB). Tests should use an in-memory SQLite database (`:memory:`), seeded fresh before each suite.
+**Objective**: Build the Login, Registration, and Admin Login screens with magic link flow.
 
 **Actions**:
 
-1. Install test dependencies:
-   ```bash
-   npm install -D vitest supertest @types/supertest
-   ```
+1. **`src/pages/LoginPage.tsx`** (`/login`):
+   - ShadCN Card centered on screen (no AppShell — unauthenticated)
+   - "HTFG Image Review" title
+   - Email input + "Send Login Link" button
+   - On submit: POST `/api/auth/login`
+   - Transitions to `CheckEmailPage` on success
+   - "Need an account? Register" link to `/register`
+   - Error state: "No account found for this email. Register first?"
 
-2. Create `server/__tests__/setup.ts`:
-   - Create in-memory SQLite DB
-   - Run schema creation
-   - Seed with test data: 5 plants, 10 swipe queue items (2 plants, mixed confidence), 5 classify queue items
-   - Export configured Express app and reset function
+2. **`src/pages/RegisterPage.tsx`** (`/register`):
+   - Same centered card
+   - Fields: Email, First Name, Last Name
+   - "Create Account & Send Login Link" button
+   - On submit: POST `/api/auth/register`
+   - Transitions to `CheckEmailPage` on success
+   - "Already have an account? Sign in" link to `/login`
+   - Error state: "Email already registered"
 
-3. Create `server/__tests__/queue.test.ts`:
-   - `GET /next?type=swipe&reviewer=Test` returns pending item with `status: 'in_progress'`
-   - Second call returns different item (soft lock)
-   - Stale lock (> 5 min) is overwritten by new request
-   - `GET /stats` returns correct aggregate counts
-   - `POST /:id/release` releases lock
-   - Missing `type` or `reviewer` → 400
+3. **`src/pages/CheckEmailPage.tsx`** (shown after login or register):
+   - Large mail icon, "Check your email!" heading
+   - "We sent a login link to {email}. The link expires in 15 minutes."
+   - "Resend email" link (re-triggers the login/register request)
+   - This is a client-side state transition (no route needed), or `/check-email?email=...`
 
-4. Create `server/__tests__/review.test.ts`:
-   - Confirm: marks completed, creates review_decision with action='confirm'
-   - Reject: marks completed, creates decision, adds item to classify queue
-   - Classify with valid plant_id: marks completed
-   - Classify with non-existent plant_id: 404
-   - Discard with valid category: marks completed
-   - Discard with invalid category: 400
-   - Missing required fields: 400
+4. **`src/pages/AdminLoginPage.tsx`** (`/admin/login`):
+   - Separate card: "Admin Login"
+   - Email + Password fields
+   - On submit: POST `/api/auth/admin/login`
+   - On success: navigate to `/admin`
+   - Error state: "Invalid credentials"
 
-5. Create `server/__tests__/plants.test.ts`:
-   - `GET /plants?search=avo` returns avocado
-   - `GET /plants?search=xx` returns empty array
-   - `GET /plants` returns all seeded plants
-   - `POST /plants/new` creates entry, appears in search
-   - Duplicate common_name → 409
-   - `GET /plants/:id/reference-images` returns array (mock fs)
+5. **Loading state** during all auth form submissions: disable form, show spinner on button
 
-6. Create `server/__tests__/dal.test.ts`:
-   - Items returned in sort_key order
-   - `confirmItem` uses suggested_plant_id for the decision record
-   - `rejectItem` creates classify queue entry only if not already present
-   - `expireStaleLocks` updates items with locked_at > 5 min ago
-   - `bulkInsertQueueItems` is idempotent (INSERT OR IGNORE)
-   - `bulkInsertQueueItems` handles 1000+ items in a single transaction
-
-7. Create `vitest.config.ts` (server environment: node)
-
-**Files created**:
-- `review-ui/server/__tests__/setup.ts`
-- `review-ui/server/__tests__/queue.test.ts`
-- `review-ui/server/__tests__/review.test.ts`
-- `review-ui/server/__tests__/plants.test.ts`
-- `review-ui/server/__tests__/dal.test.ts`
-- `review-ui/vitest.config.ts`
-
-**Verification**: `npx vitest run server/` — all tests pass.
+**Files created**: `src/pages/LoginPage.tsx`, `src/pages/RegisterPage.tsx`, `src/pages/CheckEmailPage.tsx`, `src/pages/AdminLoginPage.tsx`
 
 ---
 
-### T17 — Frontend Component Tests
+### T17 — Swipe Confirmation Screen
 
 | Field | Value |
 |-------|-------|
 | **ID** | T17 |
-| **Agent** | `test-writer` |
-| **Dependencies** | T15 |
-| **Estimated time** | 1.5 hours |
-| **Parallel with** | T18 |
+| **Agent** | `backend-api-developer` |
+| **Dependencies** | T14, T15 |
+| **Parallel with** | T16, T18, T19, T20 |
 
-**Objective**: Write React Testing Library component tests for key UI components.
+**Objective**: Build the Swipe Confirmation screen with gesture handling, IDK button, card transitions, and detail mode.
 
-**Critical context for agent**: HTFG Review UI project. Use Vitest + React Testing Library + jsdom. Mock all API calls with `vi.mock`. Test user interactions and state changes, not implementation details.
+**Actions** (same as previous T11, with one addition):
 
-**Actions**:
+1. **`src/pages/SwipePage.tsx`** — wrapped in AppShell + AuthGuard
+2. **`src/components/swipe/SwipeCard.tsx`** — same gesture handling; note: `swipeUp` → detail mode
+3. **`src/components/swipe/SwipeActions.tsx`** — **ADD IDK BUTTON**:
+   - Three buttons: REJECT (left), IDK (center, muted), CONFIRM (right)
+   - IDK button: gray/muted styling, "? IDK" label, question-mark icon
+   - On IDK: call `onIdk()` callback
+   - On IDK response with `escalated: true`: show Sonner toast "Image escalated to expert review"
+4. **`src/components/swipe/DetailPanel.tsx`** — same as previous design
 
-1. Install:
-   ```bash
-   npm install -D @testing-library/react @testing-library/jest-dom @testing-library/user-event jsdom
-   ```
-
-2. Create `src/test/setup.ts`:
-   - Import `@testing-library/jest-dom`
-   - Mock localStorage globally
-   - Mock `src/lib/api.ts` globally
-
-3. Create test files:
-
-   **`SessionEntry.test.tsx`**: renders dialog when no name; doesn't render when name exists; submit stores in localStorage; button disabled when empty
-
-   **`SwipeCard.test.tsx`**: renders image and plant name; correct ConfidenceBadge for each level; confirm/reject buttons call callbacks; disabled when isSubmitting
-
-   **`PlantSearch.test.tsx`**: no API call for < 2 chars; calls API after debounce; displays results; selecting calls onSelect
-
-   **`DiscardDialog.test.tsx`**: opens on `open=true`; discard disabled until category selected; submit calls onDiscard with correct data; cancel closes
-
-   **`NewPlantDialog.test.tsx`**: create disabled when common_name empty; slug preview updates live; submit calls onCreatePlant
-
-   **`DashboardPage.test.tsx`**: renders progress bars with correct percentages; re-run banner shows at count >= 5; hides (shows counter) when count < 5; leaderboard ranked correctly
-
-   **`useRecentPlants.test.ts`**: empty initially; addRecent prepends; deduplicates by id; caps at 6; persists to localStorage
-
-4. Update vitest.config.ts to support jsdom environment for frontend tests
-
-**Files created**:
-- `review-ui/src/test/setup.ts`
-- `review-ui/src/components/__tests__/SessionEntry.test.tsx`
-- `review-ui/src/components/__tests__/SwipeCard.test.tsx`
-- `review-ui/src/components/__tests__/PlantSearch.test.tsx`
-- `review-ui/src/components/__tests__/DiscardDialog.test.tsx`
-- `review-ui/src/components/__tests__/NewPlantDialog.test.tsx`
-- `review-ui/src/components/__tests__/DashboardPage.test.tsx`
-- `review-ui/src/hooks/__tests__/useRecentPlants.test.ts`
-
-**Verification**: `npx vitest run src/` — all tests pass.
+**Files created**: `src/pages/SwipePage.tsx`, `src/components/swipe/SwipeCard.tsx`, `src/components/swipe/SwipeActions.tsx`, `src/components/swipe/DetailPanel.tsx`
 
 ---
 
-### T18 — UX Polish Pass
+### T18 — Classify Screen
 
 | Field | Value |
 |-------|-------|
 | **ID** | T18 |
 | **Agent** | `backend-api-developer` |
-| **Dependencies** | T15 |
-| **Estimated time** | 1 hour |
-| **Parallel with** | T17 |
+| **Dependencies** | T14, T15 |
+| **Parallel with** | T16, T17, T19, T20 |
 
-**Objective**: Review and polish all screens for transitions, loading states, error handling, empty states, and mobile usability.
+**Objective**: Build the Classify screen with enhanced autocomplete (prefix-ranked, botanical/alias matching), quick picks from `review_decisions`, and dialogs.
 
-**Actions**:
+**Changes from previous design**:
+- Plant search autocomplete now explicitly shows **prefix matches before substring matches** (the API handles this ordering — UI just renders results in received order)
+- Quick picks source: derive from `review_decisions` records (`GET /api/me/stats` provides recently classified plants), cache in localStorage for instant display
+- No other functional changes
 
-1. Install additional ShadCN components if needed:
-   ```bash
-   npx shadcn@latest add alert-dialog
-   ```
+**Files created**: `src/pages/ClassifyPage.tsx`, `src/components/classify/PlantSearch.tsx`, `src/components/classify/QuickPicks.tsx`, `src/components/classify/DiscardDialog.tsx`, `src/components/classify/NewPlantDialog.tsx`, `src/components/classify/ClassifyActions.tsx`, `src/hooks/useRecentPlants.ts`
 
-2. **Loading states**:
-   - Images: ShadCN Skeleton at correct aspect ratio
-   - Page-level: full-page skeleton matching layout
-   - Button actions: spinner icon + disabled state during API calls
-
-3. **Error states**:
-   - API error: Sonner toast with "Retry" action button
-   - Image load failure: gray placeholder with broken-image icon and filename text
-
-4. **Empty states**:
-   - Swipe queue done: large checkmark card, "All swipe reviews complete!"
-   - Classify queue done: similar card, "All images classified!"
-   - Dashboard no activity: "No reviews yet today. Start reviewing!"
-
-5. **Transitions and animations** (CSS keyframes + Tailwind arbitrary values):
-   - Swipe card exit: slide left/right + scale-down (200ms ease-out)
-   - Swipe card enter: fade in from center (150ms ease-in)
-   - Green/red overlay on swipe: semi-transparent gradient
-   - Detail panel: slide up from bottom (250ms ease-out)
-   - Progress bar animated fill on value change
-
-6. **Touch interactions**:
-   - All interactive elements >= 44px touch target
-   - Active state: scale-down 0.97 on tap
-   - First-load swipe hint: subtle left-right pulse animation
-
-7. **Accessibility**:
-   - ARIA labels on icon-only buttons
-   - Screen reader text for confidence badge dot indicators
-   - `aria-live="polite"` region announcing new queue items
-
-**Files modified**:
-- Multiple files across `src/components/` and `src/pages/`
-- `src/index.css` (animation keyframes)
-
-**Verification**: Manual review on 375px Chrome DevTools viewport. All loading/error/empty states present. Transitions feel smooth.
+(See previous T12 for full detail — this task is the same except for the quick picks source clarification above.)
 
 ---
 
-### T19 — Docker Configuration
+### T19 — Leaderboard Screen
 
 | Field | Value |
 |-------|-------|
 | **ID** | T19 |
+| **Agent** | `backend-api-developer` |
+| **Dependencies** | T14, T15 |
+| **Parallel with** | T16, T17, T18, T20 |
+
+**Objective**: Build the public Leaderboard screen (replaces the old Dashboard). Visible to all authenticated users; shows initials only.
+
+**Actions**:
+
+1. **`src/pages/LeaderboardPage.tsx`** (`/leaderboard`):
+   - Wrapped in AppShell + AuthGuard
+   - Fetches from `GET /api/leaderboard` and `GET /api/me/stats` on mount
+   - 30-second polling on leaderboard data
+   - Shows overall queue progress, the current user's personal stats, and the ranked leaderboard
+
+2. **`src/components/leaderboard/OverallProgress.tsx`**:
+   - ShadCN Progress bar showing overall completion percentage
+   - "{completed} / {total} reviewed" text
+
+3. **`src/components/leaderboard/MyStats.tsx`**:
+   - "Your Stats" card
+   - Today: {count} reviewed
+   - All time: {count} reviewed
+   - Rank: #{rank}
+
+4. **`src/components/leaderboard/LeaderboardTable.tsx`**:
+   - "Top Reviewers (All Time)" heading
+   - Numbered list with rank, initials (e.g., "K.L."), count
+   - Current user highlighted (show "You" instead of initials when it's the logged-in user)
+   - Top 3: subtle gold/silver/bronze styling
+
+**Files created**: `src/pages/LeaderboardPage.tsx`, `src/components/leaderboard/OverallProgress.tsx`, `src/components/leaderboard/MyStats.tsx`, `src/components/leaderboard/LeaderboardTable.tsx`
+
+---
+
+### T20 — Admin Dashboard Screen
+
+| Field | Value |
+|-------|-------|
+| **ID** | T20 |
+| **Agent** | `backend-api-developer` |
+| **Dependencies** | T14, T15, T13 (admin API endpoints must be stubbed) |
+| **Parallel with** | T16, T17, T18, T19 |
+
+**Objective**: Build the Admin Dashboard screen with full-name leaderboard, queue stats, IDK escalation queue, completion log, and re-run alert. Protected by AdminGuard.
+
+**Actions**:
+
+1. **`src/pages/AdminDashboardPage.tsx`** (`/admin`):
+   - Wrapped in AppShell + AdminGuard
+   - Tabs (ShadCN Tabs): "Overview", "Completion Log", "IDK Flagged", "Users"
+   - Fetches `GET /api/admin/stats` on mount, 30s polling
+
+2. **`src/components/admin/QueueStatusCards.tsx`**:
+   - Two side-by-side cards: Swipe Queue and Classify Queue
+   - Each: progress bar, count text, percentage
+
+3. **`src/components/admin/DecisionBreakdown.tsx`**:
+   - Same as leaderboard screen but with IDK row added:
+     - Confirmed, Rejected, Classified, Discarded, **IDK escalated**
+
+4. **`src/components/admin/FullNameLeaderboard.tsx`**:
+   - Same structure as LeaderboardTable but shows full first + last name
+   - Fetches from `GET /api/admin/leaderboard`
+
+5. **`src/components/admin/TodayActivity.tsx`**:
+   - Per-reviewer today's review count (full names)
+
+6. **`src/components/admin/RerunBanner.tsx`**:
+   - Amber banner when new_plant_rerun_count >= 5
+   - "{count}/5 new plants toward re-run threshold" info text when < 5
+
+7. **`src/components/admin/IdkFlaggedSection.tsx`**:
+   - "Needs Expert Review: {count}" alert box with link to IDK Flagged tab
+   - IDK Flagged tab renders list of images with: thumbnail, suggested plant name, idk_count, "Classify Now" button
+
+8. **`src/components/admin/CompletionLog.tsx`**:
+   - ShadCN Table with columns: Thumbnail, Image Path, Action, Reviewer (full name), Plant, Timestamp
+   - Filter controls: date range pickers, reviewer dropdown, action type dropdown
+   - Pagination (ShadCN-style prev/next with page count)
+   - Fetches `GET /api/admin/log?page=&limit=50&...`
+
+9. **`src/components/admin/UsersTable.tsx`**:
+   - Table of all users: email, name, role, reviews today, reviews all-time, last active
+   - Fetches `GET /api/admin/users`
+
+**Files created**: All above files
+
+---
+
+## Stage 5: Integration, Testing, and Polish
+
+---
+
+### T21 — API Client Layer
+
+| Field | Value |
+|-------|-------|
+| **ID** | T21 |
+| **Agent** | `backend-api-developer` |
+| **Dependencies** | T11, T12, T13, T15 (for types) |
+
+**Objective**: Create a typed fetch wrapper for all API endpoints. All auth is via session cookie (no `reviewer` params).
+
+**Actions**:
+
+Create `src/lib/api.ts` and `src/lib/ApiError.ts`:
+
+```typescript
+// Auth
+export async function registerUser(email, firstName, lastName): Promise<void>
+export async function loginUser(email): Promise<void>
+export async function logoutUser(): Promise<void>
+export async function getMe(): Promise<User>
+export async function adminLogin(email, password): Promise<User>
+
+// Queue (no reviewer param — from session)
+export async function getNextQueueItem(type: 'swipe' | 'classify'): Promise<{ item: QueueItem | null, remaining: number }>
+export async function getQueueStats(): Promise<QueueStats>
+export async function releaseQueueItem(id: number): Promise<void>
+
+// Review (no reviewer param)
+export async function confirmReview(imagePath: string): Promise<void>
+export async function rejectReview(imagePath: string): Promise<void>
+export async function classifyReview(imagePath: string, plantId: string): Promise<void>
+export async function discardReview(imagePath: string, category: string, notes: string | null): Promise<void>
+export async function idkReview(imagePath: string): Promise<{ idk_count: number, escalated: boolean }>
+
+// Plants
+export async function searchPlants(query: string): Promise<Plant[]>
+export async function getReferenceImages(plantId: string): Promise<{ path, thumbnail }[]>
+export async function createNewPlant(data: NewPlantData): Promise<{ id, common_name }>
+export async function searchCsvCandidates(query: string): Promise<CsvCandidate[]>
+
+// Stats & Leaderboard
+export async function getLeaderboard(): Promise<LeaderboardEntry[]>
+export async function getMyStats(): Promise<UserStats>
+
+// Admin
+export async function getAdminStats(): Promise<AdminStats>
+export async function getAdminLeaderboard(): Promise<LeaderboardEntry[]>
+export async function getAdminLog(params): Promise<{ rows, total }>
+export async function getIdkFlagged(): Promise<QueueItem[]>
+export async function getAdminUsers(): Promise<User[]>
+export async function triggerImport(): Promise<void>
+export async function getImportStatus(): Promise<ImportStatus>
+```
+
+`ApiError` class: `status: number`, `message: string`. `fetchApi` throws it on non-2xx or network error.
+
+**Files created**: `src/lib/api.ts`, `src/lib/ApiError.ts`
+
+---
+
+### T22 — Routing and State Wiring
+
+| Field | Value |
+|-------|-------|
+| **ID** | T22 |
+| **Agent** | `main-session` |
+| **Dependencies** | T21, T15, T16, T17, T18, T19, T20 |
+
+**Objective**: Wire React Router, auth context, and all pages to real API. Full end-to-end data flow.
+
+**Actions**:
+
+1. **`src/App.tsx`**:
+   - Wrap everything in `<AuthProvider>`, `<BrowserRouter>`, `<Toaster />`
+   - Routes:
+     - `/login` → `<LoginPage />` (unauthenticated only; if logged in, redirect to /swipe)
+     - `/register` → `<RegisterPage />` (same)
+     - `/admin/login` → `<AdminLoginPage />`
+     - `/swipe` → `<AuthGuard><SwipePage /></AuthGuard>`
+     - `/classify` → `<AuthGuard><ClassifyPage /></AuthGuard>`
+     - `/leaderboard` → `<AuthGuard><LeaderboardPage /></AuthGuard>`
+     - `/admin` → `<AdminGuard><AdminDashboardPage /></AdminGuard>`
+     - `/` → `<Navigate to="/swipe" replace />`
+
+2. Wire `SwipePage.tsx`:
+   - `api.getNextQueueItem('swipe')` on mount and after each decision
+   - `api.confirmReview(item.image_path)` on confirm
+   - `api.rejectReview(item.image_path)` on reject
+   - `api.idkReview(item.image_path)` on IDK; if `escalated=true` show toast
+   - Error toast on API failure with retry button
+
+3. Wire `ClassifyPage.tsx`:
+   - `api.getNextQueueItem('classify')` for items
+   - `api.searchPlants(query)` in PlantSearch
+   - `api.classifyReview(...)` on assign; update recent plants; fetch next
+   - `api.discardReview(...)` on discard; fetch next
+   - `api.createNewPlant(...)` then `api.classifyReview(...)` on new plant
+   - `api.releaseQueueItem(item.id)` on skip
+
+4. Wire `LeaderboardPage.tsx`:
+   - `api.getLeaderboard()` + `api.getMyStats()` on mount and 30s interval
+
+5. Wire `AdminDashboardPage.tsx`:
+   - `api.getAdminStats()`, `api.getAdminLeaderboard()` on mount, 30s interval
+   - `api.getAdminLog(params)` on tab open and filter change
+   - `api.getIdkFlagged()` on IDK tab open
+
+6. Manual end-to-end test:
+   - Register → magic link email → click link → redirected to /swipe
+   - Swipe confirm/reject/idk works
+   - IDK escalation at 3 votes
+   - Classify screen, plant search, new plant, discard
+   - Leaderboard shows initials
+   - Admin login → admin dashboard → full names, completion log, IDK flagged
+
+**Files modified**: `src/App.tsx`, `src/pages/SwipePage.tsx`, `src/pages/ClassifyPage.tsx`, `src/pages/LeaderboardPage.tsx`, `src/pages/AdminDashboardPage.tsx`
+
+---
+
+### T23 — Backend API Tests
+
+| Field | Value |
+|-------|-------|
+| **ID** | T23 |
+| **Agent** | `test-writer` |
+| **Dependencies** | T11, T12, T13 |
+| **Parallel with** | T21, T22 |
+
+**Objective**: Write Vitest + Supertest integration tests using in-memory SQLite. Focus on auth flow, IDK escalation, and admin access control.
+
+**Critical context**: HTFG Review UI. Express + better-sqlite3 (no NocoDB). In-memory `:memory:` DB. Mock `emailService` to avoid real SMTP calls.
+
+**Test setup** (`server/__tests__/setup.ts`):
+- In-memory DB with schema
+- Seed: 3 users (2 reviewers, 1 admin), 10 swipe items, 5 classify items, 5 plants
+- Mock `server/services/email.ts` with `vi.mock`
+- Create helper: `createTestSession(userId)` → inserts session, returns cookie string
+
+**Test files**:
+
+**`auth.test.ts`**:
+- POST /register → creates user, calls sendMagicLink
+- POST /login with unknown email → 404
+- GET /verify/:token → creates session, sets cookie
+- GET /verify with expired token → redirects to /login?error=expired
+- GET /verify with used token → error
+- POST /logout → deletes session
+- GET /me with valid session → returns user
+- GET /me without session → 401
+- POST /admin/login with correct creds → creates admin session
+- POST /admin/login with wrong creds → 401
+
+**`queue.test.ts`**:
+- GET /next without session → 401
+- GET /next with reviewer session → returns item with status in_progress
+- Two reviewers get different items (soft lock)
+- Stale lock (> 5 min) is overridden
+- GET /stats returns correct counts
+- POST /:id/release → item returns to pending
+
+**`review.test.ts`**:
+- All endpoints return 401 without session
+- Confirm marks completed, creates decision with user_id
+- Reject marks completed, creates classify queue entry
+- Classify with unknown plant → 404
+- Discard with invalid category → 400
+- IDK: first vote from user A → idk_count=1
+- IDK: second vote from same user A → idk_count still 1 (no-op)
+- IDK: votes from 3 unique users → idk_count=3, item moves to classify queue with flagged_idk
+
+**`admin.test.ts`**:
+- GET /admin/stats with reviewer session → 403
+- GET /admin/stats with admin session → 200 with full stats
+- GET /admin/log returns paginated results
+- GET /admin/idk-flagged returns only flagged items
+
+**`dal.test.ts`**:
+- Items returned in sort_key order
+- `idkItem` deduplicates by user_id
+- `idkItem` escalates at idk_count=3
+- `bulkInsertQueueItems` is idempotent
+- `searchPlants` ranks prefix matches first
+
+**Files created**: `server/__tests__/setup.ts`, `server/__tests__/auth.test.ts`, `server/__tests__/queue.test.ts`, `server/__tests__/review.test.ts`, `server/__tests__/admin.test.ts`, `server/__tests__/dal.test.ts`, `vitest.config.ts`
+
+**Verification**: `npx vitest run server/` — all pass.
+
+---
+
+### T24 — Frontend Component Tests
+
+| Field | Value |
+|-------|-------|
+| **ID** | T24 |
+| **Agent** | `test-writer` |
+| **Dependencies** | T22 |
+| **Parallel with** | T25 |
+
+**Objective**: React Testing Library tests for key components. Mock auth context and API calls.
+
+**New/updated tests vs. previous design**:
+
+**`LoginPage.test.tsx`**: renders email input; submit calls api.loginUser; shows "check email" on success; shows error on 404
+
+**`RegisterPage.test.tsx`**: validates all 3 fields required; submit calls api.registerUser; error on duplicate email
+
+**`AdminLoginPage.test.tsx`**: shows email + password fields; submit calls api.adminLogin; redirects to /admin on success
+
+**`SwipeCard.test.tsx`**: renders image, plant name, ConfidenceBadge, IDK button; IDK calls onIdk; buttons disabled during submission
+
+**`SwipeActions.test.tsx`**: renders 3 buttons (reject, idk, confirm); all fire callbacks; all disabled when isSubmitting
+
+**`AuthGuard.test.tsx`**: shows skeleton while loading; redirects to /login when unauthenticated; renders children when authenticated
+
+**`AdminGuard.test.tsx`**: redirects reviewer to /swipe; renders children for admin
+
+**`BottomNav.test.tsx`**: shows 3 tabs for reviewer; shows 4 tabs (with Admin) for admin
+
+**`LeaderboardTable.test.tsx`**: shows initials "K.L."; highlights current user as "You"; gold/silver/bronze styling on top 3
+
+**`CompletionLog.test.tsx`**: renders table rows; pagination controls work; filter inputs trigger API calls
+
+(All from previous design also apply: DiscardDialog, NewPlantDialog, PlantSearch, useRecentPlants)
+
+**Files created**: All test files in `src/components/__tests__/` and `src/hooks/__tests__/`
+
+---
+
+### T25 — UX Polish Pass
+
+| Field | Value |
+|-------|-------|
+| **ID** | T25 |
+| **Agent** | `backend-api-developer` |
+| **Dependencies** | T22 |
+| **Parallel with** | T24 |
+
+**Objective**: Polish transitions, loading states, error handling, empty states, and auth edge cases across all screens.
+
+**Additional focus vs. previous design**:
+
+**Auth edge cases**:
+- Magic link already used: `/login?error=expired` shows "This login link has expired or already been used. Request a new one."
+- Session expired mid-session (API returns 401): `AuthContext` catches 401 from any API call, clears user, navigates to `/login` with "Your session has expired" toast
+- Admin tries to access `/admin` without being logged in: AdminGuard redirects to `/admin/login` (not `/login`)
+
+**IDK confirmation**: After IDK tap, briefly show the image card shaking (subtle CSS animation) before advancing to next card
+
+**Other loading/error/empty states**: same as previous design (image skeleton, API error toasts, empty queue celebratory states, touch targets, transitions)
+
+**Files modified**: Various `src/components/` and `src/pages/` files, `src/index.css`
+
+---
+
+### T26 — Docker Configuration
+
+| Field | Value |
+|-------|-------|
+| **ID** | T26 |
 | **Agent** | `main-session` |
 | **Dependencies** | T02 |
-| **Estimated time** | 30 min |
-| **Note** | Can start immediately after T02 — does not need UI work to be complete |
+| **Note** | Can start right after T02 — does not need UI or data layer |
 
-**Objective**: Create production Dockerfile and docker-compose.yml.
+**Objective**: Production Dockerfile and docker-compose.yml with all new environment variables.
 
 **Actions**:
 
 1. Create `review-ui/Dockerfile`:
    ```dockerfile
-   # Build stage
    FROM node:20-alpine AS build
    WORKDIR /app
    COPY package*.json ./
@@ -1346,7 +1383,6 @@ T01 (Scaffold)
    COPY . .
    RUN npm run build
 
-   # Production stage
    FROM node:20-slim
    RUN apt-get update && apt-get install -y libvips-dev && rm -rf /var/lib/apt/lists/*
    WORKDIR /app
@@ -1358,7 +1394,7 @@ T01 (Scaffold)
    ENV NODE_ENV=production
    CMD ["node", "dist/server/index.js"]
    ```
-   Note: Use `node:20-slim` (Debian) instead of Alpine for Sharp compatibility. Sharp requires native binaries that are easier to build on Debian.
+   Note: Use `node:20-slim` (Debian) for Sharp compatibility — Alpine builds often fail with Sharp native binaries.
 
 2. Create `review-ui/docker-compose.yml`:
    ```yaml
@@ -1374,166 +1410,116 @@ T01 (Scaffold)
          - IMAGE_MOUNT_PATH=/data/images
          - DB_PATH=/data/db/review.db
          - PORT=3000
+         - APP_URL=http://localhost:3000
+         - COOKIE_SECRET=change-me-to-a-random-secret
+         - ADMIN_EMAIL=admin@example.com
+         - ADMIN_PASSWORD=change-me
+         - SMTP_HOST=smtp.example.com
+         - SMTP_PORT=587
+         - SMTP_SECURE=true
+         - SMTP_USER=authuser@example.com
+         - SMTP_PASS=change-me
+         - SMTP_FROM=noreply@hawaiifruit.net
+         - REMINDER_INACTIVE_DAYS=3
    ```
 
-3. Create `review-ui/.dockerignore`:
-   ```
-   node_modules
-   dist
-   data
-   .git
-   design-docs
-   src/test
-   server/__tests__
-   ```
+3. Create `.dockerignore`, update `vite.config.ts` `build.outDir: '../dist/client'`
 
-4. Update `vite.config.ts`:
-   ```typescript
-   build: {
-     outDir: '../dist/client',
-     emptyOutDir: true,
-   }
-   ```
-
-5. Update `server/index.ts`: in production, serve static files from `path.join(__dirname, '../../dist/client')` (adjust relative path as needed after build output verification)
-
-**Files created**:
-- `review-ui/Dockerfile`
-- `review-ui/docker-compose.yml`
-- `review-ui/.dockerignore`
-
-**Files modified**:
-- `review-ui/vite.config.ts`
-- `review-ui/server/index.ts`
-
-**Verification**: `docker compose build` completes without errors. `docker compose up` starts. `curl http://localhost:3000` returns HTML. `curl http://localhost:3000/api/queue/stats` returns JSON.
+**Files created**: `Dockerfile`, `docker-compose.yml`, `.dockerignore`
 
 ---
 
-## Stage 5: Data Population and Verification
+## Stage 6: Data Population and Verification
 
 ---
 
-### T20 — Production Data Import
+### T27 — Production Data Import
 
 | Field | Value |
 |-------|-------|
-| **ID** | T20 |
+| **ID** | T27 |
 | **Agent** | `main-session` |
-| **Dependencies** | T05, T19 |
-| **Estimated time** | 45 min (mostly waiting for thumbnail generation ~30 min) |
+| **Dependencies** | T10, T26 |
 
-**Objective**: Run the import script against the real Phase 4/4B JSON files.
+**Objective**: Seed admin user, run import against real Phase 4/4B JSON files, generate thumbnails.
 
 **Actions**:
 
-1. Local run (faster for initial development):
+1. Local run (faster):
    ```bash
    cd "d:/Sandbox/Homegrown/htfg_fruit/review-ui"
-   export IMAGE_MOUNT_PATH="d:/Sandbox/Homegrown/htfg_fruit/content/parsed"
-   export DB_PATH="./data/db/review.db"
+   IMAGE_MOUNT_PATH="d:/Sandbox/Homegrown/htfg_fruit/content/parsed" \
+   DB_PATH="./data/db/review.db" \
+   ADMIN_EMAIL="admin@example.com" ADMIN_PASSWORD="change-me" \
    npm run import
    ```
+   OR via Docker admin API after `docker compose up`.
 
-2. Or via Docker admin API:
-   ```bash
-   docker compose up -d
-   curl -X POST http://localhost:3000/api/admin/import \
-     -H 'Content-Type: application/json' \
-     -d '{"data_dir": "/data/images"}'
-   # Monitor:
-   curl http://localhost:3000/api/admin/import-status
-   ```
+2. Admin user is seeded by the import script automatically from env vars.
 
-3. Monitor thumbnail generation progress (stdout for local, admin status endpoint for Docker)
-4. Verify no critical errors in output
+3. Monitor thumbnail generation (~30 min for 15,403 images). `--skip-thumbnails` flag available for testing DB-only import.
 
-**Verification**: Import completes. `.thumbnails/` directory exists under `content/parsed/` with mirrored structure. Database file exists at DB_PATH.
+**Verification**: Import completes. DB exists at DB_PATH. `.thumbnails/` directory exists.
 
 ---
 
-### T21 — Count Verification and Smoke Test
+### T28 — Count Verification and Smoke Test
 
 | Field | Value |
 |-------|-------|
-| **ID** | T21 |
+| **ID** | T28 |
 | **Agent** | `main-session` |
-| **Dependencies** | T20 |
-| **Estimated time** | 30 min |
+| **Dependencies** | T27 |
 
-**Objective**: Verify imported data matches expected counts and perform end-to-end smoke testing.
+**Objective**: Verify all counts, test full auth flow end-to-end, confirm SMTP connectivity, verify multi-reviewer concurrency.
 
 **Actions**:
 
-1. **Verify counts**:
+1. **Verify DB counts**:
    ```bash
    curl http://localhost:3000/api/admin/import-status
    ```
-   | Table | Expected Count |
-   |-------|---------------|
-   | plants | 140 |
-   | review_queue (swipe) | 11,549 |
-   | review_queue (classify) | 8,361 |
-   | review_queue (total) | 19,910 |
+   Expected: 140 plants, 11,549 swipe items, 8,361 classify items, 1 admin user
 
-2. **Verify sort ordering**: first swipe item should be from a high-confidence plant group; release lock and get next — should be same plant (grouped ordering)
+2. **Test full auth flow**:
+   - Navigate to `http://localhost:3000` → redirected to `/login`
+   - Enter email → "Check your email" screen appears
+   - If SMTP configured: email arrives with working magic link
+   - If SMTP not configured: extract token from `magic_links` DB table directly, construct URL manually
+   - Click link → session cookie set → redirected to `/swipe`
 
-3. **Verify plant search**: `curl "localhost:3000/api/plants?search=avo"` returns avocado
+3. **Verify admin login**:
+   - Navigate to `/admin/login`, enter ADMIN_EMAIL + ADMIN_PASSWORD
+   - Verify redirected to `/admin` with full-name leaderboard, completion log visible
 
-4. **Verify image serving**: open browser, navigate to swipe screen, confirm thumbnail loads, tap for full-size, expand detail panel for reference photos
+4. **Verify full review flow** (browser):
+   - Confirm, reject, and IDK images in swipe queue
+   - At 3 IDK votes on same image (using two tabs + admin): confirm escalation
+   - Navigate to classify: rejected item appears
+   - Assign plant, discard as event
+   - Admin dashboard: counts update, IDK-flagged section shows escalated image
 
-5. **Verify full review flow** (browser):
-   - Confirm an image in swipe queue
-   - Reject an image → navigate to classify → it appears there
-   - Classify the rejected image with a plant
-   - Discard an image as "event"
-   - Dashboard: counts update correctly
+5. **Verify concurrency**:
+   - Two browser tabs with different user accounts → different queue items served (soft lock)
 
-6. **Verify multi-reviewer concurrency** (two browser tabs):
-   - Enter different reviewer names
-   - Both navigate to swipe
-   - Confirm they receive different images (soft lock works)
+6. **Verify SMTP** (if configured):
+   - Trigger inactivity reminder cron manually, confirm email delivered
 
-7. Document any count discrepancies vs. expected
-
-**Verification**: All counts match. Full user flow works. Multi-reviewer concurrency works. No console errors.
+**Verification**: All counts match. Auth flow works. Admin features work. Multi-reviewer concurrency works.
 
 ---
 
 ## Parallelism Summary
 
-```
-Timeline (vertical = time, horizontal = parallel tasks):
-
-Stage 1:   T01 ──┬── T02
-                  └── T03
-
-Stage 2:          T04 ──┬── T05
-            (after T02) ├── T06   ← all 4 in parallel
-                        ├── T07
-                        └── T08
-
-Stage 3:    T09 ──┬── T10
-            (after T03)├── T11   ← all 4 in parallel
-                        ├── T12
-                        └── T13
-
-Stage 4:   T14 ─────────── T15 ──┬── T17
-           T16 (parallel with 14/15)├── T18
-           T19 (parallel, starts after T02)
-
-Stage 5:   T20 ── T21
-```
-
-**Parallel execution groups**:
-
 | Group | Tasks | Max Concurrent | Prerequisite |
 |-------|-------|----------------|-------------|
 | A | T02, T03 | 2 | T01 done |
-| B | T05, T06, T07, T08 | 4 | T04 done |
-| C | T10, T11, T12, T13 | 4 | T09 done |
-| D | T14, T16, T19 | 3 | Group B done |
-| E | T17, T18 | 2 | T15 done |
+| B | T05, T07, T09, T10 | 4 | T04 done (T07 needs T02) |
+| C | T06, T08 | 2 | T07 done |
+| D | T11, T12, T13 | 3 | T09 + T05 done |
+| E | T15, T16, T17, T18, T19, T20 | 6 | T14 done (T16 also needs T06) |
+| F | T23, T26 | 2 | Group D / T02 |
+| G | T24, T25 | 2 | T22 done |
 
 ---
 
@@ -1541,36 +1527,32 @@ Stage 5:   T20 ── T21
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
-| Sharp native binaries fail in Docker | Blocks thumbnails + Docker build | Medium | Use `node:20-slim` (Debian) instead of Alpine (already specified in T19). Test Docker build early — T19 can start right after T02. |
-| Inference `path` doesn't match manifest `source` for some records | Import misses images (no `dest` or `size`) | Low | Log all unmatched paths during import. Continue with null dest/size for unmatched records. Verify against actual data during T05. |
-| react-swipeable gesture detection unreliable on iOS Safari | Poor swipe UX | Medium | Button fallbacks for all swipe actions are included in the design. Test on real device or Xcode Simulator. |
-| SQLite SQLITE_BUSY under concurrent writes | Reviewer actions fail intermittently | Low | WAL mode handles concurrent reads well; writes are serialized. Add a single 100ms retry for SQLITE_BUSY if it appears in testing. |
-| `phase4_image_manifest.json` `dest` paths start with `content/parsed/` but IMAGE_MOUNT_PATH IS `content/parsed/` | Thumbnail and image serving paths are double-prefixed | Medium | In import script: strip `content/parsed/` prefix from `dest` when constructing file paths. Verify this assumption against actual JSON data in T05. |
+| Sharp native binaries fail in Docker Alpine | Blocks thumbnails + Docker build | Medium | Use `node:20-slim` (Debian) in production stage — specified in T26. Test Docker build early (T26 can start after T02). |
+| SMTP not available in dev environment | Magic link auth unusable during development | High | Email service logs a warning and skips send if SMTP not configured. Add a dev bypass: print magic link URL to console when SMTP_HOST is empty. |
+| Inference `path` doesn't match manifest `source` for some records | Import misses images (null dest/size) | Low | Log all unmatched paths. Continue with null dest/size. Verify during T10. |
+| react-swipeable gesture detection unreliable on iOS Safari | Poor swipe UX | Medium | Button fallbacks for all swipe actions (confirm/reject/idk) are built into SwipeActions. Test on real device. |
+| SQLite SQLITE_BUSY with 5 concurrent reviewers | Review actions fail intermittently | Low | WAL mode handles concurrent reads. Writes serialized by SQLite. Add single 100ms retry on SQLITE_BUSY if observed. |
+| `phase4_image_manifest.json` dest paths include `content/parsed/` prefix | Double-prefix in thumbnail/image serving paths | Medium | Strip `content/parsed/` from dest when building file paths in import script. Verify during T10. |
+| node-cron daily summary runs at wrong timezone | Emails sent at unexpected time | Low | Document that cron runs in container timezone (UTC). Set DAILY_SUMMARY_HOUR env var. Users may need to configure TZ env if they want local-time scheduling. |
 
 ---
 
 ## Appendix: Source Data Field Reference
 
 ### `phase4b_inferences.json`
-- Top-level key: `inferences` (array, 6,518 items)
-- Fields: `path`, `inferred_plant_id`, `confidence` (high/medium/low), `match_type`, `matched_term`, `matched_against`, `reasoning`
+Top-level key: `inferences` (6,518 items). Fields: `path`, `inferred_plant_id`, `confidence` (high/medium/low), `match_type`, `matched_term`, `matched_against`, `reasoning`
 
 ### `phase4b_still_unclassified.json`
-- Top-level key: `files` (array, 8,361 items)
-- Fields: `path`, `directories` (string array), `filename`
+Top-level key: `files` (8,361 items). Fields: `path`, `directories` (string array), `filename`
 
 ### `phase4_image_manifest.json`
-- Top-level key: `files` (array, 15,403 items)
-- Fields: `source`, `dest`, `plant_id` (string or null), `size` (bytes), `status`
-- 5,031 records have `plant_id` not null
+Top-level key: `files` (15,403 items). Fields: `source`, `dest`, `plant_id` (or null), `size` (bytes), `status`. 5,031 records have non-null `plant_id`.
 
 ### `plant_registry.json`
-- Top-level key: `plants` (array, 140 items)
-- Fields: `id`, `common_name`, `botanical_names` (string array), `aliases` (string array), `category`, `harvest_months`, `at_kona_station`, `sources`, `hwfn_directories`, `original_directories`
+Top-level key: `plants` (140 items). Fields: `id`, `common_name`, `botanical_names` (array), `aliases` (array), `category`
 
 ### `phase4b_new_plants.json`
-- Top-level key: `plants` (array, 72 items)
-- Fields: `provisional_id`, `fruit_type`, `scientific_name`, `genus`, `sample_varieties` (string array)
+Top-level key: `plants` (72 items). Fields: `provisional_id`, `fruit_type`, `scientific_name`, `genus`, `sample_varieties` (array)
 
 ### Cross-Reference Keys
 - `phase4b_inferences[].path` === `phase4_image_manifest[].source`
