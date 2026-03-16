@@ -11,7 +11,7 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/package*.json ./
 RUN npm ci --omit=dev && \
-    npm install --no-save node-addon-api && \
+    npm install --no-save node-addon-api node-gyp && \
     npm_config_build_from_source=true npm rebuild sharp
 RUN mkdir -p /data/db
 EXPOSE 3000
