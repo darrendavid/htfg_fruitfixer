@@ -28,7 +28,7 @@ async function send(options: nodemailer.SendMailOptions): Promise<void> {
 }
 
 export async function sendMagicLink(email: string, firstName: string, token: string): Promise<void> {
-  const url = `${config.APP_URL}/api/auth/verify/${token}`;
+  const url = `${config.EXTERNAL_URL}/api/auth/verify/${token}`;
   await send({
     to: email,
     subject: 'HTFG Review — Your Login Link',

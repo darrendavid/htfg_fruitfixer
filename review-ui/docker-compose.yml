@@ -6,11 +6,14 @@ services:
     volumes:
       - ./content/parsed:/data/images:ro
       - ./data/db:/data/db
+      - ./data/logs:/data/logs
     environment:
       - IMAGE_MOUNT_PATH=/data/images
       - DB_PATH=/data/db/review.db
+      - LOG_PATH=/data/logs/app.log
       - PORT=3000
       - APP_URL=http://localhost:3000
+      - EXTERNAL_URL=http://your-host-or-ip:3000
       - COOKIE_SECRET=change-me-to-a-random-secret-min-32-chars
       - ADMIN_EMAIL=admin@example.com
       - ADMIN_PASSWORD=change-me

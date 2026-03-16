@@ -12,6 +12,8 @@ export const config = {
   DB_PATH: requireEnv('DB_PATH'),
   IMAGE_MOUNT_PATH: requireEnv('IMAGE_MOUNT_PATH'),
   APP_URL: requireEnv('APP_URL'),
+  EXTERNAL_URL: process.env.EXTERNAL_URL || requireEnv('APP_URL'),
+  LOG_PATH: process.env.LOG_PATH || '',
   COOKIE_SECRET: requireEnv('COOKIE_SECRET'),
   ADMIN_EMAIL: requireEnv('ADMIN_EMAIL'),
   ADMIN_PASSWORD: requireEnv('ADMIN_PASSWORD'),

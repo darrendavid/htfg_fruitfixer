@@ -42,6 +42,7 @@ function createMagicLink(email: string): string {
 // ── POST /api/auth/register ───────────────────────────────────────────────────
 router.post('/register', async (req, res) => {
   const { email, first_name, last_name } = req.body ?? {};
+  console.log(`[auth] register attempt: ${email}`);
 
   if (!email || !first_name || !last_name) {
     res.status(400).json({ error: 'email, first_name, and last_name are required' });
@@ -56,15 +57,19 @@ router.post('/register', async (req, res) => {
 
   const existing = dal.getUserByEmail(email);
   if (existing) {
+    console.log(`[auth] register rejected: ${email} already exists`);
     res.status(409).json({ error: 'Email already registered' });
     return;
   }
 
   const user = dal.createUser(email, first_name, last_name);
+  console.log(`[auth] user created: id=${user.id} email=${email}`);
   const token = createMagicLink(email);
+  console.log(`[auth] magic link created for ${email}, sending email`);
 
   try {
     await sendMagicLink(email, first_name, token);
+    console.log(`[auth] magic link email sent to ${email}`);
   } catch (err) {
     console.error('[auth] sendMagicLink error:', err);
   }
@@ -75,6 +80,7 @@ router.post('/register', async (req, res) => {
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 router.post('/login', async (req, res) => {
   const { email } = req.body ?? {};
+  console.log(`[auth] login attempt: ${email}`);
 
   if (!email) {
     res.status(400).json({ error: 'email is required' });
@@ -83,14 +89,17 @@ router.post('/login', async (req, res) => {
 
   const user = dal.getUserByEmail(email);
   if (!user) {
+    console.log(`[auth] login rejected: ${email} not found`);
     res.status(404).json({ error: 'No account found for this email. Please register first.' });
     return;
   }
 
   const token = createMagicLink(email);
+  console.log(`[auth] magic link created for ${email}, sending email`);
 
   try {
     await sendMagicLink(email, user.first_name, token);
+    console.log(`[auth] magic link email sent to ${email}`);
   } catch (err) {
     console.error('[auth] sendMagicLink error:', err);
   }
@@ -101,6 +110,7 @@ router.post('/login', async (req, res) => {
 // ── GET /api/auth/verify/:token ───────────────────────────────────────────────
 router.get('/verify/:token', (req, res) => {
   const { token } = req.params;
+  console.log(`[auth] verify token attempt`);
 
   const link = db.prepare(`
     SELECT * FROM magic_links
@@ -108,12 +118,14 @@ router.get('/verify/:token', (req, res) => {
   `).get(token) as { id: number; email: string } | undefined;
 
   if (!link) {
+    console.log(`[auth] verify failed: token not found or expired`);
     res.redirect('/login?error=expired');
     return;
   }
 
   const user = dal.getUserByEmail(link.email);
   if (!user) {
+    console.log(`[auth] verify failed: no user for email ${link.email}`);
     res.redirect('/login?error=expired');
     return;
   }
@@ -123,6 +135,7 @@ router.get('/verify/:token', (req, res) => {
 
   // Create session
   createSession(res, user.id);
+  console.log(`[auth] session created for ${link.email} (user id=${user.id})`);
 
   res.redirect('/swipe');
 });
@@ -145,6 +158,7 @@ router.get('/me', requireAuth, (req, res) => {
 // ── POST /api/auth/admin/login ────────────────────────────────────────────────
 router.post('/admin/login', (req, res) => {
   const { email, password } = req.body ?? {};
+  console.log(`[auth] admin login attempt: ${email}`);
 
   if (!email || !password) {
     res.status(400).json({ error: 'email and password are required' });
@@ -152,12 +166,14 @@ router.post('/admin/login', (req, res) => {
   }
 
   if (email !== config.ADMIN_EMAIL || password !== config.ADMIN_PASSWORD) {
+    console.log(`[auth] admin login failed: email match=${email === config.ADMIN_EMAIL} password match=${password === config.ADMIN_PASSWORD}`);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
 
   const adminUser = dal.upsertAdminUser(config.ADMIN_EMAIL, 'Admin');
   createSession(res, adminUser.id);
+  console.log(`[auth] admin session created for ${email} (user id=${adminUser.id})`);
 
   res.json({
     user: {

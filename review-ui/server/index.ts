@@ -1,6 +1,7 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cookieParser from 'cookie-parser';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 import { config } from './config.js';
@@ -16,7 +17,27 @@ import meRouter from './routes/me.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ── Logger ────────────────────────────────────────────────────────────────────
+const logStream = config.LOG_PATH
+  ? fs.createWriteStream(config.LOG_PATH, { flags: 'a' })
+  : null;
+
+function log(line: string) {
+  const entry = `[${new Date().toISOString()}] ${line}`;
+  console.log(entry);
+  logStream?.write(entry + '\n');
+}
+
 const app = express();
+
+// ── Request logging ───────────────────────────────────────────────────────────
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    log(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms`);
+  });
+  next();
+});
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '1mb' }));
@@ -61,8 +82,12 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 
 // ── Start ──────────────────────────────────────────────────────────────────────
 const server = app.listen(config.PORT, () => {
-  console.log(`[server] listening on http://localhost:${config.PORT}`);
-  console.log(`[server] IMAGE_MOUNT_PATH: ${config.IMAGE_MOUNT_PATH}`);
+  log(`[server] listening on port ${config.PORT}`);
+  log(`[server] APP_URL: ${config.APP_URL}`);
+  log(`[server] EXTERNAL_URL: ${config.EXTERNAL_URL}`);
+  log(`[server] IMAGE_MOUNT_PATH: ${config.IMAGE_MOUNT_PATH}`);
+  log(`[server] DB_PATH: ${config.DB_PATH}`);
+  log(`[server] LOG_PATH: ${config.LOG_PATH || '(console only)'}`);
   startScheduler();
 });
 

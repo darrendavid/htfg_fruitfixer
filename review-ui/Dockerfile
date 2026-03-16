@@ -10,7 +10,7 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/package*.json ./
 RUN npm ci --omit=dev
-RUN mkdir -p /data/db
+RUN mkdir -p /data/db /data/logs
 EXPOSE 3000
 ENV NODE_ENV=production
 CMD ["node", "dist/server/index.js"]
