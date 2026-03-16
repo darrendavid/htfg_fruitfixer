@@ -112,11 +112,12 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
   const skip = options.skipThumbnails ?? skipThumbnails;
   const dry = options.dryRun ?? dryRun;
 
-  importProgress = { status: 'running', step: 'Starting', progress: 0, total: 0, message: 'Import started' };
+  importProgress = { status: 'running', step: 'Step 0/6: Starting', progress: 0, total: 0, message: 'Import started' };
 
   // ── Step 0: Seed admin user ───────────────────────────────────────────────
   log('Step 0: Seeding admin user...');
-  importProgress.step = 'Seeding admin user';
+  importProgress.step = 'Step 0/6: Seeding admin user';
+  importProgress.message = 'Seeding admin user...';
   try {
     const adminUser = dal.upsertAdminUser(config.ADMIN_EMAIL, 'Admin');
     log(`Admin user seeded: ${config.ADMIN_EMAIL} (id=${adminUser.id})`);
@@ -126,7 +127,8 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
 
   // ── Step 1: Import plants from plant_registry.json ────────────────────────
   log('Step 1: Importing plants...');
-  importProgress.step = 'Importing plants';
+  importProgress.step = 'Step 1/6: Importing plants';
+  importProgress.message = 'Reading plant_registry.json...';
 
   const registryPath = jsonPath('plant_registry.json');
   if (!fs.existsSync(registryPath)) {
@@ -154,7 +156,8 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
 
   // ── Step 2: Write CSV candidates from phase4b_new_plants.json ────────────
   log('Step 2: Writing CSV candidates...');
-  importProgress.step = 'Writing CSV candidates';
+  importProgress.step = 'Step 2/6: Writing CSV candidates';
+  importProgress.message = 'Reading phase4b_new_plants.json...';
 
   const newPlantsPath = jsonPath('phase4b_new_plants.json');
   if (fs.existsSync(newPlantsPath)) {
@@ -174,7 +177,8 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
 
   // ── Step 3: Load inference items from phase4b_inferences.json ────────────
   log('Step 3: Loading inference swipe items...');
-  importProgress.step = 'Loading inferences';
+  importProgress.step = 'Step 3/6: Loading inferences';
+  importProgress.message = 'Reading phase4b_inferences.json...';
 
   type InferenceItem = {
     image_path: string;
@@ -209,7 +213,8 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
 
   // ── Step 4: Load manifest swipe items from phase4_image_manifest.json ─────
   log('Step 4: Loading manifest swipe items (plant_id != null, not already in inferences)...');
-  importProgress.step = 'Loading manifest';
+  importProgress.step = 'Step 4/6: Loading image manifest';
+  importProgress.message = 'Reading phase4_image_manifest.json...';
 
   type ManifestItem = {
     image_path: string;
@@ -291,7 +296,8 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
 
   // ── Step 5: Build classify queue from phase4b_still_unclassified.json ─────
   log('Step 5: Importing classify queue items...');
-  importProgress.step = 'Importing classify items';
+  importProgress.step = 'Step 5/6: Importing classify queue';
+  importProgress.message = 'Reading phase4b_still_unclassified.json...';
 
   const unclassifiedPath = jsonPath('phase4b_still_unclassified.json');
   if (fs.existsSync(unclassifiedPath)) {
@@ -327,8 +333,9 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
   // ── Step 6: Generate thumbnails ───────────────────────────────────────────
   if (!skip) {
     log('Step 6: Generating thumbnails...');
-    importProgress.step = 'Generating thumbnails';
+    importProgress.step = 'Step 6/6: Generating thumbnails';
     importProgress.total = swipeRecords.length;
+    importProgress.message = `0 / ${swipeRecords.length} thumbnails`;
 
     fs.mkdirSync(THUMBNAILS_DIR, { recursive: true });
 
@@ -373,10 +380,9 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
       importProgress.progress = i + 1;
 
       if ((i + 1) % 500 === 0) {
-        log(
-          `Thumbnails: ${i + 1}/${swipeRecords.length} processed ` +
-          `(${thumbCount} generated, ${thumbErrors} errors, ${thumbSkipped} missing)`,
-        );
+        const msg = `${i + 1} / ${swipeRecords.length} thumbnails (${thumbCount} done, ${thumbErrors} errors, ${thumbSkipped} missing)`;
+        log(`Thumbnails: ${msg}`);
+        importProgress.message = msg;
       }
     }
 
@@ -386,6 +392,8 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
     );
   } else {
     log('Step 6: Skipping thumbnails (--skip-thumbnails)');
+    importProgress.step = 'Step 6/6: Thumbnails skipped';
+    importProgress.message = 'Skipped thumbnail generation';
   }
 
   // ── Final counts ──────────────────────────────────────────────────────────

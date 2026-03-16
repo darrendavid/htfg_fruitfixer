@@ -183,10 +183,17 @@ export function AdminDashboardPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-xs">
                         <span className="font-medium">{importStatus.step || importStatus.status}</span>
-                        <span className="text-muted-foreground capitalize">{importStatus.status}</span>
+                        <span className={`capitalize font-medium ${importStatus.status === 'complete' ? 'text-green-600' : importStatus.status === 'error' ? 'text-red-600' : 'text-muted-foreground'}`}>
+                          {importStatus.status}
+                        </span>
                       </div>
                       {importStatus.status === 'running' && importStatus.total > 0 && (
-                        <Progress value={Math.round((importStatus.progress / importStatus.total) * 100)} className="h-2" />
+                        <>
+                          <Progress value={Math.round((importStatus.progress / importStatus.total) * 100)} className="h-2" />
+                          <p className="text-xs text-muted-foreground text-right">
+                            {importStatus.progress.toLocaleString()} / {importStatus.total.toLocaleString()}
+                          </p>
+                        </>
                       )}
                       {importStatus.message && (
                         <p className="text-xs text-muted-foreground">{importStatus.message}</p>
