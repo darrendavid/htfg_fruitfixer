@@ -453,6 +453,87 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
   };
 }
 
+// ── Path repair: remap broken dedup paths to canonical copies ─────────────────
+// Phase 4 deduplication skipped ~7,578 files (same filename + same byte size).
+// Those source paths ended up in the DB with no corresponding file in PARSED_DIR.
+// This function finds a canonical copy in the manifest for each broken path and
+// updates image_path (and thumbnail_path where one already exists) in the DB.
+export function repairPaths(): { fixed: number; unfixable: number; alreadyOk: number } {
+  const manifestPath = jsonPath('phase4_image_manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Manifest not found: ${manifestPath}`);
+  }
+
+  log('[repair] Reading manifest...');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const files: Record<string, unknown>[] = manifest.files || [];
+
+  // Build basename → list of dest-relative paths for files that were actually copied.
+  const basenameMap = new Map<string, string[]>();
+  for (const f of files) {
+    if (!f.dest) continue; // skipped/deduped entries have no dest
+    const destRel = (f.dest as string)
+      .replace(/^content[/\\]parsed[/\\]/, '')
+      .replace(/\\/g, '/');
+    const base = path.basename(destRel);
+    if (!basenameMap.has(base)) basenameMap.set(base, []);
+    basenameMap.get(base)!.push(destRel);
+  }
+  log(`[repair] Manifest loaded: ${basenameMap.size} unique basenames`);
+
+  // Fetch all queue items whose path doesn't exist on disk.
+  const allItems = db.prepare(
+    `SELECT image_path, thumbnail_path FROM review_queue`
+  ).all() as { image_path: string; thumbnail_path: string | null }[];
+
+  const updatePath = db.prepare(
+    `UPDATE review_queue SET image_path = ?, source_path = ? WHERE image_path = ?`
+  );
+  const updateThumb = db.prepare(
+    `UPDATE review_queue SET thumbnail_path = ? WHERE image_path = ?`
+  );
+
+  let fixed = 0;
+  let unfixable = 0;
+  let alreadyOk = 0;
+
+  for (const item of allItems) {
+    const fullPath = path.join(PARSED_DIR, item.image_path);
+    if (fs.existsSync(fullPath)) {
+      alreadyOk++;
+      continue;
+    }
+
+    const base = path.basename(item.image_path);
+    const candidates = basenameMap.get(base);
+
+    // Pick first candidate whose file actually exists on disk.
+    const canonical = candidates?.find(c => fs.existsSync(path.join(PARSED_DIR, c)));
+    if (!canonical) {
+      unfixable++;
+      continue;
+    }
+
+    db.transaction(() => {
+      updatePath.run(canonical, canonical, item.image_path);
+
+      // If a thumbnail already exists for the canonical path, reuse it.
+      const thumbPath = canonical.replace(/\.[^.]+$/, '.jpg');
+      if (fs.existsSync(path.join(THUMBNAILS_DIR, thumbPath))) {
+        updateThumb.run(thumbPath, canonical);
+      } else if (item.thumbnail_path) {
+        // Clear stale thumbnail pointing to the old path.
+        updateThumb.run(null, canonical);
+      }
+    })();
+
+    fixed++;
+  }
+
+  log(`[repair] Done: ${fixed} fixed, ${unfixable} unfixable, ${alreadyOk} already ok`);
+  return { fixed, unfixable, alreadyOk };
+}
+
 // ── Run when invoked directly (tsx server/scripts/import.ts) ──────────────────
 const isMain = process.argv[1] &&
   path.resolve(__filename) === path.resolve(process.argv[1]);

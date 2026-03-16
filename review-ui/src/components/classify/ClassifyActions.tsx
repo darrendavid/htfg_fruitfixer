@@ -6,11 +6,12 @@ interface ClassifyActionsProps {
   onAssign: () => void;
   onNewPlant: () => void;
   onDiscard: () => void;
+  onIgnore: () => void;
   onSkip: () => void;
   isSubmitting: boolean;
 }
 
-export function ClassifyActions({ selectedPlant, onAssign, onNewPlant, onDiscard, onSkip, isSubmitting }: ClassifyActionsProps) {
+export function ClassifyActions({ selectedPlant, onAssign, onNewPlant, onDiscard, onIgnore, onSkip, isSubmitting }: ClassifyActionsProps) {
   return (
     <div className="space-y-2 px-4">
       <Button
@@ -28,6 +29,9 @@ export function ClassifyActions({ selectedPlant, onAssign, onNewPlant, onDiscard
       </Button>
       <Button variant="ghost" className="w-full min-h-[44px] text-muted-foreground" onClick={onSkip} disabled={isSubmitting}>
         ⏭ Skip
+      </Button>
+      <Button variant="ghost" className="w-full min-h-[44px] text-muted-foreground/60 hover:text-muted-foreground text-sm" onClick={onIgnore} disabled={isSubmitting}>
+        Ignore (not relevant to database)
       </Button>
     </div>
   );

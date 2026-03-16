@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as dal from '../lib/dal.js';
-import { importProgress, runImport } from '../scripts/import.js';
+import { importProgress, runImport, repairPaths } from '../scripts/import.js';
 
 const router = Router();
 // Note: requireAdmin is already applied at the router level in server/index.ts
@@ -60,6 +60,20 @@ router.post('/import', (_req, res) => {
   });
 
   res.status(202).json({ status: 'started' });
+});
+
+// ── POST /api/admin/repair-paths ──────────────────────────────────────────────
+router.post('/repair-paths', (_req, res) => {
+  if (importProgress.status === 'running') {
+    res.status(409).json({ error: 'Import is running — wait for it to finish first' });
+    return;
+  }
+  try {
+    const result = repairPaths();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Repair failed' });
+  }
 });
 
 // ── GET /api/admin/import-status ─────────────────────────────────────────────

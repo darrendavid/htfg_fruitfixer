@@ -82,6 +82,17 @@ export function ClassifyPage() {
     await fetchNext();
   };
 
+  const handleIgnore = async () => {
+    if (!item) return;
+    await fetch('/api/review/ignore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_path: item.image_path }),
+      credentials: 'include',
+    });
+    await fetchNext();
+  };
+
   const handleSkip = async () => {
     if (!item) return;
     await fetch(`/api/queue/${item.id}/release`, {
@@ -135,6 +146,7 @@ export function ClassifyPage() {
               onAssign={handleAssign}
               onNewPlant={() => setShowNewPlant(true)}
               onDiscard={() => setShowDiscard(true)}
+              onIgnore={handleIgnore}
               onSkip={handleSkip}
               isSubmitting={isSubmitting}
             />

@@ -81,6 +81,15 @@ export function SwipePage() {
     });
   });
 
+  const handleIgnore = () => handleAction(async () => {
+    await fetch('/api/review/ignore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_path: item!.image_path }),
+      credentials: 'include',
+    });
+  });
+
   const handleIdk = () => handleAction(async () => {
     setIsShaking(true);
     setTimeout(() => setIsShaking(false), 400);
@@ -140,6 +149,7 @@ export function SwipePage() {
               onConfirm={handleConfirm}
               onReject={handleReject}
               onIdk={handleIdk}
+              onIgnore={handleIgnore}
               isSubmitting={isSubmitting}
             />
           </>

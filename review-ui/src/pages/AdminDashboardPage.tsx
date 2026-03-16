@@ -31,6 +31,8 @@ export function AdminDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const [importStarting, setImportStarting] = useState(false);
+  const [repairResult, setRepairResult] = useState<{ fixed: number; unfixable: number; alreadyOk: number } | null>(null);
+  const [repairRunning, setRepairRunning] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function loadData() {
@@ -68,6 +70,25 @@ export function AdminDashboardPage() {
         pollRef.current = null;
       }
     } catch {}
+  }
+
+  async function runRepair() {
+    setRepairRunning(true);
+    setRepairResult(null);
+    try {
+      const res = await fetch('/api/admin/repair-paths', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRepairResult(data);
+      } else {
+        setRepairResult(null);
+      }
+    } finally {
+      setRepairRunning(false);
+    }
   }
 
   async function startImport(skipThumbnails: boolean) {
@@ -226,6 +247,29 @@ export function AdminDashboardPage() {
                       Start (skip thumbnails)
                     </Button>
                   </div>
+                </div>
+                <div className="border rounded-lg p-4 space-y-3">
+                  <h3 className="font-semibold text-sm">Repair Missing Paths</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Fixes queue items whose image paths point to missing files (Phase 4 deduplication side-effect).
+                    Remaps each broken path to the canonical copy that exists in the parsed folder.
+                    Safe to run multiple times.
+                  </p>
+                  {repairResult && (
+                    <div className="text-xs grid grid-cols-2 gap-1 pt-1">
+                      <span className="text-muted-foreground">Fixed</span><span className="text-green-600 font-medium">{repairResult.fixed}</span>
+                      <span className="text-muted-foreground">Unfixable (no canonical copy)</span><span>{repairResult.unfixable}</span>
+                      <span className="text-muted-foreground">Already ok</span><span>{repairResult.alreadyOk}</span>
+                    </div>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={runRepair}
+                    disabled={repairRunning || importStatus?.status === 'running'}
+                  >
+                    {repairRunning ? 'Repairing…' : 'Repair Paths'}
+                  </Button>
                 </div>
               </div>
             </TabsContent>

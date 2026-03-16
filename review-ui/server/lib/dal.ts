@@ -183,6 +183,22 @@ export function classifyItem(imagePath: string, plantId: string, userId: number)
   })();
 }
 
+export function ignoreItem(imagePath: string, userId: number): void {
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE review_queue SET status = 'completed', locked_by = NULL, locked_at = NULL
+      WHERE image_path = ?
+    `).run(imagePath);
+
+    db.prepare(`
+      INSERT INTO review_decisions (image_path, user_id, action)
+      VALUES (?, ?, 'ignore')
+    `).run(imagePath, userId);
+
+    _updateLastActive(userId);
+  })();
+}
+
 export function discardItem(imagePath: string, category: string, notes: string | null, userId: number): void {
   db.transaction(() => {
     db.prepare(`

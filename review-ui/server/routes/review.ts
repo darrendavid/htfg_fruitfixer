@@ -88,6 +88,22 @@ router.post('/discard', (req, res) => {
   }
 });
 
+// ── POST /api/review/ignore ───────────────────────────────────────────────────
+router.post('/ignore', (req, res) => {
+  const { image_path } = req.body ?? {};
+  if (!image_path) {
+    res.status(400).json({ error: 'image_path is required' });
+    return;
+  }
+
+  try {
+    dal.ignoreItem(image_path, req.user!.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(404).json({ error: err.message || 'Item not found' });
+  }
+});
+
 // ── POST /api/review/idk ──────────────────────────────────────────────────────
 router.post('/idk', (req, res) => {
   const { image_path } = req.body ?? {};

@@ -38,7 +38,7 @@ export function CompletionLog() {
           <SelectTrigger className="w-36 h-8 text-xs"><SelectValue placeholder="All actions" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All actions</SelectItem>
-            {['confirm', 'reject', 'classify', 'discard', 'idk'].map(a => (
+            {['confirm', 'reject', 'classify', 'discard', 'ignore', 'idk'].map(a => (
               <SelectItem key={a} value={a}>{a}</SelectItem>
             ))}
           </SelectContent>
