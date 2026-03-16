@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { AdminGuard } from '@/components/auth/AdminGuard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -11,13 +11,27 @@ import { CompletionLog } from '@/components/admin/CompletionLog';
 import { UsersTable } from '@/components/admin/UsersTable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import type { AdminStats, LeaderboardEntry, QueueItem } from '@/types/api';
+
+type ImportStatus = {
+  status: 'idle' | 'running' | 'complete' | 'error';
+  step: string;
+  progress: number;
+  total: number;
+  message: string;
+  counts?: { plants: number; swipe: number; classify: number; total: number };
+};
 
 export function AdminDashboardPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [idkFlagged, setIdkFlagged] = useState<QueueItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
+  const [importStarting, setImportStarting] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function loadData() {
     try {
@@ -41,10 +55,44 @@ export function AdminDashboardPage() {
     } catch {}
   }
 
+  async function loadImportStatus() {
+    try {
+      const res = await fetch('/api/admin/import-status', { credentials: 'include' });
+      const data = await res.json();
+      setImportStatus(data);
+      if (data.status !== 'running' && pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    } catch {}
+  }
+
+  async function startImport(skipThumbnails: boolean) {
+    setImportStarting(true);
+    try {
+      const res = await fetch('/api/admin/import', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ skipThumbnails }),
+      });
+      if (res.ok || res.status === 409) {
+        pollRef.current = setInterval(loadImportStatus, 2000);
+        loadImportStatus();
+      }
+    } finally {
+      setImportStarting(false);
+    }
+  }
+
   useEffect(() => {
     loadData();
+    loadImportStatus();
     const interval = setInterval(loadData, 30_000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, []);
 
   return (
@@ -57,6 +105,7 @@ export function AdminDashboardPage() {
               <TabsTrigger value="log" className="flex-1 text-xs">Log</TabsTrigger>
               <TabsTrigger value="idk" className="flex-1 text-xs" onClick={loadIdkFlagged}>IDK</TabsTrigger>
               <TabsTrigger value="users" className="flex-1 text-xs">Users</TabsTrigger>
+              <TabsTrigger value="import" className="flex-1 text-xs" onClick={loadImportStatus}>Import</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview">
@@ -116,6 +165,59 @@ export function AdminDashboardPage() {
 
             <TabsContent value="users">
               <UsersTable />
+            </TabsContent>
+
+            <TabsContent value="import">
+              <div className="space-y-4">
+                <div className="border rounded-lg p-4 space-y-3">
+                  <h3 className="font-semibold text-sm">Data Import</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Loads plants, swipe queue, and classify queue from the Phase 4/4B JSON files.
+                    Run once after initial deployment. Thumbnail generation takes 30–60 min.
+                  </p>
+
+                  {importStatus && importStatus.status !== 'idle' && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-medium">{importStatus.step || importStatus.status}</span>
+                        <span className="text-muted-foreground capitalize">{importStatus.status}</span>
+                      </div>
+                      {importStatus.status === 'running' && importStatus.total > 0 && (
+                        <Progress value={Math.round((importStatus.progress / importStatus.total) * 100)} className="h-2" />
+                      )}
+                      {importStatus.message && (
+                        <p className="text-xs text-muted-foreground">{importStatus.message}</p>
+                      )}
+                      {importStatus.counts && (
+                        <div className="text-xs grid grid-cols-2 gap-1 pt-1">
+                          <span className="text-muted-foreground">Plants</span><span>{importStatus.counts.plants}</span>
+                          <span className="text-muted-foreground">Swipe queue</span><span>{importStatus.counts.swipe}</span>
+                          <span className="text-muted-foreground">Classify queue</span><span>{importStatus.counts.classify}</span>
+                          <span className="text-muted-foreground font-medium">Total</span><span className="font-medium">{importStatus.counts.total}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      onClick={() => startImport(false)}
+                      disabled={importStarting || importStatus?.status === 'running'}
+                    >
+                      {importStatus?.status === 'running' ? 'Running…' : 'Start Import'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => startImport(true)}
+                      disabled={importStarting || importStatus?.status === 'running'}
+                    >
+                      Start (skip thumbnails)
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </TabsContent>
           </Tabs>
         </div>
