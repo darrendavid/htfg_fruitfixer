@@ -1,10 +1,10 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cookieParser from 'cookie-parser';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 import { config } from './config.js';
+import { log } from './lib/logger.js';
 import { startScheduler } from './lib/scheduler.js';
 import { requireAuth, requireAdmin } from './middleware/index.js';
 import authRouter from './routes/auth.js';
@@ -16,17 +16,6 @@ import leaderboardRouter from './routes/leaderboard.js';
 import meRouter from './routes/me.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// ── Logger ────────────────────────────────────────────────────────────────────
-const logStream = config.LOG_PATH
-  ? fs.createWriteStream(config.LOG_PATH, { flags: 'a' })
-  : null;
-
-function log(line: string) {
-  const entry = `[${new Date().toISOString()}] ${line}`;
-  console.log(entry);
-  logStream?.write(entry + '\n');
-}
 
 const app = express();
 

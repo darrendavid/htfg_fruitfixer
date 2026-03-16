@@ -2,6 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import sharp from 'sharp';
 import { config } from '../config.js';
+import { log } from '../lib/logger.js';
 import * as dal from '../lib/dal.js';
 import db from '../lib/db.js';
 import type { Plant } from '../types.js';
@@ -35,9 +36,6 @@ export let importProgress: {
   message: string;
 } = { status: 'idle', step: '', progress: 0, total: 0, message: '' };
 
-function log(msg: string): void {
-  console.log(`[import] ${msg}`);
-}
 
 // ── Sort key computation ──────────────────────────────────────────────────────
 function confidenceRank(confidence: string | null): number {
