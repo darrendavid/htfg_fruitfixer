@@ -60,7 +60,10 @@ export function AdminDashboardPage() {
       const res = await fetch('/api/admin/import-status', { credentials: 'include' });
       const data = await res.json();
       setImportStatus(data);
-      if (data.status !== 'running' && pollRef.current) {
+      if (data.status === 'running' && !pollRef.current) {
+        // Import is running (possibly started before this page load) — resume polling
+        pollRef.current = setInterval(loadImportStatus, 2000);
+      } else if (data.status !== 'running' && pollRef.current) {
         clearInterval(pollRef.current);
         pollRef.current = null;
       }
