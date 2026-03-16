@@ -35,12 +35,12 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser(config.COOKIE_SECRET));
 
 // ── Static: images and thumbnails ────────────────────────────────────────────
-app.use('/images', requireAuth, express.static(config.IMAGE_MOUNT_PATH));
-app.use(
-  '/thumbnails',
-  requireAuth,
-  express.static(config.THUMBNAILS_PATH),
-);
+// The explicit 404 handler after express.static prevents missing files from
+// falling through to the SPA catch-all (which would return index.html as 200).
+app.use('/images', requireAuth, express.static(config.IMAGE_MOUNT_PATH),
+  (_req: Request, res: Response) => res.sendStatus(404));
+app.use('/thumbnails', requireAuth, express.static(config.THUMBNAILS_PATH),
+  (_req: Request, res: Response) => res.sendStatus(404));
 
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
