@@ -20,7 +20,7 @@ const dryRun = args.includes('--dry-run');
 // IMAGE_MOUNT_PATH points to the content/parsed/ directory
 // JSON source files live in that same directory
 const PARSED_DIR = config.IMAGE_MOUNT_PATH;
-const THUMBNAILS_DIR = path.join(PARSED_DIR, '.thumbnails');
+const THUMBNAILS_DIR = config.THUMBNAILS_PATH;
 const DATA_DIR = path.join(__dirname, '..', 'data');
 
 function jsonPath(filename: string): string {

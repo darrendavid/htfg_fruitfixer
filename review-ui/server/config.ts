@@ -11,6 +11,7 @@ export const config = {
   PORT: parseInt(process.env.PORT || '3001', 10),
   DB_PATH: requireEnv('DB_PATH'),
   IMAGE_MOUNT_PATH: requireEnv('IMAGE_MOUNT_PATH'),
+  THUMBNAILS_PATH: process.env.THUMBNAILS_PATH || requireEnv('IMAGE_MOUNT_PATH') + '/.thumbnails',
   APP_URL: requireEnv('APP_URL'),
   EXTERNAL_URL: process.env.EXTERNAL_URL || requireEnv('APP_URL'),
   LOG_PATH: process.env.LOG_PATH || '',

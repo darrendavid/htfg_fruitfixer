@@ -39,7 +39,7 @@ app.use('/images', requireAuth, express.static(config.IMAGE_MOUNT_PATH));
 app.use(
   '/thumbnails',
   requireAuth,
-  express.static(path.join(config.IMAGE_MOUNT_PATH, '.thumbnails')),
+  express.static(config.THUMBNAILS_PATH),
 );
 
 // ── API routes ────────────────────────────────────────────────────────────────
@@ -75,6 +75,7 @@ const server = app.listen(config.PORT, () => {
   log(`[server] APP_URL: ${config.APP_URL}`);
   log(`[server] EXTERNAL_URL: ${config.EXTERNAL_URL}`);
   log(`[server] IMAGE_MOUNT_PATH: ${config.IMAGE_MOUNT_PATH}`);
+  log(`[server] THUMBNAILS_PATH: ${config.THUMBNAILS_PATH}`);
   log(`[server] DB_PATH: ${config.DB_PATH}`);
   log(`[server] LOG_PATH: ${config.LOG_PATH || '(console only)'}`);
   startScheduler();

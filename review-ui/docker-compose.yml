@@ -5,10 +5,12 @@ services:
       - "3000:3000"
     volumes:
       - ./content/parsed:/data/images:ro
+      - ./data/thumbnails:/data/thumbnails
       - ./data/db:/data/db
       - ./data/logs:/data/logs
     environment:
       - IMAGE_MOUNT_PATH=/data/images
+      - THUMBNAILS_PATH=/data/thumbnails
       - DB_PATH=/data/db/review.db
       - LOG_PATH=/data/logs/app.log
       - PORT=3000
