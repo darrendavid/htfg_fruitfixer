@@ -92,7 +92,7 @@ export function ClassifyPage() {
   };
 
   const imageSrc = item?.thumbnail_path
-    ? `/thumbnails/${item.thumbnail_path.replace(/^.*?\.thumbnails[\\/]/, '')}`
+    ? `/thumbnails/${item.thumbnail_path}`
     : item ? `/images/${item.image_path}` : '';
 
   return (

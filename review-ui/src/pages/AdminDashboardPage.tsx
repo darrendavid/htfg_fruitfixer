@@ -149,7 +149,7 @@ export function AdminDashboardPage() {
                   <div key={item.id} className="flex gap-3 items-center p-3 border rounded-lg">
                     {item.thumbnail_path && (
                       <img
-                        src={`/thumbnails/${item.thumbnail_path.replace(/^.*?\.thumbnails[\\/]/, '')}`}
+                        src={`/thumbnails/${item.thumbnail_path}`}
                         alt=""
                         className="w-16 h-16 object-cover rounded shrink-0"
                       />

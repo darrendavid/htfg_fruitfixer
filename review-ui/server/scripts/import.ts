@@ -83,24 +83,54 @@ function computeSwipeSortKeys(
   return sortKeys;
 }
 
-// ── Thumbnail generation ──────────────────────────────────────────────────────
-async function generateThumbnail(sourcePath: string, relativePath: string): Promise<string | null> {
-  // Thumbnails are stored as JPEGs regardless of source format
-  const thumbRelative = relativePath.replace(/\.[^.]+$/, '.jpg');
-  const destPath = path.join(THUMBNAILS_DIR, thumbRelative);
-  const destDir = path.dirname(destPath);
+// ── Path normalisation ────────────────────────────────────────────────────────
+// All image_path values stored in the DB are relative to PARSED_DIR so the
+// /images/ route can serve them directly as /images/{image_path}.
+// Source material uses paths relative to the source tree (e.g. "HawaiiFruit. Net/…")
+// while the Phase 4 manifest dest paths carry a "content/parsed/" prefix.
+// Both are normalised here to plain relative paths within PARSED_DIR.
+let sourceToRelative: Map<string, string>;
 
-  if (fs.existsSync(destPath)) return destPath; // skip if already generated
+function buildSourceMap(manifestFiles: Record<string, unknown>[]): void {
+  sourceToRelative = new Map();
+  for (const f of manifestFiles) {
+    if (f.source && f.dest) {
+      const relative = (f.dest as string)
+        .replace(/^content[/\\]parsed[/\\]/, '')
+        .replace(/\\/g, '/');
+      sourceToRelative.set(f.source as string, relative);
+    }
+  }
+}
+
+function normalizeToRelative(rawPath: string): string {
+  // Strip content/parsed/ prefix
+  if (/^content[/\\]parsed[/\\]/.test(rawPath)) {
+    return rawPath.replace(/^content[/\\]parsed[/\\]/, '').replace(/\\/g, '/');
+  }
+  // Source path → look up dest in manifest map
+  const mapped = sourceToRelative?.get(rawPath);
+  if (mapped) return mapped;
+  // Fallback: use as-is (shouldn't happen with complete manifest)
+  return rawPath.replace(/\\/g, '/');
+}
+
+// ── Thumbnail generation ──────────────────────────────────────────────────────
+// Returns the relative path within THUMBNAILS_DIR (stored in DB as thumbnail_path).
+async function generateThumbnail(sourcePath: string, relativeImagePath: string): Promise<string | null> {
+  const thumbRelative = relativeImagePath.replace(/\.[^.]+$/, '.jpg');
+  const destPath = path.join(THUMBNAILS_DIR, thumbRelative);
+
+  if (fs.existsSync(destPath)) return thumbRelative; // already done
 
   try {
-    fs.mkdirSync(destDir, { recursive: true });
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
     await sharp(sourcePath)
       .resize({ width: 400, withoutEnlargement: true })
       .jpeg({ quality: 80 })
       .toFile(destPath);
-    return destPath;
+    return thumbRelative;
   } catch {
-    // Non-fatal — log at call site, continue import
     return null;
   }
 }
@@ -197,15 +227,17 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
     const inferences = JSON.parse(fs.readFileSync(inferencesPath, 'utf-8'));
     const rows: Record<string, unknown>[] = inferences.inferences || [];
     for (const r of rows) {
-      const imagePath = r.path as string;
+      // Paths in inferences are source paths — normalise after manifest map is built.
+      // We defer normalisation; sourceToRelative is populated in step 4.
+      const rawPath = r.path as string;
       inferenceItems.push({
-        image_path: imagePath,
+        image_path: rawPath, // normalised below after step 4 builds the map
         suggested_plant_id: (r.inferred_plant_id as string) || null,
         confidence: (r.confidence as string) || null,
         match_type: (r.match_type as string) || null,
         reasoning: (r.reasoning as string) || null,
       });
-      inferencePaths.add(imagePath);
+      inferencePaths.add(rawPath);
     }
     log(`Inferences loaded: ${inferenceItems.length}`);
   } else {
@@ -231,12 +263,17 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     const files: Record<string, unknown>[] = manifest.files || [];
 
+    // Build source→relative map from ALL manifest entries (needed to normalise
+    // inference/unclassified paths which are stored as source paths).
+    buildSourceMap(files);
+    log(`Source→dest map built: ${sourceToRelative.size} entries`);
+
     for (const f of files) {
       if (!f.plant_id) continue;
-      // Prefer the organized destination path; fall back to source path
-      const imagePath = (f.dest as string) || (f.source as string);
-      if (!imagePath) continue;
-      // Skip images already covered by phase4b inferences
+      const rawPath = (f.dest as string) || (f.source as string);
+      if (!rawPath) continue;
+      const imagePath = normalizeToRelative(rawPath);
+      // Skip images already covered by phase4b inferences (compare normalised)
       if (inferencePaths.has(imagePath)) continue;
       manifestItems.push({
         image_path: imagePath,
@@ -248,6 +285,11 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
     log(`Manifest swipe items loaded: ${manifestItems.length}`);
   } else {
     log(`WARNING: phase4_image_manifest.json not found at ${manifestPath}`);
+  }
+
+  // Normalise inference image_path values now that the source map is built
+  for (const item of inferenceItems) {
+    item.image_path = normalizeToRelative(item.image_path);
   }
 
   // Combine all swipe items and compute sort keys
@@ -308,7 +350,7 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
     const classifyRecords = files.map((f) => {
       const dirs = Array.isArray(f.directories) ? (f.directories as string[]) : [];
       const firstDir = dirs.length > 0 ? dirs[0] : 'unknown';
-      const imagePath = f.path as string;
+      const imagePath = normalizeToRelative(f.path as string);
       return {
         image_path: imagePath,
         source_path: imagePath,
@@ -352,10 +394,8 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
       const item = swipeRecords[i];
       const imagePath = item.image_path;
 
-      // Resolve full source path (image_path may be absolute or relative to PARSED_DIR)
-      const fullSourcePath = path.isAbsolute(imagePath)
-        ? imagePath
-        : path.join(PARSED_DIR, imagePath);
+      // image_path is already normalised to be relative to PARSED_DIR
+      const fullSourcePath = path.join(PARSED_DIR, imagePath);
 
       if (!fs.existsSync(fullSourcePath)) {
         thumbSkipped++;
@@ -363,15 +403,11 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
         continue;
       }
 
-      const relativePath = path.isAbsolute(imagePath)
-        ? path.relative(PARSED_DIR, imagePath)
-        : imagePath;
-
-      const thumbPath = await generateThumbnail(fullSourcePath, relativePath);
-      if (thumbPath) {
+      const thumbRelative = await generateThumbnail(fullSourcePath, imagePath);
+      if (thumbRelative) {
         thumbCount++;
         if (!dry) {
-          updateThumb.run(thumbPath, imagePath);
+          updateThumb.run(thumbRelative, imagePath);
         }
       } else {
         thumbErrors++;

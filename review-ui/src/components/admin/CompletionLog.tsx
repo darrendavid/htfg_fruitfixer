@@ -67,7 +67,7 @@ export function CompletionLog() {
                 <TableCell>
                   {row.thumbnail_path && (
                     <img
-                      src={`/thumbnails/${row.thumbnail_path.replace(/^.*?\.thumbnails[\\/]/, '')}`}
+                      src={`/thumbnails/${row.thumbnail_path}`}
                       alt=""
                       className="w-12 h-12 object-cover rounded"
                     />

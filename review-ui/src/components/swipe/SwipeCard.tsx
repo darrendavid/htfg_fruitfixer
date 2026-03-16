@@ -31,7 +31,7 @@ export function SwipeCard({
 
   const plantName = item.suggested_plant_name ?? item.current_plant_name ?? 'Unknown Plant';
   const imageSrc = item.thumbnail_path
-    ? `/thumbnails/${item.thumbnail_path.replace(/^.*?\.thumbnails[\\/]/, '')}`
+    ? `/thumbnails/${item.thumbnail_path}`
     : `/images/${item.image_path}`;
 
   return (
