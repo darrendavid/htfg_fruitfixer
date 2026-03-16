@@ -70,9 +70,10 @@ router.post('/repair-paths', (_req, res) => {
   }
   try {
     const result = repairPaths();
-    res.json(result);
+    res.json({ ok: true, ...result });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Repair failed' });
+    console.error('[admin] repair-paths error:', err);
+    res.status(500).json({ ok: false, error: err.message || 'Repair failed' });
   }
 });
 

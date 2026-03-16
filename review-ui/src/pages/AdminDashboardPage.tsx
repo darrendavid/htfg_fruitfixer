@@ -31,7 +31,7 @@ export function AdminDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
   const [importStarting, setImportStarting] = useState(false);
-  const [repairResult, setRepairResult] = useState<{ fixed: number; unfixable: number; alreadyOk: number } | null>(null);
+  const [repairResult, setRepairResult] = useState<{ ok: boolean; fixed?: number; removed?: number; unfixable?: number; alreadyOk?: number; error?: string } | null>(null);
   const [repairRunning, setRepairRunning] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -81,11 +81,9 @@ export function AdminDashboardPage() {
         credentials: 'include',
       });
       const data = await res.json();
-      if (res.ok) {
-        setRepairResult(data);
-      } else {
-        setRepairResult(null);
-      }
+      setRepairResult(data);
+    } catch (err: any) {
+      setRepairResult({ ok: false, error: err.message || 'Request failed' });
     } finally {
       setRepairRunning(false);
     }
@@ -255,10 +253,14 @@ export function AdminDashboardPage() {
                     Remaps each broken path to the canonical copy that exists in the parsed folder.
                     Safe to run multiple times.
                   </p>
-                  {repairResult && (
+                  {repairResult && !repairResult.ok && (
+                    <p className="text-xs text-red-600 font-medium">{repairResult.error || 'Repair failed'}</p>
+                  )}
+                  {repairResult && repairResult.ok && (
                     <div className="text-xs grid grid-cols-2 gap-1 pt-1">
-                      <span className="text-muted-foreground">Fixed</span><span className="text-green-600 font-medium">{repairResult.fixed}</span>
-                      <span className="text-muted-foreground">Unfixable (no canonical copy)</span><span>{repairResult.unfixable}</span>
+                      <span className="text-muted-foreground">Paths fixed</span><span className="text-green-600 font-medium">{repairResult.fixed}</span>
+                      <span className="text-muted-foreground">Duplicates removed</span><span>{repairResult.removed}</span>
+                      <span className="text-muted-foreground">Unfixable (no canonical)</span><span>{repairResult.unfixable}</span>
                       <span className="text-muted-foreground">Already ok</span><span>{repairResult.alreadyOk}</span>
                     </div>
                   )}

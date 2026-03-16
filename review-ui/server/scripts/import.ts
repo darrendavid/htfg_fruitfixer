@@ -458,7 +458,7 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
 // Those source paths ended up in the DB with no corresponding file in PARSED_DIR.
 // This function finds a canonical copy in the manifest for each broken path and
 // updates image_path (and thumbnail_path where one already exists) in the DB.
-export function repairPaths(): { fixed: number; unfixable: number; alreadyOk: number } {
+export function repairPaths(): { fixed: number; removed: number; unfixable: number; alreadyOk: number } {
   const manifestPath = jsonPath('phase4_image_manifest.json');
   if (!fs.existsSync(manifestPath)) {
     throw new Error(`Manifest not found: ${manifestPath}`);
@@ -468,32 +468,37 @@ export function repairPaths(): { fixed: number; unfixable: number; alreadyOk: nu
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
   const files: Record<string, unknown>[] = manifest.files || [];
 
-  // Build basename → list of dest-relative paths for files that were actually copied.
-  const basenameMap = new Map<string, string[]>();
+  // Build basename → list of {destRel, size} for every manifest entry.
+  // Prefer size-matching when picking among multiple files with the same basename.
+  const basenameMap = new Map<string, Array<{ destRel: string; size: number | null }>>();
   for (const f of files) {
-    if (!f.dest) continue; // skipped/deduped entries have no dest
+    if (!f.dest) continue;
     const destRel = (f.dest as string)
       .replace(/^content[/\\]parsed[/\\]/, '')
       .replace(/\\/g, '/');
     const base = path.basename(destRel);
     if (!basenameMap.has(base)) basenameMap.set(base, []);
-    basenameMap.get(base)!.push(destRel);
+    basenameMap.get(base)!.push({ destRel, size: (f.size as number) ?? null });
   }
-  log(`[repair] Manifest loaded: ${basenameMap.size} unique basenames`);
+  log(`[repair] Manifest loaded: ${basenameMap.size} unique basenames from ${files.length} entries`);
 
-  // Fetch all queue items whose path doesn't exist on disk.
-  const allItems = db.prepare(
-    `SELECT image_path, thumbnail_path FROM review_queue`
-  ).all() as { image_path: string; thumbnail_path: string | null }[];
-
-  const updatePath = db.prepare(
+  // Prepared statements
+  const checkExists = db.prepare(`SELECT image_path FROM review_queue WHERE image_path = ?`);
+  const updatePath  = db.prepare(
     `UPDATE review_queue SET image_path = ?, source_path = ? WHERE image_path = ?`
   );
-  const updateThumb = db.prepare(
-    `UPDATE review_queue SET thumbnail_path = ? WHERE image_path = ?`
-  );
+  const updateThumb = db.prepare(`UPDATE review_queue SET thumbnail_path = ? WHERE image_path = ?`);
+  const deleteItem  = db.prepare(`DELETE FROM review_queue WHERE image_path = ?`);
+
+  // Fetch all queue items.
+  const allItems = db.prepare(
+    `SELECT image_path, thumbnail_path, file_size FROM review_queue`
+  ).all() as { image_path: string; thumbnail_path: string | null; file_size: number | null }[];
+
+  log(`[repair] Checking ${allItems.length} queue items...`);
 
   let fixed = 0;
+  let removed = 0;
   let unfixable = 0;
   let alreadyOk = 0;
 
@@ -506,32 +511,56 @@ export function repairPaths(): { fixed: number; unfixable: number; alreadyOk: nu
 
     const base = path.basename(item.image_path);
     const candidates = basenameMap.get(base);
-
-    // Pick first candidate whose file actually exists on disk.
-    const canonical = candidates?.find(c => fs.existsSync(path.join(PARSED_DIR, c)));
-    if (!canonical) {
+    if (!candidates || candidates.length === 0) {
       unfixable++;
+      log(`[repair] unfixable (no manifest entry for basename "${base}"): ${item.image_path}`);
       continue;
     }
 
-    db.transaction(() => {
-      updatePath.run(canonical, canonical, item.image_path);
+    // Pick best candidate: size-match first, then first that exists on disk.
+    const sizeMatch = item.file_size != null
+      ? candidates.find(c => c.size === item.file_size && fs.existsSync(path.join(PARSED_DIR, c.destRel)))
+      : undefined;
+    const anyMatch = candidates.find(c => fs.existsSync(path.join(PARSED_DIR, c.destRel)));
+    const canonical = (sizeMatch ?? anyMatch)?.destRel;
 
-      // If a thumbnail already exists for the canonical path, reuse it.
-      const thumbPath = canonical.replace(/\.[^.]+$/, '.jpg');
-      if (fs.existsSync(path.join(THUMBNAILS_DIR, thumbPath))) {
-        updateThumb.run(thumbPath, canonical);
-      } else if (item.thumbnail_path) {
-        // Clear stale thumbnail pointing to the old path.
-        updateThumb.run(null, canonical);
-      }
-    })();
+    if (!canonical) {
+      unfixable++;
+      log(`[repair] unfixable (no file on disk for basename "${base}"): ${item.image_path}`);
+      continue;
+    }
 
-    fixed++;
+    // If another queue row already owns the canonical path, delete this duplicate.
+    const existing = checkExists.get(canonical) as { image_path: string } | undefined;
+    if (existing) {
+      deleteItem.run(item.image_path);
+      removed++;
+      log(`[repair] removed duplicate: ${item.image_path} → already mapped to ${canonical}`);
+      continue;
+    }
+
+    // Update to canonical path.
+    try {
+      db.transaction(() => {
+        updatePath.run(canonical, canonical, item.image_path);
+        const thumbRel = canonical.replace(/\.[^.]+$/, '.jpg');
+        if (fs.existsSync(path.join(THUMBNAILS_DIR, thumbRel))) {
+          updateThumb.run(thumbRel, canonical);
+        } else {
+          updateThumb.run(null, canonical);
+        }
+      })();
+      fixed++;
+    } catch (err) {
+      // UNIQUE violation: another iteration already claimed this canonical.
+      // Delete this broken row as a duplicate instead.
+      try { deleteItem.run(item.image_path); removed++; } catch { unfixable++; }
+      log(`[repair] removed (UNIQUE conflict) ${item.image_path} → ${canonical}: ${err}`);
+    }
   }
 
-  log(`[repair] Done: ${fixed} fixed, ${unfixable} unfixable, ${alreadyOk} already ok`);
-  return { fixed, unfixable, alreadyOk };
+  log(`[repair] Done: ${fixed} fixed, ${removed} removed as duplicates, ${unfixable} unfixable, ${alreadyOk} already ok`);
+  return { fixed, removed, unfixable, alreadyOk };
 }
 
 // ── Run when invoked directly (tsx server/scripts/import.ts) ──────────────────
