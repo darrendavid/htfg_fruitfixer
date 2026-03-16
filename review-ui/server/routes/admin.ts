@@ -54,6 +54,9 @@ router.post('/import', (_req, res) => {
   // Fire and forget — run async in background
   runImport({ skipThumbnails: false }).catch(err => {
     console.error('[admin] import error:', err);
+    importProgress.status = 'error';
+    importProgress.step = 'Error';
+    importProgress.message = String(err);
   });
 
   res.status(202).json({ status: 'started' });

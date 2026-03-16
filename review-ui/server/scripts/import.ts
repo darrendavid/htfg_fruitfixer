@@ -113,6 +113,9 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
   const dry = options.dryRun ?? dryRun;
 
   importProgress = { status: 'running', step: 'Step 0/6: Starting', progress: 0, total: 0, message: 'Import started' };
+  log(`IMAGE_MOUNT_PATH / PARSED_DIR: ${PARSED_DIR}`);
+  log(`Thumbnails dir: ${THUMBNAILS_DIR}`);
+  log(`Skip thumbnails: ${skip}, Dry run: ${dry}`);
 
   // ── Step 0: Seed admin user ───────────────────────────────────────────────
   log('Step 0: Seeding admin user...');
@@ -397,18 +400,23 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
   }
 
   // ── Final counts ──────────────────────────────────────────────────────────
+  const finalCounts = dal.getImportCounts();
   if (!dry) {
-    const counts = dal.getImportCounts();
     log('Import complete!');
-    log(`  Plants:   ${counts.plants}`);
-    log(`  Swipe:    ${counts.swipe}`);
-    log(`  Classify: ${counts.classify}`);
-    log(`  Total:    ${counts.total}`);
+    log(`  Plants:   ${finalCounts.plants}`);
+    log(`  Swipe:    ${finalCounts.swipe}`);
+    log(`  Classify: ${finalCounts.classify}`);
+    log(`  Total:    ${finalCounts.total}`);
   } else {
     log('[dry-run] Import simulation complete — no data written');
   }
-
-  importProgress = { status: 'complete', step: 'Done', progress: 0, total: 0, message: 'Import complete' };
+  importProgress = {
+    status: 'complete',
+    step: 'Done',
+    progress: 0,
+    total: 0,
+    message: `Complete — ${finalCounts.plants} plants, ${finalCounts.swipe} swipe, ${finalCounts.classify} classify`,
+  };
 }
 
 // ── Run when invoked directly (tsx server/scripts/import.ts) ──────────────────
