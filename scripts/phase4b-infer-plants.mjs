@@ -10,15 +10,65 @@
  * Usage: node scripts/phase4b-infer-plants.mjs
  */
 
-import { readFileSync, writeFileSync } from 'fs';
-import { join, basename, extname } from 'path';
-import { createRequire } from 'module';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
 const ROOT = join(import.meta.dirname, '..');
 const PARSED = join(ROOT, 'content', 'parsed');
 
+// ─── Load triage decisions as authoritative overrides ─────────────────────────
+// Dirs with human-confirmed plant_id take priority over all fuzzy matching.
+// Dirs with action:'reject' are skipped entirely.
+
+const TRIAGE_FILE = join(PARSED, 'triage_decisions.json');
+const triageDecisions = existsSync(TRIAGE_FILE)
+  ? JSON.parse(readFileSync(TRIAGE_FILE, 'utf-8'))
+  : {};
+
+// Build normalized dir name → { plant_id, note, action } map from confirmed decisions
+const triageOverrides = new Map();
+for (const [dirName, dec] of Object.entries(triageDecisions)) {
+  if (!dec.confirmed && dec.auto) continue; // skip unconfirmed auto-decisions
+  const normDir = dirName.toLowerCase().trim();
+  triageOverrides.set(normDir, {
+    plant_id: dec.plant_id || null,
+    note: dec.note || null,
+    action: dec.action,
+  });
+}
+
+console.log(`Triage overrides loaded: ${triageOverrides.size} dirs (${
+  [...triageOverrides.values()].filter(v => v.action === 'reject').length
+} rejects, ${
+  [...triageOverrides.values()].filter(v => v.plant_id).length
+} with plant_id)`);
+
+// ─── Hardcoded DIR_OVERRIDES for known mismatches ────────────────────────────
+// These correct specific cases where the fuzzy matcher gets the wrong answer,
+// based on human triage review. Takes effect before lookup dictionary is built.
+// Keys are normalized (lowercase, trimmed) directory names from unclassified paths.
+
+const DIR_OVERRIDES = new Map([
+  // mysore = Mysore raspberry (Rubus niveus), NOT Mysore banana variety
+  ['mysore',         { plant_id: 'mysore-raspberry', note: 'Mysore raspberry (Rubus niveus), not banana' }],
+  // poha bush = Poha berry (Physalis peruviana) — "bush" was causing no match
+  ['poha bush',      { plant_id: 'poha',             note: 'Poha berry (Physalis peruviana)' }],
+  ['pohabush',       { plant_id: 'poha',             note: 'Poha berry (Physalis peruviana)' }],
+  // strawg = strawberry guava abbreviation
+  ['strawg',         { plant_id: 'strawberry-guava', note: 'Abbreviation for strawberry guava (Psidium cattleianum)' }],
+  // surinam = surinam cherry (without the "cherry" part)
+  ['surinam',        { plant_id: 'surinam-cherry',   note: 'Surinam cherry (Eugenia uniflora)' }],
+  // Pome/zakuo — zakuro = pomegranate in Japanese; compound dir
+  ['zakuo',          { plant_id: 'pomegranate',      note: 'Zakuro = pomegranate (Japanese)' }],
+  ['zakuro',         { plant_id: 'pomegranate',      note: 'Zakuro = pomegranate (Japanese)' }],
+]);
+
 // ─── Name normalization ───────────────────────────────────────────────────────
 
+/**
+ * Normalize a search term (filename, directory name being looked up).
+ * Strips trailing numbers so "fig5" → "fig", "mango2" → "mango".
+ */
 function normalize(name) {
   if (!name) return '';
   let n = name.toLowerCase();
@@ -32,11 +82,30 @@ function normalize(name) {
   n = n.replace(/\s+/g, ' ').trim();
   // Strip common suffixes
   n = n.replace(/\b(files|pix|copy|folder|photos?|pics?|images?|thumbnails?)\b/g, '').trim();
-  // Strip trailing numbers (e.g., "mango2" → "mango")
+  // Strip trailing numbers (e.g., "mango2" → "mango", "fig5" → "fig")
   n = n.replace(/\s*\d+$/, '').trim();
   // Strip leading "new" or "more"
   n = n.replace(/^(new|more)\s+/i, '').trim();
   // Collapse spaces again
+  n = n.replace(/\s+/g, ' ').trim();
+  return n;
+}
+
+/**
+ * Normalize a lookup dictionary entry (plant/variety name from registry or CSV).
+ * Does NOT strip trailing numbers — "CF2", "DV2", "Fairchild 3" must stay distinct
+ * so they don't collide with short 2-letter directory names like "cf" or "dv".
+ */
+function normalizeLookup(name) {
+  if (!name) return '';
+  let n = name.toLowerCase();
+  n = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  n = n.replace(/\.(jpg|jpeg|gif|png|bmp|tiff?|psd|htm|html|pdf|doc|xls|ppt)$/i, '');
+  n = n.replace(/[-_\.]/g, ' ');
+  n = n.replace(/\s+/g, ' ').trim();
+  n = n.replace(/\b(files|pix|copy|folder|photos?|pics?|images?|thumbnails?)\b/g, '').trim();
+  // NO trailing-number strip here — preserves "CF2" as "cf2", "DV2" as "dv2", etc.
+  n = n.replace(/^(new|more)\s+/i, '').trim();
   n = n.replace(/\s+/g, ' ').trim();
   return n;
 }
@@ -87,6 +156,10 @@ const genericLookupTerms = new Set([
   'round', 'purple', 'golden', 'violet', 'sweet', 'sour', 'bitter',
   'wild', 'giant', 'dwarf', 'royal', 'king', 'queen', 'prince',
   'page', 'bower', 'tasty', 'hardy', 'early', 'late',
+  // Botanical family/category words — not specific plants
+  'pome',   // apple-family (pome fruit = apples, pears); too generic
+  'drupe',  // stone fruit category
+  'berry',  // too generic
 ]);
 
 function addLookup(normalizedName, plantId, source, originalName) {
@@ -101,21 +174,21 @@ function addLookup(normalizedName, plantId, source, originalName) {
   nameLookup.set(normalizedName, { plant_id: plantId, source, original_name: originalName });
 }
 
-// Add registry plants
+// Add registry plants — use normalizeLookup (no trailing-number strip) for dictionary keys
 for (const p of plants) {
-  addLookup(normalize(p.common_name), p.id, 'registry', p.common_name);
+  addLookup(normalizeLookup(p.common_name), p.id, 'registry', p.common_name);
   for (const alias of (p.aliases || [])) {
-    addLookup(normalize(alias), p.id, 'registry', alias);
+    addLookup(normalizeLookup(alias), p.id, 'registry', alias);
   }
   for (const bn of (p.botanical_names || [])) {
-    addLookup(normalize(bn), p.id, 'registry', bn);
+    addLookup(normalizeLookup(bn), p.id, 'registry', bn);
   }
   // Add directory names too (these are what files are organized under)
   for (const d of (p.hwfn_directories || [])) {
-    addLookup(normalize(d), p.id, 'registry', d);
+    addLookup(normalizeLookup(d), p.id, 'registry', d);
   }
   for (const d of (p.original_directories || [])) {
-    addLookup(normalize(d), p.id, 'registry', d);
+    addLookup(normalizeLookup(d), p.id, 'registry', d);
   }
 }
 
@@ -124,7 +197,7 @@ console.log(`  Registry: ${nameLookup.size} name variants from ${plants.length} 
 // Load CSV reference
 const csvText = readFileSync(join(ROOT, 'docs', 'reference', 'tropical_fruits_v10.csv'), 'utf-8');
 const csvLines = csvText.split('\n').filter(l => l.trim());
-const csvHeader = csvLines[0];
+// csvLines[0] is the header row — skip it (index starts at 1 below)
 
 // Track CSV fruit types and their plant_id mapping
 const csvFruitTypes = new Map(); // fruit_type → plant_id
@@ -145,7 +218,7 @@ for (let i = 1; i < csvLines.length; i++) {
 
   // Determine plant_id: try to match fruit type to existing registry
   let plantId;
-  const normalizedFruitType = normalize(fruitType);
+  const normalizedFruitType = normalizeLookup(fruitType);
 
   if (csvFruitTypes.has(fruitType)) {
     plantId = csvFruitTypes.get(fruitType);
@@ -176,15 +249,15 @@ for (let i = 1; i < csvLines.length; i++) {
     }
   }
 
-  // Add fruit type itself
+  // Add fruit type itself — use normalizeLookup so "CF2" stays "cf2" not "cf"
   addLookup(normalizedFruitType, plantId, 'csv', fruitType);
 
   // Add the common name/variety
-  addLookup(normalize(commonNameVariety), plantId, 'csv', commonNameVariety);
+  addLookup(normalizeLookup(commonNameVariety), plantId, 'csv', commonNameVariety);
 
   // Add scientific name
   if (scientificName) {
-    addLookup(normalize(scientificName), plantId, 'csv', scientificName);
+    addLookup(normalizeLookup(scientificName), plantId, 'csv', scientificName);
   }
 
   // Add alternative names (comma-separated within the quoted field)
@@ -192,7 +265,7 @@ for (let i = 1; i < csvLines.length; i++) {
     for (const alt of altNames.split(',')) {
       const trimmed = alt.trim();
       if (trimmed) {
-        addLookup(normalize(trimmed), plantId, 'csv', trimmed);
+        addLookup(normalizeLookup(trimmed), plantId, 'csv', trimmed);
         csvAdded++;
       }
     }
@@ -255,9 +328,26 @@ const stopWords = new Set([
   // Colors and adjectives
   'green', 'red', 'white', 'black', 'yellow', 'blue', 'pink',
   'brown', 'dark', 'light', 'bright', 'deep',
-  // Geography/people
-  'persia', 'persian', 'serbian', 'china', 'chinese', 'india',
-  'indian', 'brazil', 'hawaii', 'hawaiian', 'kona', 'maui',
+  // Geography/nationalities — prevent "australia.jpg" → "Australian" variety, etc.
+  // Only block terms that are clearly just location names with no plant-specific meaning.
+  // (Leave 'spain' out — Spain is a real cherimoya production region in the dataset.)
+  'persia', 'persian', 'serbia', 'serbian', 'china', 'chinese', 'india',
+  'indian', 'brazil', 'brazilian', 'hawaii', 'hawaiian', 'kona', 'maui',
+  'australia', 'australian', 'columbia', 'colombian', 'colombia',
+  'africa', 'african', 'europe', 'european', 'asia', 'asian',
+  'america', 'american', 'mexico', 'mexican', 'thailand', 'thai',
+  'vietnam', 'vietnamese', 'japan', 'japanese', 'florida', 'california',
+  'italy', 'italian', 'france', 'french',
+  'portugal', 'portuguese', 'taiwan', 'korea', 'korean',
+  'philippines', 'philippine', 'indonesia', 'indonesian',
+  // Common misspellings of geographic terms
+  'brazillian', 'brazilan', 'brzillian', 'columbian',
+  // Chinese provinces/regions often used as variety prefixes
+  'fujian', 'guangdong', 'yunnan', 'sichuan', 'hainan',
+  // Japanese geographic terms that show up in travel photos
+  'fujisan', 'fuji',
+  // Architecture/structure terms that fuzzy-match brand names (dome ↔ dole)
+  'dome',
   // Gallery structure
   'roundbl', 'roundbr', 'roundtl', 'roundtr', 'spacer', 'bgtile',
 ]);
@@ -290,8 +380,55 @@ for (let idx = 0; idx < unclassified.length; idx++) {
 
   let inference = null;
 
-  // Priority 1: Directory name exact match
+  // Priority 0a: Triage human override — authoritative, confirmed by human reviewer
+  const topDir = parts.find(p => p && p !== 'HawaiiFruit. Net' && p !== 'original' && p !== 'content' && p !== 'source');
+  if (!inference && topDir) {
+    const normTop = topDir.toLowerCase().trim();
+    const triageEntry = triageOverrides.get(normTop);
+    if (triageEntry) {
+      if (triageEntry.action === 'reject') {
+        // Skip this dir entirely — human marked it non-fruit
+        stillUnclassified.push({ path: f.path, directories: candidateDirs.map(d => d.raw), filename: fileName, skip_reason: 'triage_rejected' });
+        continue;
+      }
+      if (triageEntry.plant_id) {
+        inference = {
+          path: f.path,
+          inferred_plant_id: triageEntry.plant_id,
+          confidence: 'high',
+          match_type: 'triage_override',
+          matched_term: topDir,
+          matched_against: `triage_decisions.json (human confirmed)`,
+          reasoning: `Directory '${topDir}' has human-confirmed plant_id '${triageEntry.plant_id}'` +
+            (triageEntry.note ? ` — note: ${triageEntry.note}` : ''),
+        };
+      }
+    }
+  }
+
+  // Priority 0b: Hardcoded DIR_OVERRIDES for known fuzzy-matcher failures
+  if (!inference) {
+    for (const dir of candidateDirs) {
+      const override = DIR_OVERRIDES.get(dir.normalized) || DIR_OVERRIDES.get(dir.raw.toLowerCase().trim());
+      if (override) {
+        inference = {
+          path: f.path,
+          inferred_plant_id: override.plant_id,
+          confidence: 'high',
+          match_type: 'dir_override',
+          matched_term: dir.raw,
+          matched_against: 'hardcoded DIR_OVERRIDES',
+          reasoning: override.note || `Hardcoded override for '${dir.raw}'`,
+        };
+        break;
+      }
+    }
+  }
+
+  // Priority 1: Directory name exact match (require ≥ 4 chars to avoid 2-letter
+  // abbreviations like "cf" or "dv" matching variety codes like "CF2"/"DV2")
   for (const dir of candidateDirs) {
+    if (dir.normalized.length < 4) continue;
     const match = nameLookup.get(dir.normalized);
     if (match) {
       inference = {
@@ -344,6 +481,22 @@ for (let idx = 0; idx < unclassified.length; idx++) {
         };
         break;
       }
+    }
+  }
+
+  // Priority 2.5: Filename exact lookup (handles short plant names like "fig", "ume")
+  if (!inference && fileBase.length >= 3) {
+    const match = nameLookup.get(fileBase);
+    if (match) {
+      inference = {
+        path: f.path,
+        inferred_plant_id: match.plant_id,
+        confidence: 'high',
+        match_type: 'filename_exact',
+        matched_term: fileName,
+        matched_against: `${match.original_name} (${match.source})`,
+        reasoning: `Filename '${fileName}' normalizes to '${fileBase}' which exactly matches '${match.original_name}'`
+      };
     }
   }
 
