@@ -8,8 +8,8 @@ const router = Router();
 router.get('/next', (req, res) => {
   const { type } = req.query;
 
-  if (type !== 'swipe' && type !== 'classify') {
-    res.status(400).json({ error: 'type must be "swipe" or "classify"' });
+  if (type !== 'swipe' && type !== 'classify' && type !== 'ocr_review') {
+    res.status(400).json({ error: 'type must be "swipe", "classify", or "ocr_review"' });
     return;
   }
 

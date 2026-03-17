@@ -95,4 +95,24 @@ export const SCHEMA_SQL = `
     category        TEXT NOT NULL DEFAULT 'fruit'
   );
   CREATE INDEX IF NOT EXISTS idx_plants_name ON plants(common_name);
+
+  -- OCR extractions
+  CREATE TABLE IF NOT EXISTS ocr_extractions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    queue_item_id   INTEGER REFERENCES review_queue(id),
+    image_path      TEXT NOT NULL,
+    title           TEXT,
+    content_type    TEXT,
+    extracted_text  TEXT,
+    plant_associations TEXT,
+    key_facts       TEXT,
+    source_context  TEXT,
+    reviewer_notes  TEXT,
+    status          TEXT DEFAULT 'pending',
+    reviewed_by     INTEGER REFERENCES users(id),
+    reviewed_at     TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_ocr_queue ON ocr_extractions(queue_item_id);
+  CREATE INDEX IF NOT EXISTS idx_ocr_status ON ocr_extractions(status);
 `;

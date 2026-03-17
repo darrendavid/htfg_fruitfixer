@@ -2,6 +2,7 @@ import db from './db.js';
 import type {
   User, QueueItem, ReviewDecision, NewPlantRequest, Plant,
   QueueStats, AdminStats, LeaderboardEntry, UserStats, CompletionLogRow,
+  OcrExtraction,
 } from '../types.js';
 
 // ─── Private Helpers ─────────────────────────────────────────────────────────
@@ -104,6 +105,9 @@ export function getQueueStats(): QueueStats {
     classify_in_progress: counts['classify_in_progress'] || 0,
     classify_completed: counts['classify_completed'] || 0,
     classify_flagged_idk: counts['classify_flagged_idk'] || 0,
+    ocr_review_pending: counts['ocr_review_pending'] || 0,
+    ocr_review_in_progress: counts['ocr_review_in_progress'] || 0,
+    ocr_review_completed: counts['ocr_review_completed'] || 0,
     decisions_by_action,
     today_by_user: todayRows,
     new_plant_rerun_count: rerunCount,
@@ -475,6 +479,174 @@ export function getAllUsers(): User[] {
   return db.prepare(`SELECT * FROM users ORDER BY created_at ASC`).all() as User[];
 }
 
+// ─── OCR Review Operations ──────────────────────────────────────────────────
+
+export function getNextOcrItem(userId: number): { item: QueueItem; ocr: OcrExtraction } | null {
+  return db.transaction((uid: number) => {
+    // Expire stale locks
+    db.prepare(`
+      UPDATE review_queue
+      SET status = 'pending', locked_by = NULL, locked_at = NULL
+      WHERE status = 'in_progress'
+        AND locked_at < datetime('now', '-5 minutes')
+        AND queue = 'ocr_review'
+    `).run();
+
+    // Find next pending ocr_review item
+    const item = db.prepare(`
+      SELECT * FROM review_queue
+      WHERE queue = 'ocr_review' AND status = 'pending'
+      ORDER BY sort_key ASC
+      LIMIT 1
+    `).get() as QueueItem | undefined;
+
+    if (!item) return null;
+
+    // Lock it
+    db.prepare(`
+      UPDATE review_queue
+      SET status = 'in_progress', locked_by = ?, locked_at = datetime('now')
+      WHERE id = ?
+    `).run(uid, item.id);
+
+    // Get linked OCR extraction
+    const ocr = db.prepare(`
+      SELECT * FROM ocr_extractions WHERE queue_item_id = ?
+    `).get(item.id) as OcrExtraction | undefined;
+
+    if (!ocr) return null;
+
+    return { item: { ...item, status: 'in_progress', locked_by: uid }, ocr };
+  })(userId);
+}
+
+export function getOcrExtraction(queueItemId: number): OcrExtraction | null {
+  return (db.prepare(`
+    SELECT * FROM ocr_extractions WHERE queue_item_id = ?
+  `).get(queueItemId) as OcrExtraction | undefined) ?? null;
+}
+
+export function updateOcrExtraction(id: number, updates: {
+  title?: string | null;
+  extracted_text?: string | null;
+  key_facts?: string | null;
+  plant_associations?: string | null;
+  source_context?: string | null;
+  reviewer_notes?: string | null;
+}): void {
+  const fields: string[] = [];
+  const values: (string | null)[] = [];
+
+  if (updates.title !== undefined) { fields.push('title = ?'); values.push(updates.title); }
+  if (updates.extracted_text !== undefined) { fields.push('extracted_text = ?'); values.push(updates.extracted_text); }
+  if (updates.key_facts !== undefined) { fields.push('key_facts = ?'); values.push(updates.key_facts); }
+  if (updates.plant_associations !== undefined) { fields.push('plant_associations = ?'); values.push(updates.plant_associations); }
+  if (updates.source_context !== undefined) { fields.push('source_context = ?'); values.push(updates.source_context); }
+  if (updates.reviewer_notes !== undefined) { fields.push('reviewer_notes = ?'); values.push(updates.reviewer_notes); }
+
+  if (fields.length === 0) return;
+
+  values.push(id as unknown as string);
+  db.prepare(`UPDATE ocr_extractions SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+}
+
+export function approveOcrExtraction(id: number, userId: number): void {
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE ocr_extractions
+      SET status = 'approved', reviewed_by = ?, reviewed_at = datetime('now')
+      WHERE id = ?
+    `).run(userId, id);
+
+    const ocr = db.prepare(`SELECT queue_item_id, image_path FROM ocr_extractions WHERE id = ?`).get(id) as { queue_item_id: number; image_path: string } | undefined;
+    if (ocr) {
+      db.prepare(`
+        UPDATE review_queue SET status = 'completed', locked_by = NULL, locked_at = NULL
+        WHERE id = ?
+      `).run(ocr.queue_item_id);
+
+      db.prepare(`
+        INSERT INTO review_decisions (image_path, user_id, action, notes)
+        VALUES (?, ?, 'ocr_approve', NULL)
+      `).run(ocr.image_path, userId);
+    }
+
+    _updateLastActive(userId);
+  })();
+}
+
+export function rejectOcrExtraction(id: number, userId: number): void {
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE ocr_extractions
+      SET status = 'rejected', reviewed_by = ?, reviewed_at = datetime('now')
+      WHERE id = ?
+    `).run(userId, id);
+
+    const ocr = db.prepare(`SELECT queue_item_id, image_path FROM ocr_extractions WHERE id = ?`).get(id) as { queue_item_id: number; image_path: string } | undefined;
+    if (ocr) {
+      db.prepare(`
+        UPDATE review_queue SET status = 'completed', locked_by = NULL, locked_at = NULL
+        WHERE id = ?
+      `).run(ocr.queue_item_id);
+
+      db.prepare(`
+        INSERT INTO review_decisions (image_path, user_id, action, notes)
+        VALUES (?, ?, 'ocr_reject', NULL)
+      `).run(ocr.image_path, userId);
+    }
+
+    _updateLastActive(userId);
+  })();
+}
+
+export function getOcrStats(): { pending: number; approved: number; rejected: number; total: number } {
+  const rows = db.prepare(`
+    SELECT status, COUNT(*) as count FROM ocr_extractions GROUP BY status
+  `).all() as Array<{ status: string; count: number }>;
+
+  const counts: Record<string, number> = {};
+  for (const row of rows) counts[row.status] = row.count;
+
+  const pending = counts['pending'] || 0;
+  const approved = counts['approved'] || 0;
+  const rejected = counts['rejected'] || 0;
+  return { pending, approved, rejected, total: pending + approved + rejected };
+}
+
+export function bulkInsertOcrExtractions(items: Partial<OcrExtraction>[]): number {
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO ocr_extractions
+      (queue_item_id, image_path, title, content_type, extracted_text,
+       plant_associations, key_facts, source_context, reviewer_notes, status)
+    VALUES
+      (@queue_item_id, @image_path, @title, @content_type, @extracted_text,
+       @plant_associations, @key_facts, @source_context, @reviewer_notes, @status)
+  `);
+
+  const insertMany = db.transaction((rows: Partial<OcrExtraction>[]) => {
+    let count = 0;
+    for (const row of rows) {
+      const result = insert.run({
+        queue_item_id: row.queue_item_id ?? null,
+        image_path: row.image_path ?? '',
+        title: row.title ?? null,
+        content_type: row.content_type ?? null,
+        extracted_text: row.extracted_text ?? null,
+        plant_associations: row.plant_associations ?? null,
+        key_facts: row.key_facts ?? null,
+        source_context: row.source_context ?? null,
+        reviewer_notes: row.reviewer_notes ?? null,
+        status: row.status ?? 'pending',
+      });
+      count += result.changes;
+    }
+    return count;
+  });
+
+  return insertMany(items);
+}
+
 // ─── Import Operations ───────────────────────────────────────────────────────
 
 export function bulkInsertQueueItems(items: Partial<QueueItem>[]): number {
@@ -531,9 +703,10 @@ export function bulkInsertPlants(plants: Plant[]): number {
   return insertMany(plants);
 }
 
-export function getImportCounts(): { plants: number; swipe: number; classify: number; total: number } {
+export function getImportCounts(): { plants: number; swipe: number; classify: number; ocr_review: number; total: number } {
   const plants = (db.prepare(`SELECT COUNT(*) as count FROM plants`).get() as { count: number }).count;
   const swipe = (db.prepare(`SELECT COUNT(*) as count FROM review_queue WHERE queue = 'swipe'`).get() as { count: number }).count;
   const classify = (db.prepare(`SELECT COUNT(*) as count FROM review_queue WHERE queue = 'classify'`).get() as { count: number }).count;
-  return { plants, swipe, classify, total: swipe + classify };
+  const ocr_review = (db.prepare(`SELECT COUNT(*) as count FROM review_queue WHERE queue = 'ocr_review'`).get() as { count: number }).count;
+  return { plants, swipe, classify, ocr_review, total: swipe + classify + ocr_review };
 }

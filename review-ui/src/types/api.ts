@@ -35,9 +35,42 @@ export interface QueueStats {
   classify_in_progress: number;
   classify_completed: number;
   classify_flagged_idk: number;
+  ocr_review_pending: number;
+  ocr_review_in_progress: number;
+  ocr_review_completed: number;
   decisions_by_action: Record<string, number>;
   today_by_user: Array<{ user_id: number; first_name: string; last_name: string; count: number }>;
   new_plant_rerun_count: number;
+}
+
+export interface OcrExtraction {
+  id: number;
+  queue_item_id: number;
+  image_path: string;
+  title: string | null;
+  content_type: string | null;
+  extracted_text: string | null;
+  plant_associations: string | null; // JSON array
+  key_facts: string | null; // JSON array of {field, value, status}
+  source_context: string | null;
+  reviewer_notes: string | null;
+  status: string;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+
+export interface KeyFact {
+  field: string;
+  value: string;
+  status: 'keep' | 'remove';
+}
+
+export interface OcrStats {
+  pending: number;
+  approved: number;
+  rejected: number;
+  total: number;
 }
 
 export interface Plant {

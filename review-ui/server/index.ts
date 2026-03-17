@@ -14,6 +14,7 @@ import plantsRouter from './routes/plants.js';
 import adminRouter from './routes/admin.js';
 import leaderboardRouter from './routes/leaderboard.js';
 import meRouter from './routes/me.js';
+import ocrReviewRouter from './routes/ocr-review.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,6 +51,7 @@ app.use('/api/plants', requireAuth, plantsRouter);
 app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
 app.use('/api/leaderboard', requireAuth, leaderboardRouter);
 app.use('/api/me', requireAuth, meRouter);
+app.use('/api/ocr-review', requireAuth, ocrReviewRouter);
 
 // ── Production: serve built client ───────────────────────────────────────────
 if (process.env.NODE_ENV === 'production') {

@@ -9,6 +9,7 @@ import { SwipePage } from '@/pages/SwipePage'
 import { ClassifyPage } from '@/pages/ClassifyPage'
 import { LeaderboardPage } from '@/pages/LeaderboardPage'
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage'
+import { OcrReviewPage } from '@/pages/OcrReviewPage'
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/admin/login" element={<AdminLoginPage />} />
           <Route path="/swipe" element={<SwipePage />} />
           <Route path="/classify" element={<ClassifyPage />} />
+          <Route path="/ocr-review" element={<OcrReviewPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="/" element={<Navigate to="/swipe" replace />} />

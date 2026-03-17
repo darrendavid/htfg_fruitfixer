@@ -19,7 +19,7 @@
 
 import { createRequire } from 'module';
 import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'fs';
-import { join, extname, relative, dirname } from 'path';
+import { join, extname, relative, dirname, basename } from 'path';
 
 const require = createRequire(import.meta.url);
 const { createScheduler, createWorker } = require('tesseract.js');
@@ -82,6 +82,7 @@ function collectImages(rootDir, sourceLabel) {
       const p = join(dir, e.name);
       if (e.isDirectory()) { walk(p); continue; }
       if (!/\.(jpe?g|png)$/i.test(e.name)) continue;
+      if (/^DSC/i.test(e.name)) continue;  // camera photos, not data images
       try {
         const size = statSync(p).size;
         if (size < MIN_SIZE_KB * 1024) continue;
@@ -240,10 +241,11 @@ await scheduler.terminate();
 buildCandidates();
 
 function buildCandidates() {
+  const buildStart = Date.now();
   const raw = JSON.parse(readFileSync(RAW_FILE, 'utf-8'));
 
   const candidates = raw
-    .filter(r => r.has_data && r.word_count >= MIN_WORDS && !r.error)
+    .filter(r => r.data_words?.length > 0 && r.word_count >= MIN_WORDS && !r.error && !/^DSC/i.test(basename(r.path)))
     .sort((a, b) => b.data_words.length - a.data_words.length || b.word_count - a.word_count);
 
   const stats = {
@@ -272,7 +274,7 @@ function buildCandidates() {
 
   writeFileSync(OUT_FILE, JSON.stringify(output, null, 2), 'utf-8');
 
-  const elapsed = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
+  const elapsed = ((Date.now() - buildStart) / 1000 / 60).toFixed(1);
   console.log(`=== OCR Scan Complete ===`);
   console.log(`Elapsed: ${elapsed} min`);
   console.log(`Total scanned:    ${stats.total_scanned}`);

@@ -148,22 +148,63 @@ The automated phases (1–4B) will produce the review queue data that feeds into
 
 ---
 
-## Phase 6: NocoDB Population
+## Phase 6: OCR Content Extraction
 
-**Goal:** Load all structured data into NocoDB tables via MCP server.
+**Goal:** Extract agronomic text from images flagged by the OCR triage scanner (posters, data sheets, variety labels, signage) and use the extracted content to inform the database schema before populating it.
+
+**Prerequisites:** Phase 5 (human review), OCR triage complete (`ocr_candidates.json` — 605 images with data-indicator words).
+
+**Steps:**
+1. **Send flagged images to Claude** — For each candidate in `ocr_candidates.json`, send the image to Claude with a prompt to extract structured content: variety names, growing data, harvest info, research findings, nutritional facts, or any other agronomic text visible in the image.
+2. **Structure extracted content** — Claude returns structured fields per image: `title`, `content_type` (poster/data-sheet/label/sign/table), `extracted_text`, `plant_associations[]`, `key_facts[]` (name-value pairs like "Brix: 18", "Spacing: 20ft"), `source_context` (conference, research station, etc.).
+3. **Human review of extractions** — Flag low-confidence or ambiguous extractions for review in the Phase 5 UI (add an "OCR Review" queue type).
+4. **Schema analysis** — Review the extracted fields across all 605 images to identify recurring structured data (variety attributes, trial measurements, growing conditions) that should become columns in the NocoDB schema rather than unstructured text blobs.
+
+**Output:**
+- `content/parsed/phase6_ocr_extractions.json` — structured content from all 605 candidate images
+- Schema recommendations for Phase 7 NocoDB table design (e.g., new Variety fields, measurement tables)
+
+---
+
+## Phase 7: NocoDB Population
+
+**Goal:** Load all structured data into NocoDB tables via MCP server, with schema informed by Phases 3 and 6.
 
 **Steps:**
 1. **Create NocoDB tables:**
-   - **Plants** — id, canonical_name, botanical_name, family, category, aliases (text/JSON), description, harvest_months (text/JSON), growing_notes
-   - **Varieties** — id, plant_id (link), variety_name, characteristics, source
+
+   **Core plant tables:**
+   - **Plants** — id, canonical_name, botanical_name, family, category, aliases (text/JSON), description, harvest_months (text/JSON), tasting_notes, pairs_well_with (plant_id links)
+   - **Varieties** — id, plant_id (link), variety_name, characteristics, tasting_notes, source
+   - **Nutritional_Info** — id, plant_id (link), nutrient_name, value, unit, per_serving, source — separate table to enable searching/sorting by nutritional values
+
+   **Geography:**
+   - **Geographies** — id, island (Hawai'i/Maui/O'ahu/Kaua'i/Moloka'i/Lāna'i), district (official 9-district system: North Hilo, South Hilo, Puna, Ka'u, South Kona, North Kona, South Kohala, North Kohala, Hamakua + equivalent for other islands), moku (traditional 6 moku: Hilo, Puna, Ka'ū, Kona, Kohala, Hāmākua), subregion (town/area: Kailua-Kona, Waimea, Pāhoa, etc.), elevation_zone (CTAHR: low <2000ft, high 2000-4500ft), rainfall_zone (dry <40in, moderate 40-100in, wet >100in), notes
+   - **Plant_Geographies** — plant_id (link), geography_id (link), context (native/cultivated/trial/commercial) — many-to-many junction
+
+   **Growing & cultivation:**
+   - **Growing_Notes** — id, plant_id (link), geography_id (link, optional), climate_zone, soil_type, spacing, irrigation, notes, source — separate table since growing conditions vary by location
+   - **Pests** — id, common_name, scientific_name, description, signs_on_plant, treatments (text/JSON), geographic_locations (text/JSON)
+   - **Pest_Images** — id, pest_id (link), image_path, caption, image_type (pest_photo/damage_sign/lifecycle)
+   - **Plant_Pests** — plant_id (link), pest_id (link) (many-to-many junction)
+   - **Diseases** — id, common_name, pathogen_type (fungal/bacterial/viral), description, symptoms, treatments (text/JSON), geographic_locations (text/JSON)
+   - **Disease_Images** — id, disease_id (link), image_path, caption, image_type (symptom/pathogen/lifecycle)
+   - **Plant_Diseases** — plant_id (link), disease_id (link) (many-to-many junction)
+
+   **Content & media:**
    - **Images** — id, plant_id (link), file_path, thumbnail_path, caption, source_directory
    - **Documents** — id, plant_id (link), title, doc_type (recipe/research/guide/poster), content_text, original_file_path
    - **Recipes** — id, title, ingredients, method, source_file
    - **Recipe_Plants** — recipe_id (link), plant_id (link) (many-to-many junction)
-   - **Tags** — for cross-cutting metadata (region, conference, culinary application)
+   - **OCR_Extractions** — id, image_id (link), plant_id (link), content_type, extracted_text, key_facts (JSON), source_context
+   - **FAQ** — id, plant_id (link), question, answer, source
 
-2. **Load data** — Use NocoDB MCP tools to create tables and insert records from the JSON checkpoint files.
-3. **Link records** — Establish relationships between plants, images, documents, recipes.
+   **Metadata:**
+   - **Tags** — for cross-cutting metadata (region, conference, culinary application)
+   - Additional tables/columns as identified by Phase 6 schema analysis
+
+2. **Load data** — Use NocoDB MCP tools to create tables and insert records from the JSON checkpoint files, including Phase 6 OCR extractions.
+3. **Link records** — Establish relationships between plants, images, documents, recipes, and OCR extractions.
 4. **Verify** — Spot-check a sample of plants to ensure data integrity.
 
 ---
@@ -181,7 +222,7 @@ The automated phases (1–4B) will produce the review queue data that feeds into
 - **Path handling:** All paths contain spaces and special characters — use `path.join()` throughout, never string concatenation.
 - **Checkpointing:** Each phase writes a JSON file consumed by the next. Phases are independently re-runnable.
 - **Scale:** ~31,000 files total. Each processing phase should complete in minutes on a local machine.
-- **NocoDB MCP:** Will use the MCP server tools to interact with NocoDB for table creation and data population in Phase 6.
+- **NocoDB MCP:** Will use the MCP server tools to interact with NocoDB for table creation and data population in Phase 7.
 
 ## Agents
 
@@ -193,11 +234,11 @@ The automated phases (1–4B) will produce the review queue data that feeds into
 | `html-content-extractor` | 3 | Parse HTML for harvest data, descriptions, recipes, links | sonnet |
 | `document-parser` | 3 | Extract from XLS, PDF, TXT; Python fallback for complex PDFs | sonnet |
 | `image-organizer` | 4 | Copy/organize images, extract metadata, generate thumbnails | haiku |
-| `nocodb-data-loader` | 6 | Create schemas, batch-load data, link relationships via MCP | sonnet |
+| `nocodb-data-loader` | 7 | Create schemas, batch-load data, link relationships via MCP | sonnet |
 
 ### Existing Agents to Leverage
 - **`product-strategy-advisor`** — Phase 5: Generate PRD for mobile review UI
-- **`system-architect`** — Phase 6: Validate NocoDB schema design
+- **`system-architect`** — Phase 7: Validate NocoDB schema design
 - **`prd-breakdown-execute`** — Phase 5: Break down and execute the review UI subproject
 
 ## Verification
@@ -208,4 +249,5 @@ After each phase:
 - Phase 3: Spot-check extracted text for a few well-known fruits (mango, avocado, fig)
 - Phase 4: Browse the structured/ directory — verify images are correctly placed
 - Phase 5: Review queue should be manageable (<500 items needing human input)
-- Phase 6: Query NocoDB tables — search for specific plants, verify linked images and documents
+- Phase 6: Review OCR extractions — verify structured fields extracted from posters/signs, check schema recommendations
+- Phase 7: Query NocoDB tables — search for specific plants, verify linked images, documents, and OCR data

@@ -373,6 +373,69 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
     log(`WARNING: phase4b_still_unclassified.json not found at ${unclassifiedPath}`);
   }
 
+  // ── Step 5b: Import OCR extractions from phase6_ocr_extractions.json ─────
+  log('Step 5b: Importing OCR extractions...');
+  importProgress.step = 'Step 5b/6: Importing OCR extractions';
+  importProgress.message = 'Reading phase6_ocr_extractions.json...';
+
+  const ocrPath = jsonPath('phase6_ocr_extractions.json');
+  if (fs.existsSync(ocrPath)) {
+    const ocrData = JSON.parse(fs.readFileSync(ocrPath, 'utf-8'));
+    const ocrItems: Record<string, unknown>[] = ocrData.extractions || [];
+
+    // First, create review_queue entries for OCR items
+    const ocrQueueRecords = ocrItems.map((item, i) => {
+      const imagePath = normalizeToRelative(item.image_path as string);
+      return {
+        image_path: imagePath,
+        source_path: imagePath,
+        queue: 'ocr_review',
+        status: 'pending',
+        sort_key: `ocr:${String(i).padStart(6, '0')}:${imagePath}`,
+        locked_by: null,
+      };
+    });
+
+    if (!dry) {
+      log(`Inserting ${ocrQueueRecords.length} OCR review queue items...`);
+      const ocrQueueInserted = dal.bulkInsertQueueItems(ocrQueueRecords);
+      log(`OCR review queue: inserted ${ocrQueueInserted} / ${ocrQueueRecords.length}`);
+
+      // Now create ocr_extractions rows linked to the queue entries
+      const ocrExtractionRecords = ocrItems.map((item) => {
+        const imagePath = normalizeToRelative(item.image_path as string);
+        // Look up the queue_item_id from the just-inserted review_queue row
+        const queueRow = db.prepare(
+          `SELECT id FROM review_queue WHERE image_path = ? AND queue = 'ocr_review'`
+        ).get(imagePath) as { id: number } | undefined;
+
+        return {
+          queue_item_id: queueRow?.id ?? null,
+          image_path: imagePath,
+          title: (item.title as string) || null,
+          content_type: (item.content_type as string) || null,
+          extracted_text: (item.extracted_text as string) || null,
+          plant_associations: item.plant_associations
+            ? JSON.stringify(item.plant_associations)
+            : null,
+          key_facts: item.key_facts
+            ? JSON.stringify(item.key_facts)
+            : null,
+          source_context: (item.source_context as string) || null,
+          reviewer_notes: null,
+          status: 'pending',
+        };
+      });
+
+      const ocrInserted = dal.bulkInsertOcrExtractions(ocrExtractionRecords);
+      log(`OCR extractions: inserted ${ocrInserted} / ${ocrExtractionRecords.length}`);
+    } else {
+      log(`[dry-run] Would insert ${ocrQueueRecords.length} OCR review items`);
+    }
+  } else {
+    log(`INFO: phase6_ocr_extractions.json not found at ${ocrPath} — skipping OCR import`);
+  }
+
   // ── Step 6: Generate thumbnails ───────────────────────────────────────────
   if (!skip) {
     log('Step 6: Generating thumbnails...');
@@ -437,10 +500,11 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
   const finalCounts = dal.getImportCounts();
   if (!dry) {
     log('Import complete!');
-    log(`  Plants:   ${finalCounts.plants}`);
-    log(`  Swipe:    ${finalCounts.swipe}`);
-    log(`  Classify: ${finalCounts.classify}`);
-    log(`  Total:    ${finalCounts.total}`);
+    log(`  Plants:     ${finalCounts.plants}`);
+    log(`  Swipe:      ${finalCounts.swipe}`);
+    log(`  Classify:   ${finalCounts.classify}`);
+    log(`  OCR Review: ${finalCounts.ocr_review}`);
+    log(`  Total:      ${finalCounts.total}`);
   } else {
     log('[dry-run] Import simulation complete — no data written');
   }
@@ -449,7 +513,7 @@ export async function runImport(options: { skipThumbnails?: boolean; dryRun?: bo
     step: 'Done',
     progress: 0,
     total: 0,
-    message: `Complete — ${finalCounts.plants} plants, ${finalCounts.swipe} swipe, ${finalCounts.classify} classify`,
+    message: `Complete — ${finalCounts.plants} plants, ${finalCounts.swipe} swipe, ${finalCounts.classify} classify, ${finalCounts.ocr_review} ocr_review`,
   };
 }
 
