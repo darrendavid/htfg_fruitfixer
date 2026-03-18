@@ -127,4 +127,12 @@ export const SCHEMA_SQL = `
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_notes_plant ON staff_notes(plant_id);
+
+  -- Hero image preferences (Phase 8 browse UI)
+  CREATE TABLE IF NOT EXISTS hero_images (
+    plant_id    TEXT PRIMARY KEY,
+    image_id    INTEGER NOT NULL,
+    file_path   TEXT NOT NULL,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `;

@@ -101,10 +101,24 @@ router.get('/', asyncHandler(async (req, res) => {
 
   const result = await nocodb.list('Plants', listOpts);
 
-  // Enrich each plant with a hero image path by checking the filesystem
+  // Enrich each plant with a hero image path
+  // Check hero_images table first (user-selected), fall back to filesystem
+  const heroRows = db.prepare(`SELECT plant_id, file_path FROM hero_images`).all() as Array<{ plant_id: string; file_path: string }>;
+  const heroMap = new Map(heroRows.map((r) => [r.plant_id, r.file_path]));
+
   const enrichedPlants = result.list.map((plant: any) => {
     const slug = plant.Id1;
-    if (slug && plant.Image_Count > 0) {
+    if (!slug) return plant;
+
+    // Check for user-selected hero
+    const heroPath = heroMap.get(slug);
+    if (heroPath) {
+      plant.hero_image = heroPath.replace(/^content\/parsed\//, '');
+      return plant;
+    }
+
+    // Fall back to first image on disk
+    if (plant.Image_Count > 0) {
       try {
         const plantDir = path.join(config.IMAGE_MOUNT_PATH, 'plants', slug, 'images');
         const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
@@ -226,15 +240,20 @@ router.get('/:id', asyncHandler(async (req, res) => {
     ORDER BY sn.created_at DESC
   `).all(plantSlug);
 
-  // Add hero_image to plant
+  // Add hero_image to plant — check hero_images table first, then filesystem
   if (plantSlug) {
-    try {
-      const plantDir = path.join(config.IMAGE_MOUNT_PATH, 'plants', plantSlug, 'images');
-      const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
-      if (files.length > 0) {
-        plant.hero_image = `plants/${plantSlug}/images/${files[0]}`;
-      }
-    } catch { /* no directory */ }
+    const heroRow = db.prepare(`SELECT file_path FROM hero_images WHERE plant_id = ?`).get(plantSlug) as { file_path: string } | undefined;
+    if (heroRow) {
+      plant.hero_image = heroRow.file_path.replace(/^content\/parsed\//, '');
+    } else {
+      try {
+        const plantDir = path.join(config.IMAGE_MOUNT_PATH, 'plants', plantSlug, 'images');
+        const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
+        if (files.length > 0) {
+          plant.hero_image = `plants/${plantSlug}/images/${files[0]}`;
+        }
+      } catch { /* no directory */ }
+    }
   }
 
   res.json({
@@ -320,6 +339,31 @@ router.delete('/nutritional/:id', requireAdmin, asyncHandler(async (req, res) =>
   const { id } = req.params;
   await nocodb.delete('Nutritional_Info', id);
   res.json({ success: true });
+}));
+
+// ── POST /set-hero/:imageId — Set an image as the hero for its plant (admin) ──
+router.post('/set-hero/:imageId', requireAdmin, asyncHandler(async (req, res) => {
+  const { imageId } = req.params;
+  const { plant_id } = req.body ?? {};
+  if (!plant_id) {
+    res.status(400).json({ error: 'plant_id is required' });
+    return;
+  }
+
+  // Get the image record to find its file path
+  const image = await nocodb.get('Images', imageId);
+  if (!image) {
+    res.status(404).json({ error: 'Image not found' });
+    return;
+  }
+
+  // Store hero preference in local SQLite (simple key-value)
+  db.prepare(`
+    INSERT OR REPLACE INTO hero_images (plant_id, image_id, file_path)
+    VALUES (?, ?, ?)
+  `).run(plant_id, imageId, image.File_Path);
+
+  res.json({ success: true, file_path: image.File_Path });
 }));
 
 // ── POST /exclude-image/:id — Exclude image and prevent re-import (admin) ────

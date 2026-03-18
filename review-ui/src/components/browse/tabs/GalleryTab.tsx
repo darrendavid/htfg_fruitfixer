@@ -99,6 +99,24 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
     }
   }, [lightboxIndex]);
 
+  const [heroId, setHeroId] = useState<number | null>(null);
+
+  const setAsHero = useCallback(async (img: BrowseImage) => {
+    try {
+      const res = await fetch(`/api/browse/set-hero/${img.Id}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plant_id: plantId }),
+      });
+      if (res.ok) {
+        setHeroId(img.Id);
+      }
+    } catch {
+      // error
+    }
+  }, [plantId]);
+
   const deleteImage = useCallback(async (img: BrowseImage) => {
     try {
       const res = await fetch(`/api/browse/exclude-image/${img.Id}`, {
@@ -143,6 +161,9 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
       } else if (e.key === 'x' && isAdmin && lightboxImage) {
         e.preventDefault();
         deleteImage(lightboxImage);
+      } else if (e.key === 'h' && isAdmin && lightboxImage) {
+        e.preventDefault();
+        setAsHero(lightboxImage);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         closeLightbox();
@@ -151,7 +172,7 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
 
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [lightboxIndex, goNext, goPrev, deleteImage, lightboxImage, isAdmin]);
+  }, [lightboxIndex, goNext, goPrev, deleteImage, setAsHero, lightboxImage, isAdmin]);
 
   if (isLoading) {
     return (
@@ -291,14 +312,24 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
                   </div>
                 </div>
                 {isAdmin && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => deleteImage(lightboxImage)}
-                    title="Delete image (x)"
-                  >
-                    Delete (x)
-                  </Button>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant={heroId === lightboxImage.Id ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setAsHero(lightboxImage)}
+                      title="Set as hero image (h)"
+                    >
+                      {heroId === lightboxImage.Id ? 'Hero' : 'Set Hero (h)'}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => deleteImage(lightboxImage)}
+                      title="Delete image (x)"
+                    >
+                      Delete (x)
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>
