@@ -167,8 +167,14 @@ if (existsSync(RAW_FILE)) {
   try {
     rawResults = JSON.parse(readFileSync(RAW_FILE, 'utf-8'));
     if (!Array.isArray(rawResults)) rawResults = [];
-    for (const r of rawResults) doneSet.add(r.source_path);
-    console.log(`Resuming: ${doneSet.size} already processed`);
+    // Only skip successful extractions — retry errors (rate limits, etc.)
+    const errCount = rawResults.filter(r => r.error).length;
+    for (const r of rawResults) {
+      if (!r.error) doneSet.add(r.source_path);
+    }
+    // Remove error entries so they can be retried
+    rawResults = rawResults.filter(r => !r.error);
+    console.log(`Resuming: ${doneSet.size} successful, ${errCount} errors will be retried`);
   } catch {
     rawResults = [];
   }
