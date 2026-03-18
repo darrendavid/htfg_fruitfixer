@@ -15,6 +15,7 @@ import adminRouter from './routes/admin.js';
 import leaderboardRouter from './routes/leaderboard.js';
 import meRouter from './routes/me.js';
 import ocrReviewRouter from './routes/ocr-review.js';
+import browseRouter from './routes/browse.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,6 +53,7 @@ app.use('/api/admin', requireAuth, requireAdmin, adminRouter);
 app.use('/api/leaderboard', requireAuth, leaderboardRouter);
 app.use('/api/me', requireAuth, meRouter);
 app.use('/api/ocr-review', requireAuth, ocrReviewRouter);
+app.use('/api/browse', requireAuth, browseRouter);
 
 // ── Production: serve built client ───────────────────────────────────────────
 if (process.env.NODE_ENV === 'production') {
@@ -72,7 +74,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────────
-const server = app.listen(config.PORT, () => {
+const server = app.listen(config.PORT, '0.0.0.0', () => {
   log(`[server] listening on port ${config.PORT}`);
   log(`[server] APP_URL: ${config.APP_URL}`);
   log(`[server] EXTERNAL_URL: ${config.EXTERNAL_URL}`);

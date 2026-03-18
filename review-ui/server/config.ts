@@ -28,4 +28,6 @@ export const config = {
     process.env.REMINDER_INACTIVE_DAYS || '3',
     10,
   ),
+  NOCODB_URL: process.env.NOCODB_URL || 'https://nocodb.djjd.us',
+  NOCODB_API_KEY: requireEnv('NOCODB_API_KEY'),
 };

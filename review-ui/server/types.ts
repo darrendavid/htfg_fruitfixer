@@ -95,6 +95,16 @@ export interface Plant {
   category: string;
 }
 
+export interface StaffNote {
+  id: number;
+  plant_id: string;
+  variety_id: number | null;
+  user_id: number;
+  text: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface OcrExtraction {
   id: number;
   queue_item_id: number;

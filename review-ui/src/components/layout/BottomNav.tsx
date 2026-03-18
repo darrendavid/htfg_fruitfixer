@@ -6,6 +6,7 @@ const navItems = [
   { to: '/swipe', label: 'Swipe', icon: '👆' },
   { to: '/classify', label: 'Classify', icon: '🏷️' },
   { to: '/ocr-review', label: 'OCR', icon: '📝' },
+  { to: '/plants', label: 'Plants', icon: '🌱' },
   { to: '/leaderboard', label: 'Stats', icon: '📊' },
 ];
 

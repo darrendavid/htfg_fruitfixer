@@ -10,6 +10,8 @@ import { ClassifyPage } from '@/pages/ClassifyPage'
 import { LeaderboardPage } from '@/pages/LeaderboardPage'
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage'
 import { OcrReviewPage } from '@/pages/OcrReviewPage'
+import { PlantGridPage } from '@/pages/PlantGridPage'
+import { PlantDetailPage } from '@/pages/PlantDetailPage'
 
 export default function App() {
   return (
@@ -24,6 +26,8 @@ export default function App() {
           <Route path="/classify" element={<ClassifyPage />} />
           <Route path="/ocr-review" element={<OcrReviewPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
+          <Route path="/plants" element={<PlantGridPage />} />
+          <Route path="/plants/:id" element={<PlantDetailPage />} />
           <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="/" element={<Navigate to="/swipe" replace />} />
           <Route path="*" element={<Navigate to="/swipe" replace />} />

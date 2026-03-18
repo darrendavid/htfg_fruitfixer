@@ -115,4 +115,16 @@ export const SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS idx_ocr_queue ON ocr_extractions(queue_item_id);
   CREATE INDEX IF NOT EXISTS idx_ocr_status ON ocr_extractions(status);
+
+  -- Staff notes (Phase 8 browse UI)
+  CREATE TABLE IF NOT EXISTS staff_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    plant_id    TEXT NOT NULL,
+    variety_id  INTEGER,
+    user_id     INTEGER NOT NULL REFERENCES users(id),
+    text        TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_notes_plant ON staff_notes(plant_id);
 `;
