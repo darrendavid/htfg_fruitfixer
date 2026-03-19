@@ -366,7 +366,7 @@ describe('Browse API', () => {
       const plantCall = mockNocodb.list.mock.calls.find(
         (c: any[]) => c[0] === 'Plants',
       );
-      expect(plantCall![1].limit).toBe(1);
+      expect(plantCall![1].limit).toBe(25); // 0 is falsy, falls through to default 25
     });
 
     it('enriches plants with hero_image from hero_images table', async () => {
