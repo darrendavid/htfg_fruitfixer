@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { RotateCcw, RotateCw } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { RotateCcw, RotateCw, LayoutGrid, FolderOpen } from 'lucide-react';
 import { LazyImage } from '@/components/images/LazyImage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,18 @@ import type { BrowseImage, BrowseVariety } from '@/types/browse';
 const PAGE_SIZE = 50;
 
 function stripParsedPrefix(filePath: string) {
-  return filePath.replace(/^content\/parsed\//, '');
+  return filePath.replace(/^content\/parsed\//, '').replace(/#/g, '%23');
+}
+
+function rotationStyle(deg: number | undefined | null): React.CSSProperties {
+  const d = ((deg ?? 0) % 360 + 360) % 360;
+  if (d === 0) return {};
+  // For 90/270, we need to scale down so the rotated image fits in the original container
+  // The image's width becomes height and vice versa after rotation
+  if (d === 90 || d === 270) {
+    return { transform: `rotate(${d}deg)`, transformOrigin: 'center center' };
+  }
+  return { transform: `rotate(${d}deg)`, transformOrigin: 'center center' };
 }
 
 function rotationClass(deg: number | undefined | null): string {
@@ -40,7 +51,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ w: number; h: number } | null>(null);
   const [heroPath, setHeroPath] = useState<string | null>(currentHeroPath ?? null);
+  const [viewMode, setViewMode] = useState<'grid' | 'grouped'>('grid');
   const lightboxImgRef = useRef<HTMLImageElement>(null);
+  const plantInputRef = useRef<HTMLInputElement>(null);
+  const varietyInputRef = useRef<HTMLInputElement>(null);
 
   const lightboxImage = lightboxIndex !== null ? images[lightboxIndex] : null;
 
@@ -205,6 +219,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       else if (e.key === 'h' && isAdmin && lightboxImage) { e.preventDefault(); setAsHero(lightboxImage); }
       else if (e.key === '[' && isAdmin && lightboxImage) { e.preventDefault(); rotateImage(lightboxImage, 'ccw'); }
       else if (e.key === ']' && isAdmin && lightboxImage) { e.preventDefault(); rotateImage(lightboxImage, 'cw'); }
+      else if (e.key === 'v' && isAdmin) { e.preventDefault(); varietyInputRef.current?.focus(); }
+      else if (e.key === 'p' && isAdmin) { e.preventDefault(); plantInputRef.current?.focus(); }
       else if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); }
     };
     window.addEventListener('keydown', handleKey);
@@ -215,6 +231,51 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     const stripped = stripParsedPrefix(img.File_Path);
     return heroPath === stripped;
   };
+
+  // Grouped view data — must be before any early returns (Rules of Hooks)
+  const groupedImages = useMemo(() => {
+    if (viewMode !== 'grouped') return [];
+    const groups: Record<string, BrowseImage[]> = {};
+    for (const img of images) {
+      const path = stripParsedPrefix(img.File_Path);
+      const dir = path.substring(0, path.lastIndexOf('/'));
+      const label = dir.includes('images/') ? dir.substring(dir.indexOf('images/') + 7) : dir;
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(img);
+    }
+    return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [images, viewMode]);
+
+  const handleBulkReassign = useCallback(async (imageIds: number[], newPlantId: string) => {
+    try {
+      const res = await fetch('/api/browse/bulk-reassign-images', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_ids: imageIds, plant_id: newPlantId }),
+      });
+      if (res.ok) {
+        setImages((prev) => prev.filter((i) => !imageIds.includes(i.Id)));
+        setTotalRows((prev) => prev - imageIds.length);
+      }
+    } catch {}
+  }, []);
+
+  const handleBulkVariety = useCallback(async (imageIds: number[], varietyName: string | null) => {
+    try {
+      const res = await fetch('/api/browse/bulk-set-variety', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_ids: imageIds, variety_name: varietyName }),
+      });
+      if (res.ok) {
+        setImages((prev) =>
+          prev.map((i) => imageIds.includes(i.Id) ? { ...i, Variety_Name: varietyName } as any : i)
+        );
+      }
+    } catch {}
+  }, []);
 
   const GoldStar = () => (
     <div className="absolute top-1 left-1 z-10 text-yellow-400 drop-shadow-md" title="Hero image">
@@ -242,67 +303,152 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     );
   }
 
+  const renderImageThumbnail = (img: BrowseImage, idx: number) => (
+    <div key={img.Id} className="space-y-1">
+      <div
+        className="group aspect-square bg-muted rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-ring transition-shadow relative"
+        onClick={() => openLightbox(idx)}
+      >
+        <div className={`w-full h-full ${rotationClass((img as any).Rotation)}`}>
+          <LazyImage
+            src={`/images/${stripParsedPrefix(img.File_Path)}`}
+            alt={img.Caption ?? ''}
+            className="w-full h-full"
+          />
+        </div>
+        {isHero(img) && <GoldStar />}
+        {isAdmin && (
+          <>
+            <button
+              className="absolute bottom-1 left-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Rotate left ([)"
+              onClick={(e) => { e.stopPropagation(); rotateImage(img, 'ccw'); }}
+            >
+              <RotateCcw className="size-4" />
+            </button>
+            <button
+              className="absolute bottom-1 right-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Rotate right (])"
+              onClick={(e) => { e.stopPropagation(); rotateImage(img, 'cw'); }}
+            >
+              <RotateCw className="size-4" />
+            </button>
+          </>
+        )}
+      </div>
+      {((img as any).Variety_Name || img.Caption) && (
+        <p className="text-[10px] text-muted-foreground line-clamp-1">
+          {(img as any).Variety_Name && (
+            <span className="text-blue-500 font-medium">{(img as any).Variety_Name} </span>
+          )}
+          {img.Caption}
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">{totalRows} images total</p>
-
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-        {images.map((img, idx) => (
-          <div key={img.Id} className="space-y-1">
-            <div
-              className="group aspect-square bg-muted rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-ring transition-shadow relative"
-              onClick={() => openLightbox(idx)}
-            >
-              <div className={`w-full h-full ${rotationClass((img as any).Rotation)}`}>
-                <LazyImage
-                  src={`/images/${stripParsedPrefix(img.File_Path)}`}
-                  alt={img.Caption ?? ''}
-                  className="w-full h-full"
-                />
-              </div>
-              {isHero(img) && <GoldStar />}
-              {/* Rotate icons on hover */}
-              {isAdmin && (
-                <>
-                  <button
-                    className="absolute bottom-1 left-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Rotate left ([)"
-                    onClick={(e) => { e.stopPropagation(); rotateImage(img, 'ccw'); }}
-                  >
-                    <RotateCcw className="size-4" />
-                  </button>
-                  <button
-                    className="absolute bottom-1 right-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    title="Rotate right (])"
-                    onClick={(e) => { e.stopPropagation(); rotateImage(img, 'cw'); }}
-                  >
-                    <RotateCw className="size-4" />
-                  </button>
-                </>
-              )}
-            </div>
-            {((img as any).Variety_Name || img.Caption) && (
-              <p className="text-[10px] text-muted-foreground line-clamp-1">
-                {(img as any).Variety_Name && (
-                  <span className="text-blue-500 font-medium">{(img as any).Variety_Name} </span>
-                )}
-                {img.Caption}
-              </p>
-            )}
-          </div>
-        ))}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{totalRows} images total</p>
+        <div className="flex gap-1">
+          <Button
+            variant={viewMode === 'grid' ? 'default' : 'outline'}
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setViewMode('grid')}
+            title="Grid view"
+          >
+            <LayoutGrid className="size-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'grouped' ? 'default' : 'outline'}
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => setViewMode('grouped')}
+            title="Grouped by directory"
+          >
+            <FolderOpen className="size-4" />
+          </Button>
+        </div>
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-4 pt-2">
-          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
-          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-            Next
-          </Button>
+      {viewMode === 'grid' ? (
+        <>
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+            {images.map((img, idx) => renderImageThumbnail(img, idx))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4 pt-2">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                Next
+              </Button>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="space-y-6">
+          {groupedImages.map(([dirLabel, groupImgs]) => {
+            const groupIds = groupImgs.map((i) => i.Id);
+            const globalStartIdx = images.findIndex((i) => i.Id === groupImgs[0].Id);
+            return (
+              <div key={dirLabel} className="space-y-2">
+                <div className="border-b pb-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <FolderOpen className="size-4 text-muted-foreground shrink-0" />
+                    <p className="text-sm font-medium truncate">{dirLabel || '(root)'}</p>
+                    <Badge variant="outline" className="text-xs shrink-0">{groupImgs.length}</Badge>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex gap-4 mt-1">
+                      <div className="flex-1">
+                        <GroupPlantReassigner
+                          currentPlantId={plantId}
+                          imageIds={groupIds}
+                          onReassigned={(ids) => {
+                            setImages((prev) => prev.filter((i) => !ids.includes(i.Id)));
+                            setTotalRows((prev) => prev - ids.length);
+                          }}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <GroupVarietyPicker
+                          plantId={plantId}
+                          imageIds={groupIds}
+                          onSet={(name) => handleBulkVariety(groupIds, name)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                  {groupImgs.map((img) => {
+                    const idx = images.indexOf(img);
+                    return renderImageThumbnail(img, idx >= 0 ? idx : globalStartIdx);
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4 pt-2">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+                Next
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -326,12 +472,22 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   >&#8250;</button>
                 )}
 
-                <div className="relative h-full flex items-center justify-center">
+                <div className="relative flex items-center justify-center overflow-hidden" style={{ height: '55vh' }}>
                   <img
                     ref={lightboxImgRef}
                     src={`/images/${stripParsedPrefix(lightboxImage.File_Path)}`}
                     alt={lightboxImage.Caption ?? ''}
-                    className={`max-w-full max-h-[55vh] object-contain rounded ${rotationClass((lightboxImage as any).Rotation)}`}
+                    className="object-contain rounded"
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '55vh',
+                      ...rotationStyle((lightboxImage as any).Rotation),
+                      // For 90/270 rotation, constrain by swapping max dimensions
+                      ...(((((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 90 ||
+                           (((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 270)
+                        ? { maxWidth: '55vh', maxHeight: '100%' }
+                        : {}),
+                    }}
                     onLoad={handleImageLoad}
                   />
                   {isHero(lightboxImage) && <GoldStar />}
@@ -378,6 +534,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     <PlantReassigner
                       currentPlantId={plantId}
                       imageId={lightboxImage.Id}
+                      externalInputRef={plantInputRef}
                       onReassigned={() => {
                         // Remove from current gallery and advance
                         setImages((prev) => {
@@ -392,6 +549,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     />
                     <VarietyPicker
                       plantId={plantId}
+                      externalInputRef={varietyInputRef}
                       currentVariety={(lightboxImage as any).Variety_Name ?? null}
                       onSelect={(name) => setImageVariety(lightboxImage, name)}
                     />
@@ -452,10 +610,11 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 interface VarietyPickerProps {
   plantId: string;
   currentVariety: string | null;
+  externalInputRef?: React.RefObject<HTMLInputElement | null>;
   onSelect: (name: string | null) => void;
 }
 
-function VarietyPicker({ plantId, currentVariety, onSelect }: VarietyPickerProps) {
+function VarietyPicker({ plantId, currentVariety, externalInputRef, onSelect }: VarietyPickerProps) {
   const [query, setQuery] = useState(currentVariety ?? '');
   const [suggestions, setSuggestions] = useState<BrowseVariety[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -600,13 +759,16 @@ function VarietyPicker({ plantId, currentVariety, onSelect }: VarietyPickerProps
         <label className="text-xs font-medium shrink-0">Variety:</label>
         <div className="relative flex-1">
           <Input
-            ref={inputRef}
+            ref={(el) => {
+              (inputRef as any).current = el;
+              if (externalInputRef) (externalInputRef as any).current = el;
+            }}
             value={query}
             onChange={(e) => handleChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => { if (query.trim().length >= 1) fetchVarieties(query.trim()); }}
             onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-            placeholder="Type to search or create..."
+            placeholder="Type to search or create... (v)"
             className="h-7 text-xs"
           />
           {query && (
@@ -673,10 +835,11 @@ function VarietyPicker({ plantId, currentVariety, onSelect }: VarietyPickerProps
 interface PlantReassignerProps {
   currentPlantId: string;
   imageId: number;
+  externalInputRef?: React.RefObject<HTMLInputElement | null>;
   onReassigned: () => void;
 }
 
-function PlantReassigner({ currentPlantId, imageId, onReassigned }: PlantReassignerProps) {
+function PlantReassigner({ currentPlantId, imageId, externalInputRef, onReassigned }: PlantReassignerProps) {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<Array<{ Id: number; Id1: string; Canonical_Name: string; Category: string }>>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -832,13 +995,16 @@ function PlantReassigner({ currentPlantId, imageId, onReassigned }: PlantReassig
         <label className="text-xs font-medium shrink-0">Plant:</label>
         <div className="relative flex-1">
           <Input
-            ref={inputRef}
+            ref={(el) => {
+              (inputRef as any).current = el;
+              if (externalInputRef) (externalInputRef as any).current = el;
+            }}
             value={query}
             onChange={(e) => handleChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => { if (query.trim().length >= 1) fetchPlants(query.trim()); }}
             onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-            placeholder="Reassign to another plant..."
+            placeholder="Reassign to another plant... (p)"
             className="h-7 text-xs"
           />
         </div>
@@ -906,6 +1072,276 @@ function PlantReassigner({ currentPlantId, imageId, onReassigned }: PlantReassig
               Create &amp; Move (Enter)
             </Button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Group Plant Reassigner (bulk move group to another plant) ─────────────────
+
+interface GroupPlantReassignerProps {
+  currentPlantId: string;
+  imageIds: number[];
+  onReassigned: (ids: number[]) => void;
+}
+
+function GroupPlantReassigner({ currentPlantId, imageIds, onReassigned }: GroupPlantReassignerProps) {
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<Array<{ Id: number; Id1: string; Canonical_Name: string; Category: string }>>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+  const [showConfirm, setShowConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [showCreateConfirm, setShowCreateConfirm] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const createRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (showConfirm) confirmRef.current?.focus();
+    if (showCreateConfirm) createRef.current?.focus();
+  }, [showConfirm, showCreateConfirm]);
+
+  const fetchPlants = useCallback(async (search: string) => {
+    try {
+      const res = await fetch(`/api/browse/plants-search?q=${encodeURIComponent(search)}`, { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setSuggestions(data.filter((p: any) => p.Id1 !== currentPlantId));
+        setShowDropdown(true);
+        setHighlightIndex(-1);
+      }
+    } catch {}
+  }, [currentPlantId]);
+
+  const handleChange = (value: string) => {
+    setQuery(value);
+    setShowConfirm(null);
+    setShowCreateConfirm(false);
+    setHighlightIndex(-1);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim().length >= 1) {
+      debounceRef.current = setTimeout(() => fetchPlants(value.trim()), 200);
+    } else {
+      setSuggestions([]);
+      setShowDropdown(false);
+    }
+  };
+
+  const selectPlant = (plant: { Id1: string; Canonical_Name: string }) => {
+    setQuery(plant.Canonical_Name);
+    setShowDropdown(false);
+    setShowConfirm({ id: plant.Id1, name: plant.Canonical_Name });
+  };
+
+  const handleReassign = async () => {
+    if (!showConfirm) return;
+    try {
+      const res = await fetch('/api/browse/bulk-reassign-images', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_ids: imageIds, plant_id: showConfirm.id }),
+      });
+      if (res.ok) {
+        setShowConfirm(null);
+        setQuery('');
+        onReassigned(imageIds);
+      }
+    } catch {}
+  };
+
+  const handleCreateAndReassign = async () => {
+    const trimmed = query.trim();
+    const newSlug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    try {
+      const createRes = await fetch('/api/browse/create-plant', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ Canonical_Name: trimmed, Id1: newSlug, Category: 'fruit' }),
+      });
+      if (createRes.ok) {
+        const bulkRes = await fetch('/api/browse/bulk-reassign-images', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_ids: imageIds, plant_id: newSlug }),
+        });
+        if (bulkRes.ok) {
+          setShowCreateConfirm(false);
+          setQuery('');
+          onReassigned(imageIds);
+        }
+      }
+    } catch {}
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (suggestions.length > 0) {
+        e.preventDefault(); e.stopPropagation();
+        if (!showDropdown) setShowDropdown(true);
+        setHighlightIndex((prev) => e.key === 'ArrowUp'
+          ? (prev <= 0 ? suggestions.length - 1 : prev - 1)
+          : (prev >= suggestions.length - 1 ? 0 : prev + 1));
+      }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
+        selectPlant(suggestions[highlightIndex]);
+      } else {
+        const trimmed = query.trim();
+        if (!trimmed) return;
+        const match = suggestions.find(s => s.Canonical_Name.toLowerCase() === trimmed.toLowerCase());
+        if (match) {
+          selectPlant(match);
+        } else {
+          setShowDropdown(false);
+          setShowCreateConfirm(true);
+        }
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation();
+      setShowDropdown(false); setShowConfirm(null); setShowCreateConfirm(false); setQuery('');
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-1">
+        <label className="text-[10px] font-medium shrink-0 text-muted-foreground">Move all to:</label>
+        <Input ref={inputRef} value={query} onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+          placeholder="Plant name..." className="h-6 text-xs flex-1" />
+      </div>
+      {showDropdown && suggestions.length > 0 && (
+        <div className="absolute z-50 mt-1 left-0 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
+          {suggestions.map((p, i) => (
+            <button key={p.Id}
+              className={`w-full text-left px-2 py-1 text-xs transition-colors ${i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
+              onMouseDown={(e) => { e.preventDefault(); selectPlant(p); }}
+              onMouseEnter={() => setHighlightIndex(i)}
+            >{p.Canonical_Name} <span className="text-muted-foreground">{p.Category}</span></button>
+          ))}
+        </div>
+      )}
+      {showConfirm && (
+        <div className="absolute z-50 mt-1 left-0 right-0 bg-popover border rounded shadow-lg p-2"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleReassign(); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowConfirm(null); inputRef.current?.focus(); }
+          }}
+        >
+          <p className="text-xs mb-1">Move {imageIds.length} images to <strong>{showConfirm.name}</strong>?</p>
+          <div className="flex gap-1 justify-end">
+            <Button variant="outline" size="sm" className="h-5 text-[10px]" onClick={() => setShowConfirm(null)}>Cancel</Button>
+            <Button ref={confirmRef} size="sm" className="h-5 text-[10px]" onClick={handleReassign}>Move all</Button>
+          </div>
+        </div>
+      )}
+      {showCreateConfirm && (
+        <div className="absolute z-50 mt-1 left-0 right-0 bg-popover border rounded shadow-lg p-2"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateAndReassign(); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowCreateConfirm(false); inputRef.current?.focus(); }
+          }}
+        >
+          <p className="text-xs mb-1">Create <strong>&ldquo;{query.trim()}&rdquo;</strong> and move {imageIds.length} images?</p>
+          <div className="flex gap-1 justify-end">
+            <Button variant="outline" size="sm" className="h-5 text-[10px]" onClick={() => { setShowCreateConfirm(false); inputRef.current?.focus(); }}>Cancel</Button>
+            <Button ref={createRef} size="sm" className="h-5 text-[10px]" onClick={handleCreateAndReassign}>Create &amp; Move</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Group Variety Picker (bulk set variety on group) ──────────────────────────
+
+interface GroupVarietyPickerProps {
+  plantId: string;
+  imageIds: number[];
+  onSet: (name: string | null) => void;
+}
+
+function GroupVarietyPicker({ plantId, imageIds, onSet }: GroupVarietyPickerProps) {
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<BrowseVariety[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  const fetchVarieties = useCallback(async (search: string) => {
+    try {
+      const res = await fetch(`/api/browse/${plantId}/varieties-search?q=${encodeURIComponent(search)}`, { credentials: 'include' });
+      if (res.ok) {
+        setSuggestions(await res.json());
+        setShowDropdown(true);
+        setHighlightIndex(-1);
+      }
+    } catch {}
+  }, [plantId]);
+
+  const handleChange = (value: string) => {
+    setQuery(value);
+    setHighlightIndex(-1);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim().length >= 1) {
+      debounceRef.current = setTimeout(() => fetchVarieties(value.trim()), 200);
+    } else {
+      setSuggestions([]);
+      setShowDropdown(false);
+    }
+  };
+
+  const selectVariety = (v: BrowseVariety) => {
+    setQuery('');
+    setShowDropdown(false);
+    onSet(v.Variety_Name);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (suggestions.length > 0) {
+        e.preventDefault(); e.stopPropagation();
+        if (!showDropdown) setShowDropdown(true);
+        setHighlightIndex((prev) => e.key === 'ArrowUp'
+          ? (prev <= 0 ? suggestions.length - 1 : prev - 1)
+          : (prev >= suggestions.length - 1 ? 0 : prev + 1));
+      }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      if (highlightIndex >= 0 && highlightIndex < suggestions.length) selectVariety(suggestions[highlightIndex]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation();
+      setShowDropdown(false); setQuery('');
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-1">
+        <label className="text-[10px] font-medium shrink-0 text-muted-foreground">Set variety:</label>
+        <Input value={query} onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+          placeholder="Variety name..." className="h-6 text-xs flex-1" />
+      </div>
+      {showDropdown && suggestions.length > 0 && (
+        <div className="absolute z-50 mt-1 left-0 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
+          {suggestions.map((v, i) => (
+            <button key={v.Id}
+              className={`w-full text-left px-2 py-1 text-xs transition-colors ${i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
+              onMouseDown={(e) => { e.preventDefault(); selectVariety(v); }}
+              onMouseEnter={() => setHighlightIndex(i)}
+            >{v.Variety_Name}</button>
+          ))}
         </div>
       )}
     </div>

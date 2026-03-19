@@ -567,6 +567,28 @@ router.delete('/ocr-extractions/:id', requireAdmin, asyncHandler(async (req, res
   res.json({ success: true });
 }));
 
+// ── POST /bulk-reassign-images — Reassign multiple images to a plant (admin) ──
+router.post('/bulk-reassign-images', requireAdmin, asyncHandler(async (req, res) => {
+  const { image_ids, plant_id } = req.body ?? {};
+  if (!image_ids?.length || !plant_id) { res.status(400).json({ error: 'image_ids[] and plant_id required' }); return; }
+  const updates = image_ids.map((id: number) => ({ Id: id, Plant_Id: plant_id }));
+  for (let i = 0; i < updates.length; i += 100) {
+    await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
+  }
+  res.json({ success: true, count: image_ids.length });
+}));
+
+// ── POST /bulk-set-variety — Set variety on multiple images (admin) ───────────
+router.post('/bulk-set-variety', requireAdmin, asyncHandler(async (req, res) => {
+  const { image_ids, variety_name } = req.body ?? {};
+  if (!image_ids?.length) { res.status(400).json({ error: 'image_ids[] required' }); return; }
+  const updates = image_ids.map((id: number) => ({ Id: id, Variety_Name: variety_name || null }));
+  for (let i = 0; i < updates.length; i += 100) {
+    await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
+  }
+  res.json({ success: true, count: image_ids.length });
+}));
+
 // ── POST /set-image-variety/:id — Assign a variety to an image (admin) ────────
 router.post('/set-image-variety/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
