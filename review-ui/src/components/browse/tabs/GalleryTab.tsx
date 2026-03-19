@@ -251,6 +251,25 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     return () => window.removeEventListener('keydown', handleKey);
   }, [lightboxIndex, goNext, goPrev, deleteImage, setAsHero, rotateImage, lightboxImage, isAdmin]);
 
+  // Grid-level keyboard shortcuts — active when images are selected (no lightbox open)
+  useEffect(() => {
+    if (lightboxIndex !== null) return; // Lightbox has its own handler
+    if (selectedIds.size === 0) return;
+    const handleKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === 'x' && isAdmin) {
+        e.preventDefault();
+        handleBulkDelete();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        clearSelection();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [lightboxIndex, selectedIds, isAdmin, handleBulkDelete, clearSelection]);
+
   const isHero = (img: BrowseImage) => {
     const stripped = stripParsedPrefix(img.File_Path);
     return heroPath === stripped;
@@ -550,15 +569,15 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   return (
     <div className="space-y-4">
-      {/* Selection action bar — sticky at top */}
+      {/* Selection action bar — fixed at bottom of viewport */}
       {selectedIds.size > 0 && (
-        <div className="sticky top-0 z-20 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-2 flex items-center gap-2 flex-wrap">
-          <Badge variant="default" className="text-xs">{selectedIds.size} selected</Badge>
-          <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={handleBulkDelete}>
+        <div className="fixed bottom-16 left-4 right-4 z-50 bg-blue-600 text-white rounded-lg p-3 flex items-center justify-center gap-3 shadow-lg">
+          <span className="text-sm font-medium">{selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''} selected</span>
+          <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={handleBulkDelete}>
             <Trash2 className="size-3 mr-1" /> Delete Selected
           </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={clearSelection}>
-            Clear Selection
+          <Button variant="ghost" size="sm" className="h-7 text-xs text-white hover:text-white hover:bg-blue-700" onClick={clearSelection}>
+            Clear
           </Button>
         </div>
       )}
