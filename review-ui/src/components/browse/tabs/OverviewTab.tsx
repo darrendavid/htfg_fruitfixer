@@ -56,6 +56,11 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
   const [editDistribution, setEditDistribution] = useState((plant as any).Distribution ?? '');
   const [editCulinaryRegions, setEditCulinaryRegions] = useState((plant as any).Culinary_Regions ?? '');
   const [editPrimaryUse, setEditPrimaryUse] = useState((plant as any).Primary_Use ?? '');
+  const [editTotalVarieties, setEditTotalVarieties] = useState((plant as any).Total_Varieties ?? '');
+  const [editClassification, setEditClassification] = useState((plant as any).Classification_Methods ?? '');
+  const [editParentSpecies, setEditParentSpecies] = useState((plant as any).Parent_Species ?? '');
+  const [editChromosomes, setEditChromosomes] = useState((plant as any).Chromosome_Groups ?? '');
+  const [editGenetics, setEditGenetics] = useState((plant as any).Genetic_Contribution ?? '');
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
@@ -75,6 +80,11 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           Distribution: editDistribution || null,
           Culinary_Regions: editCulinaryRegions || null,
           Primary_Use: editPrimaryUse || null,
+          Total_Varieties: editTotalVarieties || null,
+          Classification_Methods: editClassification || null,
+          Parent_Species: editParentSpecies || null,
+          Chromosome_Groups: editChromosomes || null,
+          Genetic_Contribution: editGenetics || null,
         }),
         credentials: 'include',
       });
@@ -109,6 +119,11 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
     setEditDistribution((plant as any).Distribution ?? '');
     setEditCulinaryRegions((plant as any).Culinary_Regions ?? '');
     setEditPrimaryUse((plant as any).Primary_Use ?? '');
+    setEditTotalVarieties((plant as any).Total_Varieties ?? '');
+    setEditClassification((plant as any).Classification_Methods ?? '');
+    setEditParentSpecies((plant as any).Parent_Species ?? '');
+    setEditChromosomes((plant as any).Chromosome_Groups ?? '');
+    setEditGenetics((plant as any).Genetic_Contribution ?? '');
   };
 
   return (
@@ -171,6 +186,26 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           <div>
             <label className="text-sm font-medium">Culinary Regions</label>
             <Input value={editCulinaryRegions} onChange={(e) => setEditCulinaryRegions(e.target.value)} placeholder="e.g. Caribbean, Mexico" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Total Varieties</label>
+            <Input value={editTotalVarieties} onChange={(e) => setEditTotalVarieties(e.target.value)} placeholder="e.g. Many hundreds of types" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Parent Species</label>
+            <Input value={editParentSpecies} onChange={(e) => setEditParentSpecies(e.target.value)} placeholder="e.g. Musa acuminata and Musa balbisiana" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Chromosome Groups</label>
+            <Input value={editChromosomes} onChange={(e) => setEditChromosomes(e.target.value)} placeholder="e.g. AA, AAA, AAB, ABB" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Genetic Contribution</label>
+            <Textarea value={editGenetics} onChange={(e) => setEditGenetics(e.target.value)} rows={2} placeholder="e.g. Musa acuminata gives sweet fruit..." />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Classification Methods</label>
+            <Textarea value={editClassification} onChange={(e) => setEditClassification(e.target.value)} rows={2} placeholder="e.g. More than 100 ways..." />
           </div>
           <div className="flex gap-2">
             <Button onClick={handleSave} disabled={isSaving} size="sm">
@@ -250,6 +285,21 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           )}
           {(plant as any).Culinary_Regions && (
             <DetailRow label="Culinary Regions" value={(plant as any).Culinary_Regions} />
+          )}
+          {(plant as any).Total_Varieties && (
+            <DetailRow label="Total Varieties" value={(plant as any).Total_Varieties} />
+          )}
+          {(plant as any).Parent_Species && (
+            <DetailRow label="Parent Species" value={(plant as any).Parent_Species} />
+          )}
+          {(plant as any).Chromosome_Groups && (
+            <DetailRow label="Chromosomes" value={(plant as any).Chromosome_Groups} />
+          )}
+          {(plant as any).Genetic_Contribution && (
+            <DetailRow label="Genetics" value={(plant as any).Genetic_Contribution} />
+          )}
+          {(plant as any).Classification_Methods && (
+            <DetailRow label="Classification" value={(plant as any).Classification_Methods} />
           )}
         </div>
       )}

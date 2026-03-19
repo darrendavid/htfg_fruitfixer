@@ -20,6 +20,7 @@ export default defineConfig({
       '/api': 'http://localhost:3001',
       '/images': 'http://localhost:3001',
       '/thumbnails': 'http://localhost:3001',
+      '/content-files': 'http://localhost:3001',
     },
   },
 })

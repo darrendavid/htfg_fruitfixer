@@ -261,6 +261,21 @@ router.post('/:plantId/attachments', requireAdmin, asyncHandler(async (req, res)
   res.status(201).json(result);
 }));
 
+// ── POST /create-plant — Create a new plant (admin) ──────────────────────────
+router.post('/create-plant', requireAdmin, asyncHandler(async (req, res) => {
+  const { Canonical_Name, Id1, Category } = req.body ?? {};
+  if (!Canonical_Name) { res.status(400).json({ error: 'Canonical_Name required' }); return; }
+  const slug = Id1 || Canonical_Name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const result = await nocodb.create('Plants', {
+    Id1: slug,
+    Canonical_Name,
+    Category: Category || 'fruit',
+    Image_Count: 0,
+    Source_Count: 0,
+  });
+  res.status(201).json(result);
+}));
+
 // ── GET /plants-search — Search all plants by name (for reassignment) ────────
 router.get('/plants-search', asyncHandler(async (req, res) => {
   const q = (req.query.q as string || '').trim();
@@ -356,6 +371,8 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
     'Canonical_Name', 'Botanical_Name', 'Aliases', 'Description', 'Category',
     'Alternative_Names', 'Origin', 'Flower_Colors', 'Elevation_Range',
     'Distribution', 'Culinary_Regions', 'Primary_Use',
+    'Total_Varieties', 'Classification_Methods', 'Parent_Species',
+    'Chromosome_Groups', 'Genetic_Contribution',
   ];
   const fields: Record<string, any> = {};
   for (const key of allowed) {

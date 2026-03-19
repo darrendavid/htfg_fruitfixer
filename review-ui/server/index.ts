@@ -43,6 +43,10 @@ app.use('/images', requireAuth, express.static(config.IMAGE_MOUNT_PATH),
   (_req: Request, res: Response) => res.sendStatus(404));
 app.use('/thumbnails', requireAuth, express.static(config.THUMBNAILS_PATH),
   (_req: Request, res: Response) => res.sendStatus(404));
+// Serve source content files for OCR image references (content/source/, content/website/)
+const contentRoot = path.resolve(config.IMAGE_MOUNT_PATH, '..');
+app.use('/content-files', requireAuth, express.static(contentRoot),
+  (_req: Request, res: Response) => res.sendStatus(404));
 
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRouter);

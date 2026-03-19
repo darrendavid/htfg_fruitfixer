@@ -42,7 +42,7 @@ export function NotesTab({ plantId, notes, varieties, onNotesChanged }: NotesTab
       });
       if (res.ok) {
         const data = await res.json();
-        onNotesChanged([...notes, data.note]);
+        onNotesChanged([...notes, data]);
         setNewText('');
         setNewVarietyId('none');
         toast.success('Note added');

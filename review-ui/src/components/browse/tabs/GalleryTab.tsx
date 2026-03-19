@@ -682,20 +682,24 @@ function PlantReassigner({ currentPlantId, imageId, onReassigned }: PlantReassig
   const [showDropdown, setShowDropdown] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
   const [showConfirm, setShowConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [showCreateConfirm, setShowCreateConfirm] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const createRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setQuery('');
     setShowDropdown(false);
     setShowConfirm(null);
+    setShowCreateConfirm(false);
     setHighlightIndex(-1);
   }, [imageId]);
 
   useEffect(() => {
     if (showConfirm) confirmRef.current?.focus();
-  }, [showConfirm]);
+    if (showCreateConfirm) createRef.current?.focus();
+  }, [showConfirm, showCreateConfirm]);
 
   const fetchPlants = useCallback(async (search: string) => {
     try {
@@ -769,15 +773,57 @@ function PlantReassigner({ currentPlantId, imageId, onReassigned }: PlantReassig
       e.stopPropagation();
       if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
         selectPlant(suggestions[highlightIndex]);
+      } else {
+        const trimmed = query.trim();
+        if (!trimmed) return;
+        // Check exact match
+        const match = suggestions.find(
+          (s) => s.Canonical_Name.toLowerCase() === trimmed.toLowerCase()
+        );
+        if (match) {
+          selectPlant(match);
+        } else {
+          // No match — offer to create
+          setShowDropdown(false);
+          setShowCreateConfirm(true);
+        }
       }
     } else if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
       setShowDropdown(false);
       setShowConfirm(null);
+      setShowCreateConfirm(false);
       setQuery('');
       inputRef.current?.blur();
     }
+  };
+
+  const handleCreateAndReassign = async () => {
+    const trimmed = query.trim();
+    const newSlug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    try {
+      const res = await fetch('/api/browse/create-plant', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ Canonical_Name: trimmed, Id1: newSlug, Category: 'fruit' }),
+      });
+      if (res.ok) {
+        // Now reassign the image
+        const reassignRes = await fetch(`/api/browse/reassign-image/${imageId}`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plant_id: newSlug }),
+        });
+        if (reassignRes.ok) {
+          setShowCreateConfirm(false);
+          setQuery('');
+          onReassigned();
+        }
+      }
+    } catch {}
   };
 
   return (
@@ -835,6 +881,29 @@ function PlantReassigner({ currentPlantId, imageId, onReassigned }: PlantReassig
             </Button>
             <Button ref={confirmRef} size="sm" className="h-6 text-xs" onClick={handleReassign}>
               Move (Enter)
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Create new plant confirmation — opens upward */}
+      {showCreateConfirm && (
+        <div
+          className="absolute z-50 bottom-full mb-1 left-12 right-0 bg-popover border rounded shadow-lg p-3"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateAndReassign(); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowCreateConfirm(false); inputRef.current?.focus(); }
+          }}
+        >
+          <p className="text-xs mb-2">
+            Plant <strong>&ldquo;{query.trim()}&rdquo;</strong> doesn&apos;t exist. Create it and move this image?
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => { setShowCreateConfirm(false); inputRef.current?.focus(); }}>
+              Cancel (Esc)
+            </Button>
+            <Button ref={createRef} size="sm" className="h-6 text-xs" onClick={handleCreateAndReassign}>
+              Create &amp; Move (Enter)
             </Button>
           </div>
         </div>

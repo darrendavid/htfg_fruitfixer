@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { LazyImage } from '@/components/images/LazyImage';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import type { BrowseOcr } from '@/types/browse';
 
@@ -31,6 +32,7 @@ export function OcrTab({ ocrExtractions, onOcrDeleted }: OcrTabProps) {
   const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState(ocrExtractions);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [viewingImage, setViewingImage] = useState<{ src: string; title: string } | null>(null);
 
   const handleDelete = async (id: number) => {
     try {
@@ -92,7 +94,29 @@ export function OcrTab({ ocrExtractions, onOcrDeleted }: OcrTabProps) {
               )}
             </div>
 
-            <div className="space-y-3 overflow-hidden">
+            <div className="space-y-3">
+              {/* Source image — shown first so text doesn't overlap */}
+              {ocr.Image_Path && (
+                <div className="clear-both">
+                  <h4 className="text-sm font-medium mb-1">Source Image</h4>
+                  <div
+                    className="cursor-pointer hover:opacity-80 transition-opacity inline-block"
+                    onClick={() => setViewingImage({
+                      src: `/content-files/${ocr.Image_Path.replace(/^content\//, '')}`,
+                      title: ocr.Title,
+                    })}
+                  >
+                    <img
+                      src={`/content-files/${ocr.Image_Path.replace(/^content\//, '')}`}
+                      alt={ocr.Title}
+                      className="max-w-full max-h-48 rounded border"
+                      loading="lazy"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Click to view full size</p>
+                  </div>
+                </div>
+              )}
+
               {/* Key facts table */}
               {keyFacts.length > 0 && (
                 <div className="rounded border overflow-x-auto">
@@ -115,33 +139,37 @@ export function OcrTab({ ocrExtractions, onOcrDeleted }: OcrTabProps) {
               {ocr.Extracted_Text && (
                 <div>
                   <h4 className="text-sm font-medium mb-1">Extracted Text</h4>
-                  <ScrollArea className="max-h-60">
-                    <p className="text-sm whitespace-pre-wrap break-words text-muted-foreground select-text pr-3">
+                  <div className="max-h-60 overflow-y-auto border rounded p-2">
+                    <p className="text-sm whitespace-pre-wrap break-words text-muted-foreground select-text">
                       {ocr.Extracted_Text}
                     </p>
-                  </ScrollArea>
-                </div>
-              )}
-
-              {/* Source image */}
-              {ocr.Image_Path && (
-                <div>
-                  <h4 className="text-sm font-medium mb-1">Source Image</h4>
-                  <LazyImage
-                    src={`/images/${ocr.Image_Path}`}
-                    alt={ocr.Title}
-                    className="max-w-full max-h-64 rounded"
-                  />
+                  </div>
                 </div>
               )}
 
               {ocr.Source_Context && (
-                <p className="text-xs text-muted-foreground select-text break-words">Context: {ocr.Source_Context}</p>
+                <p className="text-xs text-muted-foreground select-text break-words mt-1">Context: {ocr.Source_Context}</p>
               )}
             </div>
           </Card>
         );
       })}
+
+      {/* Full-size image viewer dialog */}
+      <Dialog open={viewingImage !== null} onOpenChange={(open) => { if (!open) setViewingImage(null); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-2 flex flex-col overflow-hidden">
+          <DialogTitle className="sr-only">{viewingImage?.title ?? 'Image'}</DialogTitle>
+          {viewingImage && (
+            <div className="flex-1 min-h-0 flex items-center justify-center">
+              <img
+                src={viewingImage.src}
+                alt={viewingImage.title}
+                className="max-w-full max-h-[80vh] object-contain"
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
