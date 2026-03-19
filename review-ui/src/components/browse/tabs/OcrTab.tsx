@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { LazyImage } from '@/components/images/LazyImage';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import type { BrowseOcr } from '@/types/browse';
@@ -24,14 +24,14 @@ function parseKeyFacts(raw: string | null): KeyFact[] {
 
 interface OcrTabProps {
   ocrExtractions: BrowseOcr[];
+  plantId: string;
   onOcrDeleted?: (id: number) => void;
 }
 
-export function OcrTab({ ocrExtractions, onOcrDeleted }: OcrTabProps) {
+export function OcrTab({ ocrExtractions, plantId, onOcrDeleted }: OcrTabProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState(ocrExtractions);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [viewingImage, setViewingImage] = useState<{ src: string; title: string } | null>(null);
 
   const handleDelete = async (id: number) => {
@@ -44,11 +44,26 @@ export function OcrTab({ ocrExtractions, onOcrDeleted }: OcrTabProps) {
         setItems((prev) => prev.filter((o) => o.Id !== id));
         onOcrDeleted?.(id);
       }
-    } catch {
-      // error
-    } finally {
-      setDeletingId(null);
-    }
+    } catch {}
+  };
+
+  const handleReassign = async (ocrId: number, newPlantId: string) => {
+    try {
+      const ocr = items.find((o) => o.Id === ocrId);
+      if (!ocr) return;
+      const currentIds: string[] = ocr.Plant_Ids ? JSON.parse(ocr.Plant_Ids) : [];
+      const newIds = currentIds.filter((id) => id !== plantId);
+      if (!newIds.includes(newPlantId)) newIds.push(newPlantId);
+      const res = await fetch(`/api/browse/ocr-extractions/${ocrId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ Plant_Ids: JSON.stringify(newIds) }),
+      });
+      if (res.ok) {
+        setItems((prev) => prev.filter((o) => o.Id !== ocrId));
+      }
+    } catch {}
   };
 
   if (items.length === 0) {
@@ -72,27 +87,23 @@ export function OcrTab({ ocrExtractions, onOcrDeleted }: OcrTabProps) {
               </div>
               <Badge variant="secondary" className="shrink-0">{ocr.Content_Type}</Badge>
               {isAdmin && (
-                deletingId === ocr.Id ? (
-                  <div className="flex gap-1 shrink-0">
-                    <Button variant="destructive" size="sm" className="h-6 text-xs" onClick={() => handleDelete(ocr.Id)}>
-                      Confirm
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setDeletingId(null)}>
-                      Cancel
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs text-destructive hover:text-destructive shrink-0"
-                    onClick={() => setDeletingId(ocr.Id)}
-                  >
-                    Delete
-                  </Button>
-                )
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs text-destructive hover:text-destructive shrink-0"
+                  onClick={() => handleDelete(ocr.Id)}
+                >
+                  Delete
+                </Button>
               )}
             </div>
+
+            {/* Reassign to different plant */}
+            {isAdmin && (
+              <div className="mb-3">
+                <OcrPlantReassigner ocrId={ocr.Id} onReassign={(newPlantId) => handleReassign(ocr.Id, newPlantId)} />
+              </div>
+            )}
 
             <div className="space-y-3">
               {/* Source image — shown first so text doesn't overlap */}
@@ -170,6 +181,92 @@ export function OcrTab({ ocrExtractions, onOcrDeleted }: OcrTabProps) {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ── OCR Plant Reassigner ─────────────────────────────────────────────────────
+
+interface OcrPlantReassignerProps {
+  ocrId: number;
+  onReassign: (newPlantId: string) => void;
+}
+
+function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<Array<{ Id: number; Id1: string; Canonical_Name: string }>>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(-1);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  const fetchPlants = useCallback(async (search: string) => {
+    try {
+      const res = await fetch(`/api/browse/plants-search?q=${encodeURIComponent(search)}`, { credentials: 'include' });
+      if (res.ok) {
+        setSuggestions(await res.json());
+        setShowDropdown(true);
+        setHighlightIndex(-1);
+      }
+    } catch {}
+  }, []);
+
+  const handleChange = (value: string) => {
+    setQuery(value);
+    setHighlightIndex(-1);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim().length >= 1) {
+      debounceRef.current = setTimeout(() => fetchPlants(value.trim()), 200);
+    } else {
+      setSuggestions([]);
+      setShowDropdown(false);
+    }
+  };
+
+  const selectPlant = (plant: { Id1: string; Canonical_Name: string }) => {
+    setQuery('');
+    setShowDropdown(false);
+    onReassign(plant.Id1);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      if (suggestions.length > 0) {
+        e.preventDefault(); e.stopPropagation();
+        if (!showDropdown) setShowDropdown(true);
+        setHighlightIndex((prev) => e.key === 'ArrowUp'
+          ? (prev <= 0 ? suggestions.length - 1 : prev - 1)
+          : (prev >= suggestions.length - 1 ? 0 : prev + 1));
+      }
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      if (highlightIndex >= 0 && highlightIndex < suggestions.length) selectPlant(suggestions[highlightIndex]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); e.stopPropagation();
+      setShowDropdown(false); setQuery('');
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-2">
+        <label className="text-xs font-medium shrink-0 text-muted-foreground">Move to:</label>
+        <Input value={query} onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+          placeholder="Reassign to another plant..." className="h-6 text-xs flex-1" />
+      </div>
+      {showDropdown && suggestions.length > 0 && (
+        <div className="absolute z-50 mt-1 left-16 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
+          {suggestions.map((p, i) => (
+            <button key={p.Id}
+              className={`w-full text-left px-2 py-1.5 text-xs transition-colors ${i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
+              onMouseDown={(e) => { e.preventDefault(); selectPlant(p); }}
+              onMouseEnter={() => setHighlightIndex(i)}
+            >{p.Canonical_Name}</button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

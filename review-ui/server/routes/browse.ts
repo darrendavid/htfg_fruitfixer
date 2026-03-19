@@ -560,6 +560,14 @@ router.post('/reassign-image/:id', requireAdmin, asyncHandler(async (req, res) =
 }));
 
 
+// ── PATCH /ocr-extractions/:id — Update an OCR extraction (admin) ─────────────
+router.patch('/ocr-extractions/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.update('OCR_Extractions', id, req.body);
+  const updated = await nocodb.get('OCR_Extractions', id);
+  res.json(updated);
+}));
+
 // ── DELETE /ocr-extractions/:id — Delete an OCR extraction (admin) ────────────
 router.delete('/ocr-extractions/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;

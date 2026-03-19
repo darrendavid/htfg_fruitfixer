@@ -172,7 +172,7 @@ export function PlantDetailPage() {
               </TabsContent>
 
               <TabsContent value="ocr">
-                <OcrTab ocrExtractions={detail.ocr} />
+                <OcrTab ocrExtractions={detail.ocr} plantId={(detail.plant as any).Id1 || detail.plant.Id} />
               </TabsContent>
 
               <TabsContent value="notes">
