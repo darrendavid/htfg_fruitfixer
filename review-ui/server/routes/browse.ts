@@ -180,17 +180,15 @@ router.get('/search', asyncHandler(async (req, res) => {
 router.get('/:plantId/images', asyncHandler(async (req, res) => {
   const { plantId } = req.params;
   const all = req.query.all === 'true';
+  const showDeleted = req.query.showDeleted === 'true';
+  const excludeFilter = showDeleted ? '' : '~and(Excluded,neq,1)';
+  const where = `(Plant_Id,eq,${plantId})${excludeFilter}`;
 
   if (all) {
-    // Fetch all images for this plant (for gallery group modes)
     const allImages: any[] = [];
     let offset = 0;
     while (true) {
-      const result = await nocodb.list('Images', {
-        where: `(Plant_Id,eq,${plantId})~and(Excluded,neq,1)`,
-        limit: 200,
-        offset,
-      });
+      const result = await nocodb.list('Images', { where, limit: 200, offset });
       allImages.push(...result.list);
       if (result.pageInfo.isLastPage) break;
       offset += 200;
@@ -200,17 +198,8 @@ router.get('/:plantId/images', asyncHandler(async (req, res) => {
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const offset = (page - 1) * limit;
-
-    const result = await nocodb.list('Images', {
-      where: `(Plant_Id,eq,${plantId})~and(Excluded,neq,1)`,
-      limit,
-      offset,
-    });
-
-    res.json({
-      list: result.list,
-      pageInfo: result.pageInfo,
-    });
+    const result = await nocodb.list('Images', { where, limit, offset });
+    res.json({ list: result.list, pageInfo: result.pageInfo });
   }
 }));
 
@@ -631,6 +620,13 @@ router.post('/rotate-image/:id', requireAdmin, asyncHandler(async (req, res) => 
   const deg = ((rotation ?? 0) % 360 + 360) % 360;
   await nocodb.update('Images', id, { Rotation: deg });
   res.json({ success: true, rotation: deg });
+}));
+
+// ── POST /restore-image/:id — Restore an excluded image (admin) ──────────────
+router.post('/restore-image/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.update('Images', id, { Excluded: false });
+  res.json({ success: true });
 }));
 
 // ── POST /exclude-image/:id — Exclude image and prevent re-import (admin) ────

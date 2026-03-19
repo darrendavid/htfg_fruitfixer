@@ -66,6 +66,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [viewMode, setViewMode] = useState<'grid' | 'grouped' | 'variety' | 'similarity'>('grid');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null);
+  const [dimMap, setDimMap] = useState<Record<number, string>>({});
+  const [showDeleted, setShowDeleted] = useState(false);
   const lightboxImgRef = useRef<HTMLImageElement>(null);
   const plantInputRef = useRef<HTMLInputElement>(null);
   const varietyInputRef = useRef<HTMLInputElement>(null);
@@ -80,9 +82,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     setIsLoading(true);
     try {
       const useAll = viewMode !== 'grid';
+      const deletedParam = showDeleted ? '&showDeleted=true' : '';
       const url = useAll
-        ? `/api/browse/${plantId}/images?all=true`
-        : `/api/browse/${plantId}/images?page=${page}&limit=${PAGE_SIZE}`;
+        ? `/api/browse/${plantId}/images?all=true${deletedParam}`
+        : `/api/browse/${plantId}/images?page=${page}&limit=${PAGE_SIZE}${deletedParam}`;
       const res = await fetch(url, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
@@ -96,7 +99,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     } finally {
       setIsLoading(false);
     }
-  }, [plantId, page, viewMode]);
+  }, [plantId, page, viewMode, showDeleted]);
 
   useEffect(() => { fetchImages(); }, [fetchImages]);
 
@@ -161,7 +164,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     }
   }, [plantId, onHeroChanged]);
 
+  const deletingRef = useRef(false);
   const deleteImage = useCallback(async (img: BrowseImage) => {
+    if (deletingRef.current) return; // Prevent rapid-fire deletes
+    deletingRef.current = true;
     try {
       const res = await fetch(`/api/browse/exclude-image/${img.Id}`, {
         method: 'POST',
@@ -182,6 +188,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       }
     } catch {
       // error
+    } finally {
+      setTimeout(() => { deletingRef.current = false; }, 300);
     }
   }, [lightboxIndex]);
 
@@ -428,6 +436,20 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     } catch {}
   }, []);
 
+  const restoreImage = useCallback(async (img: BrowseImage) => {
+    try {
+      const res = await fetch(`/api/browse/restore-image/${img.Id}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setImages((prev) =>
+          prev.map((i) => (i.Id === img.Id ? { ...i, Excluded: false } as any : i))
+        );
+      }
+    } catch {}
+  }, []);
+
   const GoldStar = () => (
     <div className="absolute top-1 left-1 z-10 text-yellow-400 drop-shadow-md" title="Hero image">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-5">
@@ -456,6 +478,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   const renderImageThumbnail = (img: BrowseImage, idx: number) => {
     const isSelected = selectedIds.has(img.Id);
+    const isExcluded = (img as any).Excluded === 1 || (img as any).Excluded === true;
     return (
     <div key={img.Id} className="space-y-1">
       <div
@@ -464,16 +487,33 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         }`}
         onClick={(e) => handleImageClick(e, img.Id, idx)}
       >
+        {isExcluded && (
+          <div className="absolute inset-0 z-10 bg-red-500/40 flex items-center justify-center">
+            <span className="text-white text-xs font-bold bg-red-600/80 px-2 py-0.5 rounded">DELETED</span>
+          </div>
+        )}
         <div className={`w-full h-full ${rotationClass((img as any).Rotation)} ${isSelected ? 'opacity-75' : ''}`}>
           <LazyImage
             src={`/images/${stripParsedPrefix(img.File_Path)}`}
             alt={img.Caption ?? ''}
             className="w-full h-full"
+            onLoad={viewMode === 'similarity' ? (e) => {
+              const el = e.currentTarget;
+              if (el.naturalWidth > 0) {
+                setDimMap((prev) => ({ ...prev, [img.Id]: `${el.naturalWidth}×${el.naturalHeight}` }));
+              }
+            } : undefined}
           />
         </div>
         {isSelected && (
           <div className="absolute top-1 right-1 z-10 bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
             ✓
+          </div>
+        )}
+        {/* Resolution overlay in similarity mode */}
+        {viewMode === 'similarity' && (dimMap[img.Id] || img.Size_Bytes > 0) && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 bg-black/70 text-white text-[9px] px-1 py-0.5 text-center font-mono">
+            {dimMap[img.Id] ?? ''}{dimMap[img.Id] && img.Size_Bytes > 0 ? ' · ' : ''}{img.Size_Bytes > 0 ? `${(img.Size_Bytes / 1024).toFixed(0)}KB` : ''}
           </div>
         )}
         {isHero(img) && <GoldStar />}
@@ -510,20 +550,26 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   return (
     <div className="space-y-4">
+      {/* Selection action bar — sticky at top */}
+      {selectedIds.size > 0 && (
+        <div className="sticky top-0 z-20 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-2 flex items-center gap-2 flex-wrap">
+          <Badge variant="default" className="text-xs">{selectedIds.size} selected</Badge>
+          <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={handleBulkDelete}>
+            <Trash2 className="size-3 mr-1" /> Delete Selected
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={clearSelection}>
+            Clear Selection
+          </Button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <p className="text-sm text-muted-foreground">{totalRows} images total</p>
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-1 ml-2">
-              <Badge variant="default" className="text-xs">{selectedIds.size} selected</Badge>
-              <Button variant="destructive" size="sm" className="h-6 text-xs" onClick={handleBulkDelete}>
-                <Trash2 className="size-3 mr-1" /> Delete
-              </Button>
-              <Button variant="outline" size="sm" className="h-6 text-xs" onClick={clearSelection}>
-                Clear
-              </Button>
-            </div>
-          )}
+          <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer ml-2">
+            <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} className="rounded" />
+            Show deleted
+          </label>
         </div>
         <div className="flex gap-1">
           <Button variant={viewMode === 'grid' ? 'default' : 'outline'} size="icon" className="h-8 w-8"
@@ -748,14 +794,26 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     >
                       {isHero(lightboxImage) ? '★ Hero' : 'Hero (h)'}
                     </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => deleteImage(lightboxImage)}
-                      title="Delete image (x)"
-                    >
-                      Delete (x)
-                    </Button>
+                    {(lightboxImage as any).Excluded ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => restoreImage(lightboxImage)}
+                        title="Restore image"
+                        className="text-green-600 border-green-600 hover:bg-green-50"
+                      >
+                        Restore
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => deleteImage(lightboxImage)}
+                        title="Delete image (x)"
+                      >
+                        Delete (x)
+                      </Button>
+                    )}
                   </div>
                 )}
               </div>

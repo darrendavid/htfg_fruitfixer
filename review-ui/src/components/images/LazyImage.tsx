@@ -7,9 +7,10 @@ interface LazyImageProps {
   alt?: string;
   className?: string;
   skeletonClassName?: string;
+  onLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
 }
 
-export function LazyImage({ src, alt = '', className, skeletonClassName }: LazyImageProps) {
+export function LazyImage({ src, alt = '', className, skeletonClassName, onLoad: onLoadProp }: LazyImageProps) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [inView, setInView] = useState(false);
@@ -33,7 +34,7 @@ export function LazyImage({ src, alt = '', className, skeletonClassName }: LazyI
         <img
           src={src}
           alt={alt}
-          onLoad={() => setLoaded(true)}
+          onLoad={(e) => { setLoaded(true); onLoadProp?.(e); }}
           onError={() => setError(true)}
           className={cn(
             'w-full h-full object-cover transition-opacity duration-300',
