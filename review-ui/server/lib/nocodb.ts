@@ -93,6 +93,12 @@ export const nocodb = {
     return request('PATCH', `/api/v2/tables/${tableId}/records`, [{ Id: rowId, ...fields }]);
   },
 
+  /** Bulk update multiple records */
+  async bulkUpdate(tableName: string, records: Array<Record<string, any>>): Promise<any> {
+    const tableId = getTableId(tableName);
+    return request('PATCH', `/api/v2/tables/${tableId}/records`, records);
+  },
+
   /** Delete a record by row ID */
   async delete(tableName: string, rowId: number | string): Promise<any> {
     const tableId = getTableId(tableName);

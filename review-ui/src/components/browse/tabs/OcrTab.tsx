@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { LazyImage } from '@/components/images/LazyImage';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAuth } from '@/contexts/AuthContext';
 import type { BrowseOcr } from '@/types/browse';
 
 interface KeyFact {
@@ -20,10 +23,33 @@ function parseKeyFacts(raw: string | null): KeyFact[] {
 
 interface OcrTabProps {
   ocrExtractions: BrowseOcr[];
+  onOcrDeleted?: (id: number) => void;
 }
 
-export function OcrTab({ ocrExtractions }: OcrTabProps) {
-  if (ocrExtractions.length === 0) {
+export function OcrTab({ ocrExtractions, onOcrDeleted }: OcrTabProps) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [items, setItems] = useState(ocrExtractions);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const handleDelete = async (id: number) => {
+    try {
+      const res = await fetch(`/api/browse/ocr-extractions/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setItems((prev) => prev.filter((o) => o.Id !== id));
+        onOcrDeleted?.(id);
+      }
+    } catch {
+      // error
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-48 text-center">
         <p className="text-lg text-muted-foreground">No OCR extractions available</p>
@@ -33,30 +59,51 @@ export function OcrTab({ ocrExtractions }: OcrTabProps) {
 
   return (
     <div className="space-y-4">
-      {ocrExtractions.map((ocr) => {
+      {items.map((ocr) => {
         const keyFacts = parseKeyFacts(ocr.Key_Facts);
 
         return (
-          <Card key={ocr.Id} className="p-4">
+          <Card key={ocr.Id} className="p-4 overflow-hidden">
             <div className="flex items-start gap-2 mb-3">
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-sm select-text">{ocr.Title}</p>
+                <p className="font-bold text-sm select-text break-words">{ocr.Title}</p>
               </div>
               <Badge variant="secondary" className="shrink-0">{ocr.Content_Type}</Badge>
+              {isAdmin && (
+                deletingId === ocr.Id ? (
+                  <div className="flex gap-1 shrink-0">
+                    <Button variant="destructive" size="sm" className="h-6 text-xs" onClick={() => handleDelete(ocr.Id)}>
+                      Confirm
+                    </Button>
+                    <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setDeletingId(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs text-destructive hover:text-destructive shrink-0"
+                    onClick={() => setDeletingId(ocr.Id)}
+                  >
+                    Delete
+                  </Button>
+                )
+              )}
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 overflow-hidden">
               {/* Key facts table */}
               {keyFacts.length > 0 && (
-                <div className="rounded border overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="rounded border overflow-x-auto">
+                  <table className="w-full text-sm table-fixed">
                     <tbody>
                       {keyFacts.map((fact, i) => (
                         <tr key={i} className="border-b last:border-b-0">
-                          <td className="px-2 py-1 font-medium text-muted-foreground bg-muted/50 w-1/3 select-text">
+                          <td className="px-2 py-1 font-medium text-muted-foreground bg-muted/50 w-1/3 select-text break-words">
                             {fact.field}
                           </td>
-                          <td className="px-2 py-1 select-text">{fact.value}</td>
+                          <td className="px-2 py-1 select-text break-words">{fact.value}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -69,7 +116,7 @@ export function OcrTab({ ocrExtractions }: OcrTabProps) {
                 <div>
                   <h4 className="text-sm font-medium mb-1">Extracted Text</h4>
                   <ScrollArea className="max-h-60">
-                    <p className="text-sm whitespace-pre-wrap text-muted-foreground select-text">
+                    <p className="text-sm whitespace-pre-wrap break-words text-muted-foreground select-text pr-3">
                       {ocr.Extracted_Text}
                     </p>
                   </ScrollArea>
@@ -89,7 +136,7 @@ export function OcrTab({ ocrExtractions }: OcrTabProps) {
               )}
 
               {ocr.Source_Context && (
-                <p className="text-xs text-muted-foreground select-text">Context: {ocr.Source_Context}</p>
+                <p className="text-xs text-muted-foreground select-text break-words">Context: {ocr.Source_Context}</p>
               )}
             </div>
           </Card>

@@ -34,9 +34,10 @@ interface OverviewTabProps {
   recipeCount: number;
   editMode: boolean;
   onPlantUpdated: (plant: BrowsePlant) => void;
+  onSlugChanged?: (newSlug: string) => void;
 }
 
-export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, editMode, onPlantUpdated }: OverviewTabProps) {
+export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, editMode, onPlantUpdated, onSlugChanged }: OverviewTabProps) {
   const harvestMonths = parseHarvestMonths(plant.Harvest_Months);
   const aliases = parseAliases(plant.Aliases);
   const plantSlug = (plant as any).Id1 || plant.Id;
@@ -79,7 +80,13 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
       });
       if (res.ok) {
         const data = await res.json();
-        onPlantUpdated(data.plant ?? { ...plant, Canonical_Name: editName, Botanical_Name: editBotanical || null, Description: editDescription || null });
+        const updated = data.Id1 ? data : (data.plant ?? { ...plant, Canonical_Name: editName, Botanical_Name: editBotanical || null, Description: editDescription || null });
+        onPlantUpdated(updated);
+        // If slug changed, navigate to new URL
+        const newSlug = updated.Id1;
+        if (newSlug && newSlug !== (plant as any).Id1 && onSlugChanged) {
+          onSlugChanged(newSlug);
+        }
         toast.success('Plant updated');
       } else {
         toast.error('Failed to update plant');

@@ -261,6 +261,19 @@ router.post('/:plantId/attachments', requireAdmin, asyncHandler(async (req, res)
   res.status(201).json(result);
 }));
 
+// ── GET /plants-search — Search all plants by name (for reassignment) ────────
+router.get('/plants-search', asyncHandler(async (req, res) => {
+  const q = (req.query.q as string || '').trim();
+  if (!q) { res.json([]); return; }
+  const result = await nocodb.list('Plants', {
+    where: `(Canonical_Name,like,%${q}%)`,
+    limit: 15,
+    sort: 'Canonical_Name',
+    fields: ['Id', 'Id1', 'Canonical_Name', 'Category'],
+  });
+  res.json(result.list);
+}));
+
 // ── GET /:id — Full plant detail ─────────────────────────────────────────────
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -339,7 +352,11 @@ router.get('/:id', asyncHandler(async (req, res) => {
 // ── PATCH /:id — Update plant (admin) ────────────────────────────────────────
 router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const allowed = ['Canonical_Name', 'Botanical_Name', 'Aliases', 'Description', 'Category'];
+  const allowed = [
+    'Canonical_Name', 'Botanical_Name', 'Aliases', 'Description', 'Category',
+    'Alternative_Names', 'Origin', 'Flower_Colors', 'Elevation_Range',
+    'Distribution', 'Culinary_Regions', 'Primary_Use',
+  ];
   const fields: Record<string, any> = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) fields[key] = req.body[key];
@@ -350,6 +367,75 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
     return;
   }
 
+  // If Canonical_Name changed, regenerate slug and cascade
+  const current = await nocodb.get('Plants', id);
+  const oldSlug = current.Id1;
+
+  if (fields.Canonical_Name && fields.Canonical_Name !== current.Canonical_Name) {
+    const newSlug = fields.Canonical_Name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    fields.Id1 = newSlug;
+
+    // Cascade slug change across all related tables
+    const tablesToUpdate: Array<{ table: string; field: string; isJson: boolean }> = [
+      { table: 'Varieties', field: 'Plant_Id', isJson: false },
+      { table: 'Images', field: 'Plant_Id', isJson: false },
+      { table: 'Nutritional_Info', field: 'Plant_Id', isJson: false },
+      { table: 'Growing_Notes', field: 'Plant_Id', isJson: false },
+    ];
+
+    const jsonTablesToUpdate: Array<{ table: string; field: string }> = [
+      { table: 'Documents', field: 'Plant_Ids' },
+      { table: 'Recipes', field: 'Plant_Ids' },
+      { table: 'OCR_Extractions', field: 'Plant_Ids' },
+      { table: 'Attachments', field: 'Plant_Ids' },
+    ];
+
+    // Update simple Plant_Id fields
+    for (const { table, field } of tablesToUpdate) {
+      try {
+        const records = await nocodb.list(table, { where: `(${field},eq,${oldSlug})`, limit: 1000 });
+        if (records.list.length > 0) {
+          const updates = records.list.map((r: any) => ({ Id: r.Id, [field]: newSlug }));
+          for (let i = 0; i < updates.length; i += 100) {
+            await nocodb.bulkUpdate(table, updates.slice(i, i + 100));
+          }
+        }
+      } catch { /* table may not have records */ }
+    }
+
+    // Update JSON array Plant_Ids fields
+    for (const { table, field } of jsonTablesToUpdate) {
+      try {
+        const records = await nocodb.list(table, { where: `(${field},like,%${oldSlug}%)`, limit: 1000 });
+        if (records.list.length > 0) {
+          const updates = records.list
+            .map((r: any) => {
+              try {
+                const ids: string[] = JSON.parse(r[field] || '[]');
+                const idx = ids.indexOf(oldSlug);
+                if (idx >= 0) {
+                  ids[idx] = newSlug;
+                  return { Id: r.Id, [field]: JSON.stringify(ids) };
+                }
+              } catch { /* not valid JSON */ }
+              return null;
+            })
+            .filter(Boolean) as any[];
+          for (let i = 0; i < updates.length; i += 100) {
+            await nocodb.bulkUpdate(table, updates.slice(i, i + 100));
+          }
+        }
+      } catch { /* table may not have records */ }
+    }
+
+    // Update local SQLite references
+    db.prepare(`UPDATE hero_images SET plant_id = ? WHERE plant_id = ?`).run(newSlug, oldSlug);
+    db.prepare(`UPDATE staff_notes SET plant_id = ? WHERE plant_id = ?`).run(newSlug, oldSlug);
+  }
+
   await nocodb.update('Plants', id, fields);
   const updated = await nocodb.get('Plants', id);
   res.json(updated);
@@ -358,6 +444,19 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // VARIETY ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /:plantId/varieties-search — Search varieties for a plant ─────────────
+router.get('/:plantId/varieties-search', asyncHandler(async (req, res) => {
+  const { plantId } = req.params;
+  const q = (req.query.q as string || '').trim();
+  if (!q) { res.json([]); return; }
+  const result = await nocodb.list('Varieties', {
+    where: `(Plant_Id,eq,${plantId})~and(Variety_Name,like,%${q}%)`,
+    limit: 20,
+    sort: 'Variety_Name',
+  });
+  res.json(result.list);
+}));
 
 // ── POST /:plantId/varieties — Create variety (admin) ────────────────────────
 router.post('/:plantId/varieties', requireAdmin, asyncHandler(async (req, res) => {
@@ -432,6 +531,40 @@ router.post('/set-hero/:imageId', requireAdmin, asyncHandler(async (req, res) =>
   `).run(plant_id, imageId, image.File_Path);
 
   res.json({ success: true, file_path: image.File_Path });
+}));
+
+// ── POST /reassign-image/:id — Move image to a different plant (admin) ────────
+router.post('/reassign-image/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { plant_id } = req.body ?? {};
+  if (!plant_id) { res.status(400).json({ error: 'plant_id required' }); return; }
+  await nocodb.update('Images', id, { Plant_Id: plant_id });
+  res.json({ success: true, plant_id });
+}));
+
+
+// ── DELETE /ocr-extractions/:id — Delete an OCR extraction (admin) ────────────
+router.delete('/ocr-extractions/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.delete('OCR_Extractions', id);
+  res.json({ success: true });
+}));
+
+// ── POST /set-image-variety/:id — Assign a variety to an image (admin) ────────
+router.post('/set-image-variety/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { variety_name } = req.body ?? {};
+  await nocodb.update('Images', id, { Variety_Name: variety_name || null });
+  res.json({ success: true, variety_name: variety_name || null });
+}));
+
+// ── POST /rotate-image/:id — Set rotation for an image (admin) ───────────────
+router.post('/rotate-image/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { rotation } = req.body ?? {};
+  const deg = ((rotation ?? 0) % 360 + 360) % 360;
+  await nocodb.update('Images', id, { Rotation: deg });
+  res.json({ success: true, rotation: deg });
 }));
 
 // ── POST /exclude-image/:id — Exclude image and prevent re-import (admin) ────

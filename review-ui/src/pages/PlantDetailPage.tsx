@@ -120,6 +120,7 @@ export function PlantDetailPage() {
                   recipeCount={detail.recipes.length}
                   editMode={editMode}
                   onPlantUpdated={handlePlantUpdated}
+                  onSlugChanged={(newSlug) => navigate(`/plants/${newSlug}`, { replace: true })}
                 />
               </TabsContent>
 
