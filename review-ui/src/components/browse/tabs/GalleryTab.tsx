@@ -321,9 +321,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         const result: Array<[string, BrowseImage[]]> = [];
         for (const imgs of Object.values(clusters)) {
           const label = imgs[0].Caption || imgs[0].File_Path.split('/').pop()?.replace(/\.\w+$/, '') || 'similar';
-          result.push([label, imgs]);
+          result.push([label + (imgs.length >= 2 ? ` (${imgs.length})` : ''), imgs]);
         }
-        result.sort((a, b) => b[1].length - a[1].length);
+        // Sort by first image's position in the flat array for visual stability
+        result.sort((a, b) => {
+          const aIdx = images.indexOf(a[1][0]);
+          const bIdx = images.indexOf(b[1][0]);
+          return aIdx - bIdx;
+        });
         return result;
       }
 
@@ -339,9 +344,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       }
       const result: Array<[string, BrowseImage[]]> = [];
       for (const [key, imgs] of Object.entries(groups)) {
-        result.push([key, imgs]);
+        result.push([key + (imgs.length >= 2 ? ` (${imgs.length})` : ''), imgs]);
       }
-      result.sort((a, b) => b[1].length - a[1].length);
+      // Sort by first image's position for visual stability
+      result.sort((a, b) => {
+        const aIdx = images.indexOf(a[1][0]);
+        const bIdx = images.indexOf(b[1][0]);
+        return aIdx - bIdx;
+      });
       return result;
     }
 
