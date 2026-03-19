@@ -394,15 +394,19 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const handleBulkDelete = useCallback(async () => {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
-    try {
-      const promises = ids.map((id) =>
-        fetch(`/api/browse/exclude-image/${id}`, { method: 'POST', credentials: 'include' })
-      );
-      await Promise.all(promises);
-      setImages((prev) => prev.filter((i) => !selectedIds.has(i.Id)));
-      setTotalRows((prev) => prev - ids.length);
-      clearSelection();
-    } catch {}
+    // Delete each individually, track which succeeded
+    const succeeded = new Set<number>();
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const res = await fetch(`/api/browse/exclude-image/${id}`, { method: 'POST', credentials: 'include' });
+        if (res.ok) succeeded.add(id);
+      } catch {}
+    }));
+    if (succeeded.size > 0) {
+      setImages((prev) => prev.filter((i) => !succeeded.has(i.Id)));
+      setTotalRows((prev) => prev - succeeded.size);
+    }
+    clearSelection();
   }, [selectedIds, clearSelection]);
 
   // Grid-level keyboard shortcuts — active when images are selected (no lightbox open)
