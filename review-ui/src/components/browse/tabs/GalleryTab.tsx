@@ -318,19 +318,13 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           clusters[root].push(img);
         }
 
-        const multi: Array<[string, BrowseImage[]]> = [];
-        const singles: BrowseImage[] = [];
+        const result: Array<[string, BrowseImage[]]> = [];
         for (const imgs of Object.values(clusters)) {
-          if (imgs.length >= 2) {
-            const label = imgs[0].Caption || imgs[0].File_Path.split('/').pop()?.replace(/\.\w+$/, '') || 'similar';
-            multi.push([label, imgs]);
-          } else {
-            singles.push(...imgs);
-          }
+          const label = imgs[0].Caption || imgs[0].File_Path.split('/').pop()?.replace(/\.\w+$/, '') || 'similar';
+          result.push([label, imgs]);
         }
-        multi.sort((a, b) => b[1].length - a[1].length);
-        if (singles.length > 0) multi.push(['(unique images)', singles]);
-        return multi;
+        result.sort((a, b) => b[1].length - a[1].length);
+        return result;
       }
 
       // Fallback: group by filename stem
@@ -343,15 +337,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         if (!groups[key]) groups[key] = [];
         groups[key].push(img);
       }
-      const multi: Array<[string, BrowseImage[]]> = [];
-      const singles: BrowseImage[] = [];
+      const result: Array<[string, BrowseImage[]]> = [];
       for (const [key, imgs] of Object.entries(groups)) {
-        if (imgs.length >= 2) multi.push([key, imgs]);
-        else singles.push(...imgs);
+        result.push([key, imgs]);
       }
-      multi.sort((a, b) => b[1].length - a[1].length);
-      if (singles.length > 0) multi.push(['(unique images)', singles]);
-      return multi;
+      result.sort((a, b) => b[1].length - a[1].length);
+      return result;
     }
 
     return [];
