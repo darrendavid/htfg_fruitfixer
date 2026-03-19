@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { AdminGuard } from '@/components/auth/AdminGuard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,6 +26,7 @@ type ImportStatus = {
 };
 
 export function AdminDashboardPage() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [idkFlagged, setIdkFlagged] = useState<QueueItem[]>([]);
@@ -121,6 +123,13 @@ export function AdminDashboardPage() {
     <AdminGuard>
       <AppShell title="Admin Dashboard">
         <div className="p-4">
+          <Button
+            className="w-full mb-4"
+            size="lg"
+            onClick={() => navigate('/plants')}
+          >
+            Fruit Database
+          </Button>
           <Tabs defaultValue="overview">
             <TabsList className="w-full mb-4">
               <TabsTrigger value="overview" className="flex-1 text-xs">Overview</TabsTrigger>

@@ -15,9 +15,11 @@ function stripParsedPrefix(filePath: string) {
 
 interface GalleryTabProps {
   plantId: string;
+  currentHeroPath?: string;
+  onHeroChanged?: (filePath: string) => void;
 }
 
-export function GalleryTab({ plantId }: GalleryTabProps) {
+export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryTabProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [images, setImages] = useState<BrowseImage[]>([]);
@@ -27,9 +29,14 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
   const [totalRows, setTotalRows] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ w: number; h: number } | null>(null);
+  const [heroPath, setHeroPath] = useState<string | null>(currentHeroPath ?? null);
   const lightboxImgRef = useRef<HTMLImageElement>(null);
 
   const lightboxImage = lightboxIndex !== null ? images[lightboxIndex] : null;
+
+  useEffect(() => {
+    if (currentHeroPath) setHeroPath(currentHeroPath);
+  }, [currentHeroPath]);
 
   const fetchImages = useCallback(async () => {
     setIsLoading(true);
@@ -51,9 +58,7 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
     }
   }, [plantId, page]);
 
-  useEffect(() => {
-    fetchImages();
-  }, [fetchImages]);
+  useEffect(() => { fetchImages(); }, [fetchImages]);
 
   const openLightbox = (index: number) => {
     setLightboxIndex(index);
@@ -90,7 +95,6 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
     }
   };
 
-  // Handle cached images where onLoad fires before ref attaches
   useEffect(() => {
     if (lightboxIndex === null) return;
     const el = lightboxImgRef.current;
@@ -98,8 +102,6 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
       setImageDimensions({ w: el.naturalWidth, h: el.naturalHeight });
     }
   }, [lightboxIndex]);
-
-  const [heroId, setHeroId] = useState<number | null>(null);
 
   const setAsHero = useCallback(async (img: BrowseImage) => {
     try {
@@ -110,12 +112,14 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
         body: JSON.stringify({ plant_id: plantId }),
       });
       if (res.ok) {
-        setHeroId(img.Id);
+        const stripped = stripParsedPrefix(img.File_Path);
+        setHeroPath(stripped);
+        onHeroChanged?.(stripped);
       }
     } catch {
       // error
     }
-  }, [plantId]);
+  }, [plantId, onHeroChanged]);
 
   const deleteImage = useCallback(async (img: BrowseImage) => {
     try {
@@ -126,18 +130,12 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
       if (res.ok) {
         setTotalRows((prev) => prev - 1);
         setImageDimensions(null);
-        // Remove from array so next image slides into current index
         setImages((prev) => {
           const next = prev.filter((i) => i.Id !== img.Id);
-          // Adjust lightbox index
           if (lightboxIndex !== null) {
-            if (next.length === 0) {
-              closeLightbox();
-            } else if (lightboxIndex >= next.length) {
-              // Was last image — close lightbox
+            if (next.length === 0 || lightboxIndex >= next.length) {
               closeLightbox();
             }
-            // else: stay at same index, next image is now at this position
           }
           return next;
         });
@@ -145,34 +143,34 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
     } catch {
       // error
     }
-  }, [lightboxIndex, images.length]);
+  }, [lightboxIndex]);
 
   // Keyboard navigation
   useEffect(() => {
     if (lightboxIndex === null) return;
-
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        goNext();
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        goPrev();
-      } else if (e.key === 'x' && isAdmin && lightboxImage) {
-        e.preventDefault();
-        deleteImage(lightboxImage);
-      } else if (e.key === 'h' && isAdmin && lightboxImage) {
-        e.preventDefault();
-        setAsHero(lightboxImage);
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        closeLightbox();
-      }
+      if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
+      else if (e.key === 'x' && isAdmin && lightboxImage) { e.preventDefault(); deleteImage(lightboxImage); }
+      else if (e.key === 'h' && isAdmin && lightboxImage) { e.preventDefault(); setAsHero(lightboxImage); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); }
     };
-
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [lightboxIndex, goNext, goPrev, deleteImage, setAsHero, lightboxImage, isAdmin]);
+
+  const isHero = (img: BrowseImage) => {
+    const stripped = stripParsedPrefix(img.File_Path);
+    return heroPath === stripped;
+  };
+
+  const GoldStar = () => (
+    <div className="absolute top-1 left-1 z-10 text-yellow-400 drop-shadow-md" title="Hero image">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-5">
+        <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clipRule="evenodd" />
+      </svg>
+    </div>
+  );
 
   if (isLoading) {
     return (
@@ -198,46 +196,35 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
 
       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
         {images.map((img, idx) => (
-            <div key={img.Id} className="space-y-1">
-              <div
-                className="aspect-square bg-muted rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-ring transition-shadow relative"
-                onClick={() => openLightbox(idx)}
-              >
-                <LazyImage
-                  src={`/images/${stripParsedPrefix(img.File_Path)}`}
-                  alt={img.Caption ?? ''}
-                  className="w-full h-full"
-                />
-              </div>
-              {img.Caption && (
-                <p className="text-[10px] text-muted-foreground line-clamp-1">
-                  {img.Caption}
-                </p>
-              )}
+          <div key={img.Id} className="space-y-1">
+            <div
+              className="aspect-square bg-muted rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-ring transition-shadow relative"
+              onClick={() => openLightbox(idx)}
+            >
+              <LazyImage
+                src={`/images/${stripParsedPrefix(img.File_Path)}`}
+                alt={img.Caption ?? ''}
+                className="w-full h-full"
+              />
+              {isHero(img) && <GoldStar />}
             </div>
-          ))}
+            {img.Caption && (
+              <p className="text-[10px] text-muted-foreground line-clamp-1">
+                {img.Caption}
+              </p>
+            )}
+          </div>
+        ))}
       </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-4 pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-          >
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
             Previous
           </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-          >
+          <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
             Next
           </Button>
         </div>
@@ -249,28 +236,18 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
           <DialogTitle className="sr-only">{lightboxImage?.Caption ?? 'Image preview'}</DialogTitle>
           {lightboxImage && (
             <div className="flex flex-col gap-2">
-              {/* Image with nav arrows */}
               <div className="relative">
                 {/* Left arrow */}
                 {lightboxIndex !== null && lightboxIndex > 0 && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); goPrev(); }}
+                  <button onClick={(e) => { e.stopPropagation(); goPrev(); }}
                     className="absolute left-1 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white rounded-full w-10 h-10 flex items-center justify-center text-xl transition-colors"
-                    aria-label="Previous image"
-                  >
-                    &#8249;
-                  </button>
+                  >&#8249;</button>
                 )}
-
                 {/* Right arrow */}
                 {lightboxIndex !== null && lightboxIndex < images.length - 1 && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); goNext(); }}
+                  <button onClick={(e) => { e.stopPropagation(); goNext(); }}
                     className="absolute right-1 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white rounded-full w-10 h-10 flex items-center justify-center text-xl transition-colors"
-                    aria-label="Next image"
-                  >
-                    &#8250;
-                  </button>
+                  >&#8250;</button>
                 )}
 
                 <div className="relative">
@@ -281,6 +258,7 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
                     className="w-full h-auto max-h-[70vh] object-contain rounded"
                     onLoad={handleImageLoad}
                   />
+                  {isHero(lightboxImage) && <GoldStar />}
                 </div>
               </div>
 
@@ -314,12 +292,13 @@ export function GalleryTab({ plantId }: GalleryTabProps) {
                 {isAdmin && (
                   <div className="flex items-center gap-2 shrink-0">
                     <Button
-                      variant={heroId === lightboxImage.Id ? 'default' : 'outline'}
+                      variant={isHero(lightboxImage) ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => setAsHero(lightboxImage)}
                       title="Set as hero image (h)"
+                      className={isHero(lightboxImage) ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : ''}
                     >
-                      {heroId === lightboxImage.Id ? 'Hero' : 'Set Hero (h)'}
+                      {isHero(lightboxImage) ? '★ Hero' : 'Set Hero (h)'}
                     </Button>
                     <Button
                       variant="destructive"

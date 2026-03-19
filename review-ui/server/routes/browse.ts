@@ -184,7 +184,7 @@ router.get('/:plantId/images', asyncHandler(async (req, res) => {
   const offset = (page - 1) * limit;
 
   const result = await nocodb.list('Images', {
-    where: `(Plant_Id,eq,${plantId})`,
+    where: `(Plant_Id,eq,${plantId})~and(Excluded,neq,1)`,
     limit,
     offset,
   });
@@ -193,6 +193,72 @@ router.get('/:plantId/images', asyncHandler(async (req, res) => {
     list: result.list,
     pageInfo: result.pageInfo,
   });
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ATTACHMENT ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── PATCH /attachments/:id — Update attachment (admin) ────────────────────────
+router.patch('/attachments/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.update('Attachments', id, req.body);
+  const updated = await nocodb.get('Attachments', id);
+  res.json(updated);
+}));
+
+// ── DELETE /attachments/:id — Delete attachment (admin) ───────────────────────
+router.delete('/attachments/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.delete('Attachments', id);
+  res.json({ success: true });
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DOCUMENT CRUD ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── PATCH /documents/:id — Update document (admin) ───────────────────────────
+router.patch('/documents/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.update('Documents', id, req.body);
+  const updated = await nocodb.get('Documents', id);
+  res.json(updated);
+}));
+
+// ── DELETE /documents/:id — Delete document (admin) ──────────────────────────
+router.delete('/documents/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.delete('Documents', id);
+  res.json({ success: true });
+}));
+
+// ── GET /:plantId/attachments — List attachments for a plant ─────────────────
+router.get('/:plantId/attachments', asyncHandler(async (req, res) => {
+  const { plantId } = req.params;
+  const result = await nocodb.list('Attachments', {
+    where: `(Plant_Ids,like,%${plantId}%)`,
+    limit: 200,
+  });
+  res.json(result.list);
+}));
+
+// ── POST /:plantId/attachments — Create attachment (admin) ───────────────────
+router.post('/:plantId/attachments', requireAdmin, asyncHandler(async (req, res) => {
+  const { plantId } = req.params;
+  const { Title, File_Path, File_Name, File_Type, File_Size, Description } = req.body;
+  const existing = req.body.Plant_Ids ? JSON.parse(req.body.Plant_Ids) : [];
+  if (!existing.includes(plantId)) existing.push(plantId);
+  const result = await nocodb.create('Attachments', {
+    Title,
+    File_Path,
+    File_Name: File_Name || File_Path?.split('/').pop(),
+    File_Type,
+    File_Size: File_Size || 0,
+    Plant_Ids: JSON.stringify(existing),
+    Description: Description || null,
+  });
+  res.status(201).json(result);
 }));
 
 // ── GET /:id — Full plant detail ─────────────────────────────────────────────
@@ -222,11 +288,12 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const imageLimit = Math.min(200, Math.max(1, parseInt(req.query.imageLimit as string) || 50));
   const imageOffset = Math.max(0, parseInt(req.query.imageOffset as string) || 0);
 
-  const [varieties, nutritional, images, documents, recipes, ocr] = await Promise.all([
+  const [varieties, nutritional, images, documents, attachments, recipes, ocr] = await Promise.all([
     nocodb.list('Varieties', { where: `(Plant_Id,eq,${plantSlug})`, limit: 200 }).catch(() => ({ list: [] })),
     nocodb.list('Nutritional_Info', { where: `(Plant_Id,eq,${plantSlug})`, limit: 200 }).catch(() => ({ list: [] })),
-    nocodb.list('Images', { where: `(Plant_Id,eq,${plantSlug})`, limit: imageLimit, offset: imageOffset }).catch(() => ({ list: [], pageInfo: {} })),
+    nocodb.list('Images', { where: `(Plant_Id,eq,${plantSlug})~and(Excluded,neq,1)`, limit: imageLimit, offset: imageOffset }).catch(() => ({ list: [], pageInfo: {} })),
     nocodb.list('Documents', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 100 }).catch(() => ({ list: [] })),
+    nocodb.list('Attachments', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 200 }).catch(() => ({ list: [] })),
     nocodb.list('Recipes', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 100 }).catch(() => ({ list: [] })),
     nocodb.list('OCR_Extractions', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 100 }).catch(() => ({ list: [] })),
   ]);
@@ -262,6 +329,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
     nutritional: nutritional.list,
     images: { list: (images as any).list, pageInfo: (images as any).pageInfo },
     documents: documents.list,
+    attachments: attachments.list,
     recipes: recipes.list,
     ocr: ocr.list,
     notes,

@@ -11,10 +11,11 @@ import { GalleryTab } from '@/components/browse/tabs/GalleryTab';
 import { VarietiesTab } from '@/components/browse/tabs/VarietiesTab';
 import { NutritionTab } from '@/components/browse/tabs/NutritionTab';
 import { DocumentsTab } from '@/components/browse/tabs/DocumentsTab';
+import { AttachmentsTab } from '@/components/browse/tabs/AttachmentsTab';
 import { RecipesTab } from '@/components/browse/tabs/RecipesTab';
 import { OcrTab } from '@/components/browse/tabs/OcrTab';
 import { NotesTab } from '@/components/browse/tabs/NotesTab';
-import type { PlantDetail, BrowsePlant, BrowseVariety, BrowseNutrient, StaffNote } from '@/types/browse';
+import type { PlantDetail, BrowsePlant, BrowseVariety, BrowseNutrient, BrowseAttachment, StaffNote } from '@/types/browse';
 
 export function PlantDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -105,6 +106,7 @@ export function PlantDetailPage() {
                 <TabsTrigger value="varieties">Varieties</TabsTrigger>
                 <TabsTrigger value="nutrition">Nutrition</TabsTrigger>
                 <TabsTrigger value="documents">Docs</TabsTrigger>
+                <TabsTrigger value="attachments">Attachments</TabsTrigger>
                 <TabsTrigger value="recipes">Recipes</TabsTrigger>
                 <TabsTrigger value="ocr">OCR</TabsTrigger>
                 <TabsTrigger value="notes">Notes</TabsTrigger>
@@ -122,7 +124,16 @@ export function PlantDetailPage() {
               </TabsContent>
 
               <TabsContent value="gallery">
-                <GalleryTab plantId={(detail.plant as any).Id1 || detail.plant.Id} />
+                <GalleryTab
+                  plantId={(detail.plant as any).Id1 || detail.plant.Id}
+                  currentHeroPath={(detail.plant as any).hero_image ?? undefined}
+                  onHeroChanged={(path) => {
+                    setDetail((prev) => prev ? {
+                      ...prev,
+                      plant: { ...prev.plant, hero_image: path } as any,
+                    } : prev);
+                  }}
+                />
               </TabsContent>
 
               <TabsContent value="varieties">
@@ -147,12 +158,20 @@ export function PlantDetailPage() {
                 <DocumentsTab documents={detail.documents} />
               </TabsContent>
 
+              <TabsContent value="attachments">
+                <AttachmentsTab
+                  plantId={(detail.plant as any).Id1 || detail.plant.Id}
+                  attachments={detail.attachments ?? []}
+                  editMode={editMode}
+                />
+              </TabsContent>
+
               <TabsContent value="recipes">
                 <RecipesTab recipes={detail.recipes} />
               </TabsContent>
 
               <TabsContent value="ocr">
-                <OcrTab ocrExtractions={detail.ocr_extractions} />
+                <OcrTab ocrExtractions={detail.ocr} />
               </TabsContent>
 
               <TabsContent value="notes">

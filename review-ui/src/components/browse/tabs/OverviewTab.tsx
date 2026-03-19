@@ -48,6 +48,13 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
   const [editName, setEditName] = useState(plant.Canonical_Name);
   const [editBotanical, setEditBotanical] = useState(plant.Botanical_Name ?? '');
   const [editDescription, setEditDescription] = useState(plant.Description ?? '');
+  const [editAltNames, setEditAltNames] = useState((plant as any).Alternative_Names ?? '');
+  const [editOrigin, setEditOrigin] = useState((plant as any).Origin ?? '');
+  const [editFlowerColors, setEditFlowerColors] = useState((plant as any).Flower_Colors ?? '');
+  const [editElevation, setEditElevation] = useState((plant as any).Elevation_Range ?? '');
+  const [editDistribution, setEditDistribution] = useState((plant as any).Distribution ?? '');
+  const [editCulinaryRegions, setEditCulinaryRegions] = useState((plant as any).Culinary_Regions ?? '');
+  const [editPrimaryUse, setEditPrimaryUse] = useState((plant as any).Primary_Use ?? '');
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
@@ -60,6 +67,13 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           Canonical_Name: editName,
           Botanical_Name: editBotanical || null,
           Description: editDescription || null,
+          Alternative_Names: editAltNames || null,
+          Origin: editOrigin || null,
+          Flower_Colors: editFlowerColors || null,
+          Elevation_Range: editElevation || null,
+          Distribution: editDistribution || null,
+          Culinary_Regions: editCulinaryRegions || null,
+          Primary_Use: editPrimaryUse || null,
         }),
         credentials: 'include',
       });
@@ -81,16 +95,28 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
     setEditName(plant.Canonical_Name);
     setEditBotanical(plant.Botanical_Name ?? '');
     setEditDescription(plant.Description ?? '');
+    setEditAltNames((plant as any).Alternative_Names ?? '');
+    setEditOrigin((plant as any).Origin ?? '');
+    setEditFlowerColors((plant as any).Flower_Colors ?? '');
+    setEditElevation((plant as any).Elevation_Range ?? '');
+    setEditDistribution((plant as any).Distribution ?? '');
+    setEditCulinaryRegions((plant as any).Culinary_Regions ?? '');
+    setEditPrimaryUse((plant as any).Primary_Use ?? '');
   };
 
   return (
     <div className="space-y-6">
-      {/* Hero image */}
-      <div className="aspect-video bg-muted rounded-lg overflow-hidden">
-        {plant.Image_Count > 0 ? (
-          <LazyImage src={heroSrc} alt={plant.Canonical_Name} className="w-full h-full" />
+      {/* Hero image — scaled to fit viewport */}
+      <div className="bg-muted rounded-lg overflow-hidden max-h-[60vh] flex items-center justify-center relative">
+        {plant.Image_Count > 0 && heroSrc ? (
+          <img
+            src={heroSrc}
+            alt={plant.Canonical_Name}
+            className="max-w-full max-h-[60vh] object-contain"
+            loading="lazy"
+          />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-muted-foreground text-5xl">
+          <div className="w-full h-48 flex items-center justify-center text-muted-foreground text-5xl">
             <span aria-hidden="true">&#x1F331;</span>
           </div>
         )}
@@ -110,6 +136,34 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           <div>
             <label className="text-sm font-medium">Description</label>
             <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={4} />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Alternative Names</label>
+            <Input value={editAltNames} onChange={(e) => setEditAltNames(e.target.value)} placeholder="e.g. lipstick plant, achote" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Origin</label>
+            <Input value={editOrigin} onChange={(e) => setEditOrigin(e.target.value)} placeholder="e.g. South America" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Primary Use</label>
+            <Input value={editPrimaryUse} onChange={(e) => setEditPrimaryUse(e.target.value)} placeholder="e.g. fresh eating, preserves" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Flower Colors</label>
+            <Input value={editFlowerColors} onChange={(e) => setEditFlowerColors(e.target.value)} placeholder="e.g. pink or white" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Elevation Range</label>
+            <Input value={editElevation} onChange={(e) => setEditElevation(e.target.value)} placeholder="e.g. sea level to 2000 feet" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Distribution</label>
+            <Input value={editDistribution} onChange={(e) => setEditDistribution(e.target.value)} placeholder="e.g. throughout the tropics" />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Culinary Regions</label>
+            <Input value={editCulinaryRegions} onChange={(e) => setEditCulinaryRegions(e.target.value)} placeholder="e.g. Caribbean, Mexico" />
           </div>
           <div className="flex gap-2">
             <Button onClick={handleSave} disabled={isSaving} size="sm">
@@ -162,7 +216,34 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
       {!editMode && plant.Description && (
         <div>
           <h3 className="text-sm font-medium mb-1">Description</h3>
-          <p className="text-sm text-muted-foreground whitespace-pre-wrap">{plant.Description}</p>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap select-text">{plant.Description}</p>
+        </div>
+      )}
+
+      {/* Extended details */}
+      {!editMode && (
+        <div className="space-y-2">
+          {(plant as any).Alternative_Names && (
+            <DetailRow label="Alternative Names" value={(plant as any).Alternative_Names} />
+          )}
+          {(plant as any).Origin && (
+            <DetailRow label="Origin" value={(plant as any).Origin} />
+          )}
+          {(plant as any).Primary_Use && (
+            <DetailRow label="Primary Use" value={(plant as any).Primary_Use} />
+          )}
+          {(plant as any).Flower_Colors && (
+            <DetailRow label="Flower Colors" value={(plant as any).Flower_Colors} />
+          )}
+          {(plant as any).Elevation_Range && (
+            <DetailRow label="Elevation Range" value={(plant as any).Elevation_Range} />
+          )}
+          {(plant as any).Distribution && (
+            <DetailRow label="Distribution" value={(plant as any).Distribution} />
+          )}
+          {(plant as any).Culinary_Regions && (
+            <DetailRow label="Culinary Regions" value={(plant as any).Culinary_Regions} />
+          )}
         </div>
       )}
 
@@ -182,6 +263,15 @@ function StatBox({ label, value }: { label: string; value: number }) {
     <div className="rounded-lg border p-3 text-center">
       <p className="text-2xl font-bold">{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2 text-sm">
+      <span className="font-medium shrink-0 w-36">{label}</span>
+      <span className="text-muted-foreground select-text">{value}</span>
     </div>
   );
 }

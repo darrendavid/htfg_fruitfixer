@@ -60,6 +60,17 @@ export interface BrowseOcr {
   Source_Context: string | null;
 }
 
+export interface BrowseAttachment {
+  Id: number;
+  Title: string;
+  File_Path: string;
+  File_Name: string;
+  File_Type: string;
+  File_Size: number;
+  Plant_Ids: string | null;
+  Description: string | null;
+}
+
 export interface BrowseImage {
   Id: number;
   File_Path: string;
@@ -86,7 +97,8 @@ export interface PlantDetail {
   nutritional: BrowseNutrient[];
   images: { list: BrowseImage[]; pageInfo: { totalRows: number; page: number; pageSize: number } };
   documents: BrowseDocument[];
+  attachments: BrowseAttachment[];
   recipes: BrowseRecipe[];
-  ocr_extractions: BrowseOcr[];
+  ocr: BrowseOcr[];
   notes: StaffNote[];
 }
