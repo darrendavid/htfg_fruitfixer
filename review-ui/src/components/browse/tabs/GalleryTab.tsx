@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { RotateCcw, RotateCw, LayoutGrid, FolderOpen } from 'lucide-react';
+import { RotateCcw, RotateCw, LayoutGrid, FolderOpen, Tags, Copy, Trash2 } from 'lucide-react';
 import { LazyImage } from '@/components/images/LazyImage';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,18 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { BrowseImage, BrowseVariety } from '@/types/browse';
 
 const PAGE_SIZE = 50;
+
+/** Hamming distance between two hex hash strings */
+function hammingDistance(h1: string, h2: string): number {
+  if (h1.length !== h2.length) return 64;
+  let dist = 0;
+  for (let i = 0; i < h1.length; i++) {
+    const xor = parseInt(h1[i], 16) ^ parseInt(h2[i], 16);
+    // Count bits in nibble
+    dist += ((xor >> 3) & 1) + ((xor >> 2) & 1) + ((xor >> 1) & 1) + (xor & 1);
+  }
+  return dist;
+}
 
 function stripParsedPrefix(filePath: string) {
   return filePath.replace(/^content\/parsed\//, '').replace(/#/g, '%23');
@@ -51,7 +63,9 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ w: number; h: number } | null>(null);
   const [heroPath, setHeroPath] = useState<string | null>(currentHeroPath ?? null);
-  const [viewMode, setViewMode] = useState<'grid' | 'grouped'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'grouped' | 'variety' | 'similarity'>('grid');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null);
   const lightboxImgRef = useRef<HTMLImageElement>(null);
   const plantInputRef = useRef<HTMLInputElement>(null);
   const varietyInputRef = useRef<HTMLInputElement>(null);
@@ -65,9 +79,11 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const fetchImages = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/browse/${plantId}/images?page=${page}&limit=${PAGE_SIZE}`, {
-        credentials: 'include',
-      });
+      const useAll = viewMode !== 'grid';
+      const url = useAll
+        ? `/api/browse/${plantId}/images?all=true`
+        : `/api/browse/${plantId}/images?page=${page}&limit=${PAGE_SIZE}`;
+      const res = await fetch(url, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setImages(data.list ?? []);
@@ -80,7 +96,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     } finally {
       setIsLoading(false);
     }
-  }, [plantId, page]);
+  }, [plantId, page, viewMode]);
 
   useEffect(() => { fetchImages(); }, [fetchImages]);
 
@@ -234,17 +250,152 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   // Grouped view data — must be before any early returns (Rules of Hooks)
   const groupedImages = useMemo(() => {
-    if (viewMode !== 'grouped') return [];
-    const groups: Record<string, BrowseImage[]> = {};
-    for (const img of images) {
-      const path = stripParsedPrefix(img.File_Path);
-      const dir = path.substring(0, path.lastIndexOf('/'));
-      const label = dir.includes('images/') ? dir.substring(dir.indexOf('images/') + 7) : dir;
-      if (!groups[label]) groups[label] = [];
-      groups[label].push(img);
+    if (viewMode === 'grid') return [];
+
+    if (viewMode === 'grouped') {
+      const groups: Record<string, BrowseImage[]> = {};
+      for (const img of images) {
+        const path = stripParsedPrefix(img.File_Path);
+        const dir = path.substring(0, path.lastIndexOf('/'));
+        const label = dir.includes('images/') ? dir.substring(dir.indexOf('images/') + 7) : dir;
+        if (!groups[label]) groups[label] = [];
+        groups[label].push(img);
+      }
+      return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
     }
-    return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
+
+    if (viewMode === 'variety') {
+      const groups: Record<string, BrowseImage[]> = {};
+      for (const img of images) {
+        const variety = (img as any).Variety_Name || '(unassigned)';
+        if (!groups[variety]) groups[variety] = [];
+        groups[variety].push(img);
+      }
+      // Put unassigned last
+      return Object.entries(groups).sort((a, b) => {
+        if (a[0] === '(unassigned)') return 1;
+        if (b[0] === '(unassigned)') return -1;
+        return a[0].localeCompare(b[0]);
+      });
+    }
+
+    if (viewMode === 'similarity') {
+      // Group by perceptual hash similarity (Hamming distance ≤ 8)
+      // Fall back to filename stem if no hashes available
+      const hasHashes = images.some((i: any) => i.Perceptual_Hash);
+
+      if (hasHashes) {
+        // Union-Find for grouping similar hashes
+        const parent: Record<number, number> = {};
+        const find = (x: number): number => { if (parent[x] !== x) parent[x] = find(parent[x]); return parent[x]; };
+        const union = (a: number, b: number) => { parent[find(a)] = find(b); };
+        images.forEach((img) => { parent[img.Id] = img.Id; });
+
+        // Compare all pairs with hashes — O(n²) but fine for <1000 images
+        const hashed = images.filter((i: any) => i.Perceptual_Hash);
+        for (let i = 0; i < hashed.length; i++) {
+          for (let j = i + 1; j < hashed.length; j++) {
+            const h1 = (hashed[i] as any).Perceptual_Hash as string;
+            const h2 = (hashed[j] as any).Perceptual_Hash as string;
+            if (h1 && h2 && hammingDistance(h1, h2) <= 8) {
+              union(hashed[i].Id, hashed[j].Id);
+            }
+          }
+        }
+
+        const clusters: Record<number, BrowseImage[]> = {};
+        for (const img of images) {
+          const root = find(img.Id);
+          if (!clusters[root]) clusters[root] = [];
+          clusters[root].push(img);
+        }
+
+        const multi: Array<[string, BrowseImage[]]> = [];
+        const singles: BrowseImage[] = [];
+        for (const imgs of Object.values(clusters)) {
+          if (imgs.length >= 2) {
+            const label = imgs[0].Caption || imgs[0].File_Path.split('/').pop()?.replace(/\.\w+$/, '') || 'similar';
+            multi.push([label, imgs]);
+          } else {
+            singles.push(...imgs);
+          }
+        }
+        multi.sort((a, b) => b[1].length - a[1].length);
+        if (singles.length > 0) multi.push(['(unique images)', singles]);
+        return multi;
+      }
+
+      // Fallback: group by filename stem
+      const groups: Record<string, BrowseImage[]> = {};
+      for (const img of images) {
+        const filename = img.File_Path.split('/').pop() || '';
+        const stem = filename.replace(/\.\w+$/, '').toLowerCase()
+          .replace(/[\s_-]+/g, ' ').replace(/\bcopy\b/g, '').replace(/\d+$/, '').trim();
+        const key = stem || filename;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(img);
+      }
+      const multi: Array<[string, BrowseImage[]]> = [];
+      const singles: BrowseImage[] = [];
+      for (const [key, imgs] of Object.entries(groups)) {
+        if (imgs.length >= 2) multi.push([key, imgs]);
+        else singles.push(...imgs);
+      }
+      multi.sort((a, b) => b[1].length - a[1].length);
+      if (singles.length > 0) multi.push(['(unique images)', singles]);
+      return multi;
+    }
+
+    return [];
   }, [images, viewMode]);
+
+  // Selection handlers
+  const handleImageClick = useCallback((e: React.MouseEvent, imgId: number, flatIdx: number) => {
+    if (e.shiftKey && lastClickedIdx !== null) {
+      // Range select
+      const start = Math.min(lastClickedIdx, flatIdx);
+      const end = Math.max(lastClickedIdx, flatIdx);
+      const rangeIds = images.slice(start, end + 1).map((i) => i.Id);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        rangeIds.forEach((id) => next.add(id));
+        return next;
+      });
+    } else if (e.ctrlKey || e.metaKey) {
+      // Toggle individual
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(imgId)) next.delete(imgId);
+        else next.add(imgId);
+        return next;
+      });
+      setLastClickedIdx(flatIdx);
+    } else {
+      // Normal click — open lightbox (no selection)
+      openLightbox(flatIdx);
+      return;
+    }
+    // Don't open lightbox on shift/ctrl clicks
+  }, [lastClickedIdx, images, openLightbox]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set());
+    setLastClickedIdx(null);
+  }, []);
+
+  const handleBulkDelete = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    try {
+      const promises = ids.map((id) =>
+        fetch(`/api/browse/exclude-image/${id}`, { method: 'POST', credentials: 'include' })
+      );
+      await Promise.all(promises);
+      setImages((prev) => prev.filter((i) => !selectedIds.has(i.Id)));
+      setTotalRows((prev) => prev - ids.length);
+      clearSelection();
+    } catch {}
+  }, [selectedIds, clearSelection]);
 
   const handleBulkReassign = useCallback(async (imageIds: number[], newPlantId: string) => {
     try {
@@ -303,21 +454,30 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     );
   }
 
-  const renderImageThumbnail = (img: BrowseImage, idx: number) => (
+  const renderImageThumbnail = (img: BrowseImage, idx: number) => {
+    const isSelected = selectedIds.has(img.Id);
+    return (
     <div key={img.Id} className="space-y-1">
       <div
-        className="group aspect-square bg-muted rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-ring transition-shadow relative"
-        onClick={() => openLightbox(idx)}
+        className={`group aspect-square bg-muted rounded overflow-hidden cursor-pointer transition-shadow relative ${
+          isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : 'hover:ring-2 hover:ring-ring'
+        }`}
+        onClick={(e) => handleImageClick(e, img.Id, idx)}
       >
-        <div className={`w-full h-full ${rotationClass((img as any).Rotation)}`}>
+        <div className={`w-full h-full ${rotationClass((img as any).Rotation)} ${isSelected ? 'opacity-75' : ''}`}>
           <LazyImage
             src={`/images/${stripParsedPrefix(img.File_Path)}`}
             alt={img.Caption ?? ''}
             className="w-full h-full"
           />
         </div>
+        {isSelected && (
+          <div className="absolute top-1 right-1 z-10 bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+            ✓
+          </div>
+        )}
         {isHero(img) && <GoldStar />}
-        {isAdmin && (
+        {isAdmin && !isSelected && (
           <>
             <button
               className="absolute bottom-1 left-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -345,30 +505,42 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         </p>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{totalRows} images total</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-muted-foreground">{totalRows} images total</p>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-1 ml-2">
+              <Badge variant="default" className="text-xs">{selectedIds.size} selected</Badge>
+              <Button variant="destructive" size="sm" className="h-6 text-xs" onClick={handleBulkDelete}>
+                <Trash2 className="size-3 mr-1" /> Delete
+              </Button>
+              <Button variant="outline" size="sm" className="h-6 text-xs" onClick={clearSelection}>
+                Clear
+              </Button>
+            </div>
+          )}
+        </div>
         <div className="flex gap-1">
-          <Button
-            variant={viewMode === 'grid' ? 'default' : 'outline'}
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setViewMode('grid')}
-            title="Grid view"
-          >
+          <Button variant={viewMode === 'grid' ? 'default' : 'outline'} size="icon" className="h-8 w-8"
+            onClick={() => { setViewMode('grid'); clearSelection(); }} title="Grid view">
             <LayoutGrid className="size-4" />
           </Button>
-          <Button
-            variant={viewMode === 'grouped' ? 'default' : 'outline'}
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setViewMode('grouped')}
-            title="Grouped by directory"
-          >
+          <Button variant={viewMode === 'grouped' ? 'default' : 'outline'} size="icon" className="h-8 w-8"
+            onClick={() => { setViewMode('grouped'); clearSelection(); }} title="Group by directory">
             <FolderOpen className="size-4" />
+          </Button>
+          <Button variant={viewMode === 'variety' ? 'default' : 'outline'} size="icon" className="h-8 w-8"
+            onClick={() => { setViewMode('variety'); clearSelection(); }} title="Group by variety">
+            <Tags className="size-4" />
+          </Button>
+          <Button variant={viewMode === 'similarity' ? 'default' : 'outline'} size="icon" className="h-8 w-8"
+            onClick={() => { setViewMode('similarity'); clearSelection(); }} title="Group by similarity">
+            <Copy className="size-4" />
           </Button>
         </div>
       </div>
@@ -401,7 +573,9 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
               <div key={dirLabel} className="space-y-2">
                 <div className="border-b pb-2">
                   <div className="flex items-center gap-2 mb-1">
-                    <FolderOpen className="size-4 text-muted-foreground shrink-0" />
+                    {viewMode === 'variety' ? <Tags className="size-4 text-muted-foreground shrink-0" /> :
+                     viewMode === 'similarity' ? <Copy className="size-4 text-muted-foreground shrink-0" /> :
+                     <FolderOpen className="size-4 text-muted-foreground shrink-0" />}
                     <p className="text-sm font-medium truncate">{dirLabel || '(root)'}</p>
                     <Badge variant="outline" className="text-xs shrink-0">{groupImgs.length}</Badge>
                   </div>
@@ -437,18 +611,6 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             );
           })}
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4 pt-2">
-              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">Page {page} of {totalPages}</span>
-              <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-                Next
-              </Button>
-            </div>
-          )}
         </div>
       )}
 

@@ -179,20 +179,39 @@ router.get('/search', asyncHandler(async (req, res) => {
 // ── GET /:plantId/images — Paginated images for a plant ─────────────────────
 router.get('/:plantId/images', asyncHandler(async (req, res) => {
   const { plantId } = req.params;
-  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
-  const page = Math.max(1, parseInt(req.query.page as string) || 1);
-  const offset = (page - 1) * limit;
+  const all = req.query.all === 'true';
 
-  const result = await nocodb.list('Images', {
-    where: `(Plant_Id,eq,${plantId})~and(Excluded,neq,1)`,
-    limit,
-    offset,
-  });
+  if (all) {
+    // Fetch all images for this plant (for gallery group modes)
+    const allImages: any[] = [];
+    let offset = 0;
+    while (true) {
+      const result = await nocodb.list('Images', {
+        where: `(Plant_Id,eq,${plantId})~and(Excluded,neq,1)`,
+        limit: 200,
+        offset,
+      });
+      allImages.push(...result.list);
+      if (result.pageInfo.isLastPage) break;
+      offset += 200;
+    }
+    res.json({ list: allImages, pageInfo: { totalRows: allImages.length } });
+  } else {
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const offset = (page - 1) * limit;
 
-  res.json({
-    list: result.list,
-    pageInfo: result.pageInfo,
-  });
+    const result = await nocodb.list('Images', {
+      where: `(Plant_Id,eq,${plantId})~and(Excluded,neq,1)`,
+      limit,
+      offset,
+    });
+
+    res.json({
+      list: result.list,
+      pageInfo: result.pageInfo,
+    });
+  }
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════════
