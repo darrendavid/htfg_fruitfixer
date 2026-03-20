@@ -337,40 +337,49 @@ export function AttachmentsTab({ plantId, attachments: initialAttachments, editM
                 )}
               </div>
 
-              {/* Action buttons */}
-              {isAdmin && editMode && (
-                <div className="flex items-center gap-1 shrink-0">
-                  {isEditing ? (
-                    <>
-                      <Button
-                        variant="default"
-                        size="sm"
-                        onClick={() => handleSave(att)}
-                        disabled={isSaving}
-                      >
-                        {isSaving ? 'Saving...' : 'Save'}
+              {/* Action buttons — download always visible, edit/delete for admin */}
+              <div className="flex items-center gap-1 shrink-0">
+                {isEditing ? (
+                  <>
+                    <Button variant="default" size="sm" onClick={() => handleSave(att)} disabled={isSaving}>
+                      {isSaving ? 'Saving...' : 'Save'}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={cancelEditing}>Cancel</Button>
+                  </>
+                ) : (
+                  <>
+                    <a
+                      href={`/content-files/${att.File_Path?.replace(/^content\//, '')}`}
+                      download={att.File_Name}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Button variant="outline" size="sm" title="Download">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-4">
+                          <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                          <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v2.5A2.75 2.75 0 0 0 4.75 18h10.5A2.75 2.75 0 0 0 18 15.25v-2.5a.75.75 0 0 0-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5Z" />
+                        </svg>
                       </Button>
-                      <Button variant="outline" size="sm" onClick={cancelEditing}>
-                        Cancel
-                      </Button>
-                    </>
-                  ) : (
-                    <>
+                    </a>
+                    {isAdmin && editMode && (
                       <Button variant="outline" size="sm" onClick={() => startEditing(att)} title="Edit">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-4">
                           <path d="m5.433 13.917 1.262-3.155A4 4 0 0 1 7.58 9.42l6.92-6.918a2.121 2.121 0 0 1 3 3l-6.92 6.918c-.383.383-.84.685-1.343.886l-3.154 1.262a.5.5 0 0 1-.65-.65Z" />
                           <path d="M3.5 5.75c0-.69.56-1.25 1.25-1.25h5.5a.75.75 0 0 0 0-1.5h-5.5A2.75 2.75 0 0 0 2 5.75v8.5A2.75 2.75 0 0 0 4.75 17h8.5A2.75 2.75 0 0 0 16 14.25v-5.5a.75.75 0 0 0-1.5 0v5.5c0 .69-.56 1.25-1.25 1.25h-8.5c-.69 0-1.25-.56-1.25-1.25v-8.5Z" />
                         </svg>
                       </Button>
+                    )}
+                    {isAdmin && (
                       <Button variant="destructive" size="sm" onClick={() => handleDelete(att)} title="Delete">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-4">
                           <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022 1.005 11.36A2.75 2.75 0 0 0 7.76 20h4.48a2.75 2.75 0 0 0 2.742-2.489l1.005-11.36.149.022a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 1 .7.8l-.5 5.5a.75.75 0 0 1-1.496-.136l.5-5.5a.75.75 0 0 1 .796-.664Zm2.84 0a.75.75 0 0 1 .796.664l.5 5.5a.75.75 0 1 1-1.496.136l-.5-5.5a.75.75 0 0 1 .7-.8Z" clipRule="evenodd" />
                         </svg>
                       </Button>
-                    </>
-                  )}
-                </div>
-              )}
+                    )}
+                  </>
+                )}
+              </div>
               {isAdmin && editMode && (
                 <div className="mt-2 pt-2 border-t">
                   <PlantReassignField
