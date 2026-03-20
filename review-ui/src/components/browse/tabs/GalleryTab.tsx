@@ -68,6 +68,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null);
   const [dimMap, setDimMap] = useState<Record<number, string>>({});
   const [showDeleted, setShowDeleted] = useState(false);
+  const [visibleGroupCount, setVisibleGroupCount] = useState(20);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
   const lightboxImgRef = useRef<HTMLImageElement>(null);
   const plantInputRef = useRef<HTMLInputElement>(null);
   const varietyInputRef = useRef<HTMLInputElement>(null);
@@ -75,6 +77,28 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   useEffect(() => {
     if (currentHeroPath) setHeroPath(currentHeroPath);
   }, [currentHeroPath]);
+
+  // Reset visible group count when view mode changes
+  useEffect(() => {
+    setVisibleGroupCount(20);
+  }, [viewMode]);
+
+  // Infinite scroll — load more groups as user scrolls down
+  useEffect(() => {
+    if (viewMode === 'grid') return;
+    const el = loadMoreRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleGroupCount((prev) => prev + 20);
+        }
+      },
+      { rootMargin: '400px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [viewMode, isLoading]);
 
   const fetchImages = useCallback(async () => {
     setIsLoading(true);
@@ -650,11 +674,11 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         </>
       ) : (
         <div className="space-y-6">
-          {groupedImages.map(([dirLabel, groupImgs]) => {
+          {groupedImages.slice(0, visibleGroupCount).map(([dirLabel, groupImgs], groupIdx) => {
             const groupIds = groupImgs.map((i) => i.Id);
-            const globalStartIdx = images.findIndex((i) => i.Id === groupImgs[0].Id);
+            const globalStartIdx = displayImagesRef.current.findIndex((i) => i.Id === groupImgs[0].Id);
             return (
-              <div key={dirLabel} className="space-y-2">
+              <div key={`group-${groupIdx}-${groupImgs[0]?.Id ?? dirLabel}`} className="space-y-2">
                 <div className="border-b pb-2">
                   <div className="flex items-center gap-2 mb-1">
                     {viewMode === 'variety' ? <Tags className="size-4 text-muted-foreground shrink-0" /> :
@@ -694,6 +718,13 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
               </div>
             );
           })}
+
+          {/* Infinite scroll sentinel */}
+          {visibleGroupCount < groupedImages.length && (
+            <div ref={loadMoreRef} className="flex items-center justify-center py-4 text-sm text-muted-foreground">
+              Loading more groups... ({visibleGroupCount} of {groupedImages.length} shown)
+            </div>
+          )}
 
         </div>
       )}
