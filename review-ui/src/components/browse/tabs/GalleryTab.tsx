@@ -559,12 +559,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             src={`/images/${stripParsedPrefix(img.File_Path)}`}
             alt={img.Caption ?? ''}
             className="w-full h-full"
-            onLoad={viewMode === 'similarity' ? (e) => {
+            onLoad={(e) => {
               const el = e.currentTarget;
               if (el.naturalWidth > 0) {
                 setDimMap((prev) => ({ ...prev, [img.Id]: `${el.naturalWidth}×${el.naturalHeight}` }));
               }
-            } : undefined}
+            }}
           />
         </div>
         {isSelected && (
@@ -572,8 +572,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             ✓
           </div>
         )}
-        {/* Resolution overlay in similarity mode */}
-        {viewMode === 'similarity' && (dimMap[img.Id] || img.Size_Bytes > 0) && (
+        {/* Resolution overlay */}
+        {(dimMap[img.Id] || img.Size_Bytes > 0) && (
           <div className="absolute bottom-0 left-0 right-0 z-10 bg-black/70 text-white text-[9px] px-1 py-0.5 text-center font-mono">
             {dimMap[img.Id] ?? ''}{dimMap[img.Id] && img.Size_Bytes > 0 ? ' · ' : ''}{img.Size_Bytes > 0 ? `${(img.Size_Bytes / 1024).toFixed(0)}KB` : ''}
           </div>
