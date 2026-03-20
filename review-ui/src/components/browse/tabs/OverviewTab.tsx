@@ -1,6 +1,7 @@
 import { useState, useEffect, type MutableRefObject } from 'react';
 import { LazyImage } from '@/components/images/LazyImage';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
