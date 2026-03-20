@@ -101,6 +101,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   useEffect(() => { fetchImages(); }, [fetchImages]);
 
+  // Refs to hold current display state — avoids TDZ issues with memos defined later
+  const displayImagesLenRef = useRef(0);
+  const displayImagesRef = useRef<BrowseImage[]>([]);
+
   const openLightbox = (index: number) => {
     setLightboxIndex(index);
     setImageDimensions(null);
@@ -113,13 +117,13 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   const goNext = useCallback(() => {
     if (lightboxIndex === null) return;
-    if (lightboxIndex < displayImages.length - 1) {
+    if (lightboxIndex < displayImagesLenRef.current - 1) {
       setLightboxIndex(lightboxIndex + 1);
       setImageDimensions(null);
     } else {
       closeLightbox();
     }
-  }, [lightboxIndex, displayImages.length]);
+  }, [lightboxIndex]);
 
   const goPrev = useCallback(() => {
     if (lightboxIndex === null) return;
@@ -175,10 +179,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         setTotalRows((prev) => prev - 1);
         setImageDimensions(null);
         setImages((prev) => prev.filter((i) => i.Id !== img.Id));
-        // Adjust lightbox index — displayImages will shrink by 1
+        // Adjust lightbox index — display will shrink by 1
         if (lightboxIndex !== null) {
-          const newDisplayLen = displayImages.length - 1;
-          if (newDisplayLen === 0 || lightboxIndex >= newDisplayLen) {
+          const newLen = displayImagesLenRef.current - 1;
+          if (newLen === 0 || lightboxIndex >= newLen) {
             closeLightbox();
           }
         }
@@ -234,19 +238,20 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     const handleKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const currentImage = displayImagesRef.current[lightboxIndex!];
       if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
-      else if (e.key === 'x' && isAdmin && lightboxImage) { e.preventDefault(); deleteImage(lightboxImage); }
-      else if (e.key === 'h' && isAdmin && lightboxImage) { e.preventDefault(); setAsHero(lightboxImage); }
-      else if (e.key === '[' && isAdmin && lightboxImage) { e.preventDefault(); rotateImage(lightboxImage, 'ccw'); }
-      else if (e.key === ']' && isAdmin && lightboxImage) { e.preventDefault(); rotateImage(lightboxImage, 'cw'); }
+      else if (e.key === 'x' && isAdmin && currentImage) { e.preventDefault(); deleteImage(currentImage); }
+      else if (e.key === 'h' && isAdmin && currentImage) { e.preventDefault(); setAsHero(currentImage); }
+      else if (e.key === '[' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'ccw'); }
+      else if (e.key === ']' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'cw'); }
       else if (e.key === 'v' && isAdmin) { e.preventDefault(); varietyInputRef.current?.focus(); }
       else if (e.key === 'p' && isAdmin) { e.preventDefault(); plantInputRef.current?.focus(); }
       else if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [lightboxIndex, goNext, goPrev, deleteImage, setAsHero, rotateImage, lightboxImage, isAdmin]);
+  }, [lightboxIndex, goNext, goPrev, deleteImage, setAsHero, rotateImage, isAdmin]);
 
   const isHero = (img: BrowseImage) => {
     const stripped = stripParsedPrefix(img.File_Path);
@@ -356,11 +361,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   }, [images, viewMode]);
 
   // Display order: in grouped modes, flatten groupedImages to get visual order
-  // Lightbox navigation uses this instead of raw `images`
   const displayImages = useMemo(() => {
     if (viewMode === 'grid') return images;
     return groupedImages.flatMap(([, imgs]) => imgs);
   }, [viewMode, images, groupedImages]);
+
+  // Keep refs in sync for callbacks that can't access the memo directly
+  displayImagesLenRef.current = displayImages.length;
+  displayImagesRef.current = displayImages;
 
   const lightboxImage = lightboxIndex !== null ? displayImages[lightboxIndex] : null;
 
