@@ -664,6 +664,24 @@ router.post('/image-to-attachment/:id', requireAdmin, asyncHandler(async (req, r
   res.json({ success: true, attachment });
 }));
 
+// ── POST /reassign-document/:id — Move document to a different plant (admin) ──
+router.post('/reassign-document/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { plant_id } = req.body ?? {};
+  if (!plant_id) { res.status(400).json({ error: 'plant_id required' }); return; }
+  await nocodb.update('Documents', id, { Plant_Ids: JSON.stringify([plant_id]), Is_Plant_Related: true });
+  res.json({ success: true, plant_id });
+}));
+
+// ── POST /reassign-attachment/:id — Move attachment to a different plant (admin)
+router.post('/reassign-attachment/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { plant_id } = req.body ?? {};
+  if (!plant_id) { res.status(400).json({ error: 'plant_id required' }); return; }
+  await nocodb.update('Attachments', id, { Plant_Ids: JSON.stringify([plant_id]) });
+  res.json({ success: true, plant_id });
+}));
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NOTES ENDPOINTS (local SQLite)
 // ═══════════════════════════════════════════════════════════════════════════════
