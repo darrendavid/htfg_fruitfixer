@@ -34,7 +34,7 @@ export function PlantCard({ plant }: PlantCardProps) {
     >
       {/* Hero image */}
       <div className="aspect-square bg-muted relative">
-        {plant.Image_Count > 0 ? (
+        {heroSrc ? (
           <LazyImage
             src={heroSrc}
             alt={plant.Canonical_Name}
