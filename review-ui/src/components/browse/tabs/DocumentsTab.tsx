@@ -323,6 +323,18 @@ export function DocumentsTab({ documents: initialDocuments }: DocumentsTabProps)
                   </Button>
                 </div>
                 <div className="flex items-center gap-2">
+                  {selectedDoc.Original_File_Path && (
+                    <a
+                      href={`/content-files/${selectedDoc.Original_File_Path.replace(/^content\//, '')}`}
+                      download={selectedDoc.Original_File_Path.split('/').pop()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Button variant="outline" size="sm" title="Download">
+                        Download
+                      </Button>
+                    </a>
+                  )}
                   {isAdmin && (
                     <>
                       <Button
