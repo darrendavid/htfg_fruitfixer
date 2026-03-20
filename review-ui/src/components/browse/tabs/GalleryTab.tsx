@@ -220,7 +220,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   const moveToDocuments = useCallback(async (img: BrowseImage) => {
     try {
-      const res = await fetch(`/api/browse/image-to-document/${img.Id}`, {
+      const res = await fetch(`/api/browse/image-to-attachment/${img.Id}`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -911,9 +911,9 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                       variant="outline"
                       size="sm"
                       onClick={() => moveToDocuments(lightboxImage)}
-                      title="Move to Documents (d)"
+                      title="Move to Attachments (d)"
                     >
-                      To Docs (d)
+                      Attach (d)
                     </Button>
                   </div>
                 )}
