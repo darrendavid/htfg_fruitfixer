@@ -392,8 +392,17 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
     return;
   }
 
-  // If Canonical_Name changed, regenerate slug and cascade
-  const current = await nocodb.get('Plants', id);
+  // Resolve slug to numeric ID if needed
+  let current: any;
+  const numId = parseInt(id, 10);
+  if (!isNaN(numId) && String(numId) === id) {
+    current = await nocodb.get('Plants', id);
+  } else {
+    const result = await nocodb.list('Plants', { where: `(Id1,eq,${id})`, limit: 1 });
+    current = result.list?.[0];
+    if (!current) { res.status(404).json({ error: 'Plant not found' }); return; }
+  }
+  const rowId = current.Id;
   const oldSlug = current.Id1;
 
   if (fields.Canonical_Name && fields.Canonical_Name !== current.Canonical_Name) {
@@ -461,8 +470,8 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
     db.prepare(`UPDATE staff_notes SET plant_id = ? WHERE plant_id = ?`).run(newSlug, oldSlug);
   }
 
-  await nocodb.update('Plants', id, fields);
-  const updated = await nocodb.get('Plants', id);
+  await nocodb.update('Plants', rowId, fields);
+  const updated = await nocodb.get('Plants', rowId);
   res.json(updated);
 }));
 

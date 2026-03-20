@@ -678,7 +678,7 @@ describe('Browse API', () => {
         .set('Cookie', cookie)
         .send({ Description: 'A tropical fruit' });
       expect(res.status).toBe(200);
-      expect(mockNocodb.update).toHaveBeenCalledWith('Plants', '1', expect.objectContaining({
+      expect(mockNocodb.update).toHaveBeenCalledWith('Plants', 1, expect.objectContaining({
         Description: 'A tropical fruit',
       }));
     });
@@ -706,7 +706,7 @@ describe('Browse API', () => {
         .set('Cookie', cookie)
         .send({ Category: 'nut', secret_field: 'should be excluded' });
 
-      expect(mockNocodb.update).toHaveBeenCalledWith('Plants', '1', expect.not.objectContaining({
+      expect(mockNocodb.update).toHaveBeenCalledWith('Plants', 1, expect.not.objectContaining({
         secret_field: 'should be excluded',
       }));
     });
@@ -731,7 +731,7 @@ describe('Browse API', () => {
       expect(cascadeCalls.length).toBeGreaterThan(0);
 
       // Should update plant with new slug
-      expect(mockNocodb.update).toHaveBeenCalledWith('Plants', '1', expect.objectContaining({
+      expect(mockNocodb.update).toHaveBeenCalledWith('Plants', 1, expect.objectContaining({
         Id1: 'yellow-mango',
         Canonical_Name: 'Yellow Mango',
       }));
