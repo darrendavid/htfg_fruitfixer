@@ -110,6 +110,10 @@ export function PlantGridPage() {
 
   useEffect(() => {
     fetchPlants();
+    // Scroll to top on page/filter changes, but not on initial mount (restore)
+    if (!isInitialMount.current) {
+      window.scrollTo(0, 0);
+    }
   }, [fetchPlants]);
 
   // Save grid state on every change (for back-navigation restoration)
