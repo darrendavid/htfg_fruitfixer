@@ -292,7 +292,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       else if (e.key === 'h' && isAdmin && currentImage) { e.preventDefault(); setAsHero(currentImage); }
       else if (e.key === '[' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'ccw'); }
       else if (e.key === ']' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'cw'); }
-      else if (e.key === 'd' && isAdmin && currentImage) { e.preventDefault(); moveToDocuments(currentImage); }
+      else if (e.key === 'a' && isAdmin && currentImage) { e.preventDefault(); moveToDocuments(currentImage); }
       else if (e.key === 'v' && isAdmin) { e.preventDefault(); varietyInputRef.current?.focus(); }
       else if (e.key === 'p' && isAdmin) { e.preventDefault(); plantInputRef.current?.focus(); }
       else if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); }
@@ -911,9 +911,9 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                       variant="outline"
                       size="sm"
                       onClick={() => moveToDocuments(lightboxImage)}
-                      title="Move to Attachments (d)"
+                      title="Move to Attachments (a)"
                     >
-                      Attach (d)
+                      Attach (a)
                     </Button>
                   </div>
                 )}
