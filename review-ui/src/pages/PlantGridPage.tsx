@@ -31,16 +31,32 @@ const SORT_OPTIONS = [
   { value: 'images_desc', label: 'Most Images' },
 ];
 
+const STORAGE_KEY = 'htfg_plant_grid_state';
+
+function loadGridState() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+function saveGridState(state: { search: string; category: string; sort: string; page: number; scrollY: number }) {
+  try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+}
+
 export function PlantGridPage() {
+  const saved = useRef(loadGridState());
   const [plants, setPlants] = useState<BrowsePlant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('all');
-  const [sort, setSort] = useState('name_asc');
-  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState(saved.current?.search ?? '');
+  const [category, setCategory] = useState(saved.current?.category ?? 'all');
+  const [sort, setSort] = useState(saved.current?.sort ?? 'name_asc');
+  const [page, setPage] = useState(saved.current?.page ?? 1);
   const [totalPages, setTotalPages] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState(saved.current?.search ?? '');
+  const restoredScroll = useRef(false);
 
   // Debounce search input
   useEffect(() => {
@@ -87,6 +103,37 @@ export function PlantGridPage() {
   useEffect(() => {
     fetchPlants();
   }, [fetchPlants]);
+
+  // Save grid state on every change (for back-navigation restoration)
+  useEffect(() => {
+    saveGridState({ search, category, sort, page, scrollY: window.scrollY });
+  }, [search, category, sort, page]);
+
+  // Save scroll position on scroll (throttled)
+  useEffect(() => {
+    let ticking = false;
+    const handleScroll = () => {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(() => {
+          saveGridState({ search, category, sort, page, scrollY: window.scrollY });
+          ticking = false;
+        });
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [search, category, sort, page]);
+
+  // Restore scroll position after data loads (only once)
+  useEffect(() => {
+    if (!isLoading && plants.length > 0 && !restoredScroll.current && saved.current?.scrollY) {
+      restoredScroll.current = true;
+      requestAnimationFrame(() => {
+        window.scrollTo(0, saved.current!.scrollY);
+      });
+    }
+  }, [isLoading, plants.length]);
 
   return (
     <AuthGuard>
