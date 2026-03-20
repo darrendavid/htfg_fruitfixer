@@ -279,10 +279,10 @@ function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
         <label className="text-xs font-medium shrink-0 text-muted-foreground">Move to:</label>
         <Input value={query} onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => { setShowDropdown(false); }, 200)}
-          placeholder="Reassign to another plant..." className="h-6 text-xs flex-1" />
+          placeholder="Reassign to another plant..." className="h-6 text-xs flex-1 bg-white text-black" />
       </div>
       {confirmCreate && (
-        <div className="absolute z-50 mt-1 left-16 right-0 bg-popover border rounded shadow-lg p-2">
+        <div className="absolute z-50 bottom-full mb-1 left-16 right-0 bg-popover border rounded shadow-lg p-2">
           <p className="text-xs mb-2">Create new plant "<span className="font-bold">{confirmCreate}</span>"?</p>
           <div className="flex gap-1">
             <Button size="sm" className="h-6 text-xs" onClick={() => createAndAssign(confirmCreate)}>
@@ -295,7 +295,7 @@ function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
         </div>
       )}
       {!confirmCreate && showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 mt-1 left-16 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
+        <div className="absolute z-50 bottom-full mb-1 left-16 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
           {suggestions.map((p, i) => (
             <button key={p.Id}
               className={`w-full text-left px-2 py-1.5 text-xs transition-colors ${i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
@@ -306,7 +306,7 @@ function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
         </div>
       )}
       {!confirmCreate && showDropdown && suggestions.length === 0 && query.trim().length >= 2 && (
-        <div className="absolute z-50 mt-1 left-16 right-0 bg-popover border rounded shadow-lg p-2">
+        <div className="absolute z-50 bottom-full mb-1 left-16 right-0 bg-popover border rounded shadow-lg p-2">
           <p className="text-xs text-muted-foreground">No matches. Press Enter to create "<span className="font-bold">{query.trim()}</span>"</p>
         </div>
       )}
