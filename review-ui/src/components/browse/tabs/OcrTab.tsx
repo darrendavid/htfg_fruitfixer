@@ -1,11 +1,10 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { LazyImage } from '@/components/images/LazyImage';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
+import { PlantAutocomplete, type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
 import type { BrowseOcr } from '@/types/browse';
 
 interface KeyFact {
@@ -101,7 +100,16 @@ export function OcrTab({ ocrExtractions, plantId, onOcrDeleted }: OcrTabProps) {
             {/* Reassign to different plant */}
             {isAdmin && (
               <div className="mb-3">
-                <OcrPlantReassigner ocrId={ocr.Id} onReassign={(newPlantId) => handleReassign(ocr.Id, newPlantId)} />
+                <PlantAutocomplete
+                  label="Move to:"
+                  labelClassName="text-xs font-medium shrink-0 text-muted-foreground"
+                  placeholder="Reassign to another plant..."
+                  inputClassName="h-6 text-xs"
+                  whiteBackground
+                  dropdownLeftClass="left-16"
+                  onSelect={(plant: PlantSuggestion) => handleReassign(ocr.Id, plant.Id1)}
+                  onCreateAndSelect={(name, slug) => handleReassign(ocr.Id, slug)}
+                />
               </div>
             )}
 
@@ -185,131 +193,3 @@ export function OcrTab({ ocrExtractions, plantId, onOcrDeleted }: OcrTabProps) {
   );
 }
 
-// ── OCR Plant Reassigner ─────────────────────────────────────────────────────
-
-interface OcrPlantReassignerProps {
-  ocrId: number;
-  onReassign: (newPlantId: string) => void;
-}
-
-function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<Array<{ Id: number; Id1: string; Canonical_Name: string }>>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(-1);
-  const [confirmCreate, setConfirmCreate] = useState<string | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-
-  const fetchPlants = useCallback(async (search: string) => {
-    try {
-      const res = await fetch(`/api/browse/plants-search?q=${encodeURIComponent(search)}`, { credentials: 'include' });
-      if (res.ok) {
-        setSuggestions(await res.json());
-        setShowDropdown(true);
-        setHighlightIndex(-1);
-      }
-    } catch {}
-  }, []);
-
-  const handleChange = (value: string) => {
-    setQuery(value);
-    setHighlightIndex(-1);
-    setConfirmCreate(null);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (value.trim().length >= 1) {
-      debounceRef.current = setTimeout(() => fetchPlants(value.trim()), 200);
-    } else {
-      setSuggestions([]);
-      setShowDropdown(false);
-    }
-  };
-
-  const selectPlant = (plant: { Id1: string; Canonical_Name: string }) => {
-    setQuery('');
-    setShowDropdown(false);
-    setConfirmCreate(null);
-    onReassign(plant.Id1);
-  };
-
-  const createAndAssign = async (name: string) => {
-    try {
-      const res = await fetch('/api/browse/create-plant', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ Canonical_Name: name }),
-      });
-      if (res.ok) {
-        const plant = await res.json();
-        selectPlant({ Id1: plant.Id1, Canonical_Name: plant.Canonical_Name });
-      }
-    } catch {}
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      if (suggestions.length > 0) {
-        e.preventDefault(); e.stopPropagation();
-        if (!showDropdown) setShowDropdown(true);
-        setHighlightIndex((prev) => e.key === 'ArrowUp'
-          ? (prev <= 0 ? suggestions.length - 1 : prev - 1)
-          : (prev >= suggestions.length - 1 ? 0 : prev + 1));
-      }
-      return;
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault(); e.stopPropagation();
-      if (confirmCreate) {
-        createAndAssign(confirmCreate);
-      } else if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
-        selectPlant(suggestions[highlightIndex]);
-      } else if (query.trim() && suggestions.length === 0) {
-        setConfirmCreate(query.trim());
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault(); e.stopPropagation();
-      if (confirmCreate) { setConfirmCreate(null); }
-      else { setShowDropdown(false); setQuery(''); }
-    }
-  };
-
-  return (
-    <div className="relative">
-      <div className="flex items-center gap-2">
-        <label className="text-xs font-medium shrink-0 text-muted-foreground">Move to:</label>
-        <Input value={query} onChange={(e) => handleChange(e.target.value)}
-          onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => { setShowDropdown(false); }, 200)}
-          placeholder="Reassign to another plant..." className="h-6 text-xs flex-1 bg-white text-black" />
-      </div>
-      {confirmCreate && (
-        <div className="absolute z-50 bottom-full mb-1 left-16 right-0 bg-popover border rounded shadow-lg p-2">
-          <p className="text-xs mb-2">Create new plant "<span className="font-bold">{confirmCreate}</span>"?</p>
-          <div className="flex gap-1">
-            <Button size="sm" className="h-6 text-xs" onClick={() => createAndAssign(confirmCreate)}>
-              Create
-            </Button>
-            <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setConfirmCreate(null)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      )}
-      {!confirmCreate && showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 bottom-full mb-1 left-16 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
-          {suggestions.map((p, i) => (
-            <button key={p.Id}
-              className={`w-full text-left px-2 py-1.5 text-xs transition-colors ${i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
-              onMouseDown={(e) => { e.preventDefault(); selectPlant(p); }}
-              onMouseEnter={() => setHighlightIndex(i)}
-            >{p.Canonical_Name}</button>
-          ))}
-        </div>
-      )}
-      {!confirmCreate && showDropdown && suggestions.length === 0 && query.trim().length >= 2 && (
-        <div className="absolute z-50 bottom-full mb-1 left-16 right-0 bg-popover border rounded shadow-lg p-2">
-          <p className="text-xs text-muted-foreground">No matches. Press Enter to create "<span className="font-bold">{query.trim()}</span>"</p>
-        </div>
-      )}
-    </div>
-  );
-}

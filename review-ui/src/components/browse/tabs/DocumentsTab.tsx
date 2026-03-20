@@ -1,91 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
+import { SimplePlantReassignField } from '@/components/browse/PlantAutocomplete';
 import type { BrowseDocument } from '@/types/browse';
-
-function PlantReassignField({ itemId, endpoint, onReassigned }: {
-  itemId: number;
-  endpoint: string;
-  onReassigned: (plantId: string) => void;
-}) {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Array<{ Id1: string; Canonical_Name: string }>>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [selectedIdx, setSelectedIdx] = useState(-1);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-
-  useEffect(() => {
-    if (!query || query.length < 2) { setResults([]); setShowDropdown(false); return; }
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/browse/plants-search?q=${encodeURIComponent(query)}`, { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          setResults(data);
-          setShowDropdown(data.length > 0);
-          setSelectedIdx(-1);
-        }
-      } catch {}
-    }, 250);
-    return () => clearTimeout(debounceRef.current);
-  }, [query]);
-
-  const handleSelect = async (plant: { Id1: string; Canonical_Name: string }) => {
-    try {
-      const res = await fetch(`/api/browse/${endpoint}/${itemId}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plant_id: plant.Id1 }),
-      });
-      if (res.ok) {
-        onReassigned(plant.Id1);
-        setQuery('');
-        setShowDropdown(false);
-      }
-    } catch {}
-  };
-
-  return (
-    <div className="relative">
-      <Input
-        ref={inputRef}
-        placeholder="Move to plant..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx((i) => Math.min(i + 1, results.length - 1)); }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx((i) => Math.max(i - 1, 0)); }
-          else if (e.key === 'Enter' && selectedIdx >= 0 && results[selectedIdx]) { e.preventDefault(); handleSelect(results[selectedIdx]); }
-          else if (e.key === 'Escape') { setShowDropdown(false); setQuery(''); }
-        }}
-        onFocus={() => { if (results.length > 0) setShowDropdown(true); }}
-        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-        className="h-8 text-xs"
-      />
-      {showDropdown && (
-        <div className="absolute bottom-full left-0 right-0 z-50 bg-popover border rounded-md shadow-lg mb-1 max-h-40 overflow-y-auto">
-          {results.map((p, i) => (
-            <div
-              key={p.Id1}
-              className={`px-2 py-1 text-xs cursor-pointer hover:bg-accent ${i === selectedIdx ? 'bg-accent' : ''}`}
-              onMouseDown={() => handleSelect(p)}
-            >
-              {p.Canonical_Name}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 interface DocumentsTabProps {
   documents: BrowseDocument[];
@@ -297,7 +217,7 @@ export function DocumentsTab({ documents: initialDocuments }: DocumentsTabProps)
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground shrink-0">Move to:</span>
                   <div className="flex-1">
-                    <PlantReassignField
+                    <SimplePlantReassignField
                       itemId={selectedDoc.Id}
                       endpoint="reassign-document"
                       onReassigned={(plantId) => {
