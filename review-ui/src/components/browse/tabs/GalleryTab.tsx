@@ -72,8 +72,6 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const plantInputRef = useRef<HTMLInputElement>(null);
   const varietyInputRef = useRef<HTMLInputElement>(null);
 
-  const lightboxImage = lightboxIndex !== null ? images[lightboxIndex] : null;
-
   useEffect(() => {
     if (currentHeroPath) setHeroPath(currentHeroPath);
   }, [currentHeroPath]);
@@ -115,13 +113,13 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   const goNext = useCallback(() => {
     if (lightboxIndex === null) return;
-    if (lightboxIndex < images.length - 1) {
+    if (lightboxIndex < displayImages.length - 1) {
       setLightboxIndex(lightboxIndex + 1);
       setImageDimensions(null);
     } else {
       closeLightbox();
     }
-  }, [lightboxIndex, images.length]);
+  }, [lightboxIndex, displayImages.length]);
 
   const goPrev = useCallback(() => {
     if (lightboxIndex === null) return;
@@ -176,15 +174,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       if (res.ok) {
         setTotalRows((prev) => prev - 1);
         setImageDimensions(null);
-        setImages((prev) => {
-          const next = prev.filter((i) => i.Id !== img.Id);
-          if (lightboxIndex !== null) {
-            if (next.length === 0 || lightboxIndex >= next.length) {
-              closeLightbox();
-            }
+        setImages((prev) => prev.filter((i) => i.Id !== img.Id));
+        // Adjust lightbox index — displayImages will shrink by 1
+        if (lightboxIndex !== null) {
+          const newDisplayLen = displayImages.length - 1;
+          if (newDisplayLen === 0 || lightboxIndex >= newDisplayLen) {
+            closeLightbox();
           }
-          return next;
-        });
+        }
       }
     } catch {
       // error
@@ -358,13 +355,22 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     return [];
   }, [images, viewMode]);
 
+  // Display order: in grouped modes, flatten groupedImages to get visual order
+  // Lightbox navigation uses this instead of raw `images`
+  const displayImages = useMemo(() => {
+    if (viewMode === 'grid') return images;
+    return groupedImages.flatMap(([, imgs]) => imgs);
+  }, [viewMode, images, groupedImages]);
+
+  const lightboxImage = lightboxIndex !== null ? displayImages[lightboxIndex] : null;
+
   // Selection handlers
   const handleImageClick = useCallback((e: React.MouseEvent, imgId: number, flatIdx: number) => {
     if (e.shiftKey && lastClickedIdx !== null) {
-      // Range select
+      // Range select — use displayImages for correct visual order
       const start = Math.min(lastClickedIdx, flatIdx);
       const end = Math.max(lastClickedIdx, flatIdx);
-      const rangeIds = images.slice(start, end + 1).map((i) => i.Id);
+      const rangeIds = displayImages.slice(start, end + 1).map((i) => i.Id);
       setSelectedIds((prev) => {
         const next = new Set(prev);
         rangeIds.forEach((id) => next.add(id));
@@ -385,7 +391,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       return;
     }
     // Don't open lightbox on shift/ctrl clicks
-  }, [lastClickedIdx, images, openLightbox]);
+  }, [lastClickedIdx, displayImages, openLightbox]);
 
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
@@ -673,8 +679,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                 </div>
                 <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
                   {groupImgs.map((img) => {
-                    const idx = images.indexOf(img);
-                    return renderImageThumbnail(img, idx >= 0 ? idx : globalStartIdx);
+                    const idx = displayImages.indexOf(img);
+                    return renderImageThumbnail(img, idx >= 0 ? idx : 0);
                   })}
                 </div>
               </div>
@@ -698,7 +704,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   >&#8249;</button>
                 )}
                 {/* Right arrow */}
-                {lightboxIndex !== null && lightboxIndex < images.length - 1 && (
+                {lightboxIndex !== null && lightboxIndex < displayImages.length - 1 && (
                   <button onClick={(e) => { e.stopPropagation(); goNext(); }}
                     className="absolute right-1 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/70 text-white rounded-full w-10 h-10 flex items-center justify-center text-xl transition-colors"
                   >&#8250;</button>
@@ -754,7 +760,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     )}
                     {lightboxIndex !== null && (
                       <span className="text-xs text-muted-foreground">
-                        {lightboxIndex + 1} / {images.length}
+                        {lightboxIndex + 1} / {displayImages.length}
                       </span>
                     )}
                   </div>
