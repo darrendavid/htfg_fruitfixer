@@ -1,109 +1,141 @@
 /**
  * LoginPage component tests.
  *
- * LoginPage is stateful — it calls fetch() and manages local state for:
- *   - email input value
- *   - error messages
- *   - sent (check-email) state
+ * LoginPage is stateful — it uses useState and useSearchParams.
+ * Since we run in a node environment without jsdom/RTL, calling
+ * React hooks outside a fiber context fails. We mock React.useState
+ * to return initial values directly, and mock useSearchParams.
  *
- * Without RTL/jsdom we cannot trigger onChange/onSubmit DOM events, but we CAN:
- *   1. Verify the initial render structure (email input present, no error shown)
- *   2. Verify the fetch integration by mocking global.fetch and calling the
- *      internal handleSubmit logic indirectly via form props
- *   3. Test the CheckEmailSent branch by stubbing React.useState
- *
- * For tests that require state interaction we use a targeted approach:
- * extract the form's onSubmit from the rendered element tree and invoke it
- * with a mock event, then re-render and inspect state-driven output.
- *
- * NOTE: Because useState is real React state and we're not in a DOM/fiber
- * environment, tests that require state transitions are written as "integration
- * logic" tests — we call the async handler directly against a mocked fetch
- * and verify the fetch call args, rather than asserting on rendered output
- * after state update.
+ * We locate elements in the React element tree by matching their
+ * `type` against mock component references, since React.createElement
+ * stores the mock function as the type without invoking it.
  */
 
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
-import React from 'react';
+
+// ── Mock React hooks before anything else ──────────────────────────────────────
+
+const realCreateElement = (await import('react')).createElement;
+
+vi.mock('react', async () => {
+  const actual = await vi.importActual<typeof import('react')>('react');
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      useState: (initial: any) => [initial, vi.fn()],
+    },
+    useState: (initial: any) => [initial, vi.fn()],
+  };
+});
+
+const React = (await import('react')).default;
 
 // ── Mock react-router-dom ─────────────────────────────────────────────────────
 
-vi.mock('react-router-dom', () => ({
-  Link: ({ to, children }: { to: string; children: React.ReactNode }) =>
-    React.createElement('a', { 'data-testid': 'link', href: to }, children),
-}));
+let MockLink: any;
+vi.mock('react-router-dom', () => {
+  MockLink = (props: any) => realCreateElement('a', props);
+  return {
+    Link: MockLink,
+    useSearchParams: () => [new URLSearchParams(), vi.fn()],
+  };
+});
 
-// ── Mock shadcn UI components with plain HTML equivalents ────────────────────
+// ── Mock shadcn UI components ─────────────────────────────────────────────────
 
-vi.mock('@/components/ui/button', () => ({
-  Button: ({ children, type, disabled, onClick, className }: React.ButtonHTMLAttributes<HTMLButtonElement> & { children?: React.ReactNode }) =>
-    React.createElement('button', { 'data-testid': 'button', type, disabled, onClick, className }, children),
-}));
+let MockButton: any;
+vi.mock('@/components/ui/button', () => {
+  MockButton = (props: any) => realCreateElement('button', props);
+  return { Button: MockButton };
+});
 
-vi.mock('@/components/ui/input', () => ({
-  Input: ({ id, type, value, onChange, required, autoFocus, placeholder }: React.InputHTMLAttributes<HTMLInputElement>) =>
-    React.createElement('input', { 'data-testid': 'email-input', id, type, value, onChange, required, autoFocus, placeholder }),
-}));
+let MockInput: any;
+vi.mock('@/components/ui/input', () => {
+  MockInput = (props: any) => realCreateElement('input', props);
+  return { Input: MockInput };
+});
 
-vi.mock('@/components/ui/label', () => ({
-  Label: ({ children, htmlFor }: { children?: React.ReactNode; htmlFor?: string }) =>
-    React.createElement('label', { htmlFor }, children),
-}));
+let MockLabel: any;
+vi.mock('@/components/ui/label', () => {
+  MockLabel = (props: any) => realCreateElement('label', props);
+  return { Label: MockLabel };
+});
 
-vi.mock('@/components/ui/card', () => ({
-  Card: ({ children, className }: { children?: React.ReactNode; className?: string }) =>
-    React.createElement('div', { 'data-testid': 'card', className }, children),
-  CardContent: ({ children }: { children?: React.ReactNode }) =>
-    React.createElement('div', { 'data-testid': 'card-content' }, children),
-  CardDescription: ({ children }: { children?: React.ReactNode }) =>
-    React.createElement('p', { 'data-testid': 'card-description' }, children),
-  CardFooter: ({ children, className }: { children?: React.ReactNode; className?: string }) =>
-    React.createElement('div', { 'data-testid': 'card-footer', className }, children),
-  CardHeader: ({ children }: { children?: React.ReactNode }) =>
-    React.createElement('div', { 'data-testid': 'card-header' }, children),
-  CardTitle: ({ children }: { children?: React.ReactNode }) =>
-    React.createElement('h1', { 'data-testid': 'card-title' }, children),
-}));
+let MockCard: any, MockCardContent: any, MockCardDescription: any;
+let MockCardFooter: any, MockCardHeader: any, MockCardTitle: any;
+vi.mock('@/components/ui/card', () => {
+  MockCard = (props: any) => realCreateElement('div', props);
+  MockCardContent = (props: any) => realCreateElement('div', props);
+  MockCardDescription = (props: any) => realCreateElement('p', props);
+  MockCardFooter = (props: any) => realCreateElement('div', props);
+  MockCardHeader = (props: any) => realCreateElement('div', props);
+  MockCardTitle = (props: any) => realCreateElement('h1', props);
+  return {
+    Card: MockCard,
+    CardContent: MockCardContent,
+    CardDescription: MockCardDescription,
+    CardFooter: MockCardFooter,
+    CardHeader: MockCardHeader,
+    CardTitle: MockCardTitle,
+  };
+});
 
-vi.mock('@/components/ui/alert', () => ({
-  Alert: ({ children, variant }: { children?: React.ReactNode; variant?: string }) =>
-    React.createElement('div', { 'data-testid': 'alert', 'data-variant': variant }, children),
-  AlertDescription: ({ children }: { children?: React.ReactNode }) =>
-    React.createElement('span', { 'data-testid': 'alert-description' }, children),
-}));
+let MockAlert: any, MockAlertDescription: any;
+vi.mock('@/components/ui/alert', () => {
+  MockAlert = (props: any) => realCreateElement('div', props);
+  MockAlertDescription = (props: any) => realCreateElement('span', props);
+  return { Alert: MockAlert, AlertDescription: MockAlertDescription };
+});
 
 // Import after mocks
 const { LoginPage } = await import('@/pages/LoginPage');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function findByTestId(el: React.ReactElement | null | undefined, testId: string): React.ReactElement | null {
-  if (!el || typeof el !== 'object') return null;
-  const props = (el as React.ReactElement).props as Record<string, unknown>;
-  if (props?.['data-testid'] === testId) return el as React.ReactElement;
-  const children = props?.children;
-  if (!children) return null;
-  const childArray = Array.isArray(children) ? children : [children];
-  for (const child of childArray) {
-    const found = findByTestId(child as React.ReactElement, testId);
-    if (found) return found;
-  }
-  return null;
-}
-
-function findAllByTestId(el: React.ReactElement | null | undefined, testId: string): React.ReactElement[] {
+/** Recursively find all elements whose `type` matches the given component. */
+function findAllByType(el: unknown, type: unknown): any[] {
   if (!el || typeof el !== 'object') return [];
-  const props = (el as React.ReactElement).props as Record<string, unknown>;
-  const results: React.ReactElement[] = [];
-  if (props?.['data-testid'] === testId) results.push(el as React.ReactElement);
-  const children = props?.children;
+  const rEl = el as any;
+  const results: any[] = [];
+  if (rEl.type === type) results.push(rEl);
+  const children = rEl.props?.children;
   if (children) {
-    const childArray = Array.isArray(children) ? children : [children];
-    for (const child of childArray) {
-      results.push(...findAllByTestId(child as React.ReactElement, testId));
+    const arr = Array.isArray(children) ? children : [children];
+    for (const child of arr) {
+      results.push(...findAllByType(child, type));
     }
   }
   return results;
+}
+
+/** Recursively find all elements of a given HTML tag type (string). */
+function findAllByTag(el: unknown, tag: string): any[] {
+  if (!el || typeof el !== 'object') return [];
+  const rEl = el as any;
+  const results: any[] = [];
+  if (rEl.type === tag) results.push(rEl);
+  const children = rEl.props?.children;
+  if (children) {
+    const arr = Array.isArray(children) ? children : [children];
+    for (const child of arr) {
+      results.push(...findAllByTag(child, tag));
+    }
+  }
+  return results;
+}
+
+function findByTestId(el: any, testId: string): any {
+  if (!el || typeof el !== 'object') return null;
+  if (el.props?.['data-testid'] === testId) return el;
+  const children = el.props?.children;
+  if (!children) return null;
+  const arr = Array.isArray(children) ? children : [children];
+  for (const child of arr) {
+    const found = findByTestId(child, testId);
+    if (found) return found;
+  }
+  return null;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -121,36 +153,37 @@ describe('LoginPage', () => {
 
   describe('initial render', () => {
     it('renders an email input field', () => {
-      // LoginPage uses useState — calling as plain function gives the initial render
-      const result = LoginPage({}) as React.ReactElement;
-      const input = findByTestId(result, 'email-input');
-      expect(input).not.toBeNull();
-      expect((input!.props as Record<string, unknown>).type).toBe('email');
+      const result = LoginPage({}) as any;
+      const inputs = findAllByType(result, MockInput);
+      expect(inputs.length).toBeGreaterThan(0);
+      const emailInput = inputs.find((i: any) => i.props.type === 'email');
+      expect(emailInput).toBeDefined();
     });
 
     it('does not show an error alert on initial render', () => {
-      const result = LoginPage({}) as React.ReactElement;
-      const alert = findByTestId(result, 'alert');
-      expect(alert).toBeNull();
+      const result = LoginPage({}) as any;
+      // With initial state (error = null), no Alert should be rendered
+      // But the expired link check might render one. With mocked useSearchParams
+      // returning empty URLSearchParams, isExpiredLink should be false.
+      const alerts = findAllByType(result, MockAlert);
+      expect(alerts.length).toBe(0);
     });
 
     it('renders a submit button with "Send Login Link" label', () => {
-      const result = LoginPage({}) as React.ReactElement;
-      const buttons = findAllByTestId(result, 'button');
-      const submitBtn = buttons.find(
-        (b) => (b.props as Record<string, unknown>).type === 'submit'
-      );
+      const result = LoginPage({}) as any;
+      const buttons = findAllByType(result, MockButton);
+      const submitBtn = buttons.find((b: any) => b.props.type === 'submit');
       expect(submitBtn).toBeDefined();
       // Children should include the text "Send Login Link"
-      const btnChildren = (submitBtn!.props as Record<string, unknown>).children;
+      const btnChildren = submitBtn.props.children;
       expect(String(btnChildren)).toContain('Send Login Link');
     });
 
     it('renders the page title', () => {
-      const result = LoginPage({}) as React.ReactElement;
-      const title = findByTestId(result, 'card-title');
-      expect(title).not.toBeNull();
-      expect((title!.props as Record<string, unknown>).children).toContain('HTFG Image Review');
+      const result = LoginPage({}) as any;
+      const titles = findAllByType(result, MockCardTitle);
+      expect(titles.length).toBeGreaterThan(0);
+      expect(titles[0].props.children).toContain('HTFG Image Review');
     });
   });
 
@@ -163,50 +196,11 @@ describe('LoginPage', () => {
       });
       global.fetch = mockFetch;
 
-      // Extract the form's onSubmit from the rendered tree and invoke it
-      const result = LoginPage({}) as React.ReactElement;
-      const form = findByTestId(result, null as unknown as string) ??
-        (() => {
-          // Traverse to find the <form> element by type
-          function findForm(el: unknown): React.ReactElement | null {
-            if (!el || typeof el !== 'object') return null;
-            const rEl = el as React.ReactElement;
-            if (rEl.type === 'form') return rEl;
-            const children = (rEl.props as Record<string, unknown>)?.children;
-            if (!children) return null;
-            const arr = Array.isArray(children) ? children : [children];
-            for (const c of arr) {
-              const found = findForm(c);
-              if (found) return found;
-            }
-            return null;
-          }
-          return findForm(result);
-        })();
-
-      // We can't set email state without RTL, so instead test the fetch call
-      // by directly simulating what handleSubmit does with a known email.
-      // Build a minimal mock event and call the onSubmit directly.
-      const mockEvent = { preventDefault: vi.fn() } as unknown as React.FormEvent;
-
-      // Get onSubmit from the form element
-      function findForm(el: unknown): React.ReactElement | null {
-        if (!el || typeof el !== 'object') return null;
-        const rEl = el as React.ReactElement;
-        if (rEl.type === 'form') return rEl;
-        const children = (rEl.props as Record<string, unknown>)?.children;
-        if (!children) return null;
-        const arr = Array.isArray(children) ? children : [children];
-        for (const c of arr) {
-          const found = findForm(c);
-          if (found) return found;
-        }
-        return null;
-      }
-
-      const formEl = findForm(result);
-      if (formEl) {
-        const onSubmit = (formEl.props as Record<string, unknown>).onSubmit as (e: React.FormEvent) => Promise<void>;
+      const result = LoginPage({}) as any;
+      const forms = findAllByTag(result, 'form');
+      if (forms.length > 0) {
+        const onSubmit = forms[0].props.onSubmit;
+        const mockEvent = { preventDefault: vi.fn() };
         await onSubmit(mockEvent);
         expect(mockEvent.preventDefault).toHaveBeenCalled();
         expect(mockFetch).toHaveBeenCalledWith('/api/auth/login', expect.objectContaining({
@@ -214,9 +208,7 @@ describe('LoginPage', () => {
           headers: { 'Content-Type': 'application/json' },
         }));
       } else {
-        // If form element isn't directly accessible (e.g. wrapped), skip DOM assertion
-        // and verify fetch shape would be correct from a direct call perspective.
-        // This is acceptable without RTL.
+        // Form not directly accessible without RTL
         expect(true).toBe(true);
       }
     });
@@ -229,26 +221,11 @@ describe('LoginPage', () => {
       });
       global.fetch = mockFetch;
 
-      const result = LoginPage({}) as React.ReactElement;
-
-      function findForm(el: unknown): React.ReactElement | null {
-        if (!el || typeof el !== 'object') return null;
-        const rEl = el as React.ReactElement;
-        if (rEl.type === 'form') return rEl;
-        const children = (rEl.props as Record<string, unknown>)?.children;
-        if (!children) return null;
-        const arr = Array.isArray(children) ? children : [children];
-        for (const c of arr) {
-          const found = findForm(c);
-          if (found) return found;
-        }
-        return null;
-      }
-
-      const formEl = findForm(result);
-      if (formEl) {
-        const onSubmit = (formEl.props as Record<string, unknown>).onSubmit as (e: React.FormEvent) => Promise<void>;
-        await onSubmit({ preventDefault: vi.fn() } as unknown as React.FormEvent);
+      const result = LoginPage({}) as any;
+      const forms = findAllByTag(result, 'form');
+      if (forms.length > 0) {
+        const onSubmit = forms[0].props.onSubmit;
+        await onSubmit({ preventDefault: vi.fn() });
 
         const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit];
         expect(url).toBe('/api/auth/login');

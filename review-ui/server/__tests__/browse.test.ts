@@ -1851,4 +1851,106 @@ describe('Browse API', () => {
       });
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // POST /restore-image/:id — RESTORE EXCLUDED IMAGE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('POST /api/browse/restore-image/:id', () => {
+    it('restores an excluded image', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.update.mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post('/api/browse/restore-image/42')
+        .set('Cookie', cookie)
+        .send({});
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', {
+        Excluded: false,
+      });
+    });
+
+    it('returns 403 for reviewer', async () => {
+      const cookie = await getReviewerCookie('restore-rev@test.com', 'Restore', 'Rev');
+      const res = await request(app)
+        .post('/api/browse/restore-image/42')
+        .set('Cookie', cookie)
+        .send({});
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 401 without session', async () => {
+      const res = await request(app)
+        .post('/api/browse/restore-image/42')
+        .send({});
+      expect(res.status).toBe(401);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GET /:plantId/images?showDeleted=true — SHOW DELETED IMAGES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('GET /api/browse/:plantId/images?showDeleted=true', () => {
+    it('includes excluded images when showDeleted=true', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.list.mockResolvedValue({
+        list: [
+          { Id: 1, File_Path: 'plants/fig/images/1.jpg', Excluded: false },
+          { Id: 2, File_Path: 'plants/fig/images/2.jpg', Excluded: true },
+        ],
+        pageInfo: { totalRows: 2, page: 1, pageSize: 50, isFirstPage: true, isLastPage: true },
+      });
+
+      const res = await request(app)
+        .get('/api/browse/fig/images?showDeleted=true')
+        .set('Cookie', cookie);
+      expect(res.status).toBe(200);
+      expect(res.body.list).toHaveLength(2);
+
+      // The where clause should NOT include the Excluded filter
+      const whereArg = mockNocodb.list.mock.calls[0][1]?.where;
+      expect(whereArg).toBe('(Plant_Id,eq,fig)');
+    });
+
+    it('excludes deleted images by default', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.list.mockResolvedValue({
+        list: [{ Id: 1, File_Path: 'plants/fig/images/1.jpg' }],
+        pageInfo: { totalRows: 1, page: 1, pageSize: 50, isFirstPage: true, isLastPage: true },
+      });
+
+      const res = await request(app)
+        .get('/api/browse/fig/images')
+        .set('Cookie', cookie);
+      expect(res.status).toBe(200);
+
+      // The where clause should include the Excluded filter
+      const whereArg = mockNocodb.list.mock.calls[0][1]?.where;
+      expect(whereArg).toContain('(Excluded,neq,1)');
+    });
+
+    it('works with showDeleted=true and all=true combined', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.list.mockResolvedValue({
+        list: [
+          { Id: 1, File_Path: 'plants/fig/images/1.jpg' },
+          { Id: 2, File_Path: 'plants/fig/images/2.jpg', Excluded: true },
+        ],
+        pageInfo: { totalRows: 2, page: 1, pageSize: 200, isFirstPage: true, isLastPage: true },
+      });
+
+      const res = await request(app)
+        .get('/api/browse/fig/images?showDeleted=true&all=true')
+        .set('Cookie', cookie);
+      expect(res.status).toBe(200);
+      expect(res.body.list).toHaveLength(2);
+
+      // The where clause should NOT include the Excluded filter
+      const whereArg = mockNocodb.list.mock.calls[0][1]?.where;
+      expect(whereArg).toBe('(Plant_Id,eq,fig)');
+    });
+  });
 });

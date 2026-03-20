@@ -24,15 +24,17 @@ vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({ user: _user, isLoading: _isLoading }),
 }));
 
-vi.mock('react-router-dom', () => ({
-  Navigate: ({ to, replace }: { to: string; replace?: boolean }) =>
-    React.createElement('div', { 'data-testid': 'navigate', 'data-to': to, 'data-replace': replace }),
-}));
+let MockNavigate: React.FC<any>;
+vi.mock('react-router-dom', () => {
+  MockNavigate = (props: any) => React.createElement('div', props);
+  return { Navigate: MockNavigate };
+});
 
-vi.mock('@/components/ui/skeleton', () => ({
-  Skeleton: ({ className }: { className?: string }) =>
-    React.createElement('div', { 'data-testid': 'skeleton', className }),
-}));
+let MockSkeleton: React.FC<any>;
+vi.mock('@/components/ui/skeleton', () => {
+  MockSkeleton = (props: any) => React.createElement('div', props);
+  return { Skeleton: MockSkeleton };
+});
 
 const { AdminGuard } = await import('@/components/auth/AdminGuard');
 
@@ -40,6 +42,21 @@ const { AdminGuard } = await import('@/components/auth/AdminGuard');
 
 function renderGuard(children: React.ReactNode = React.createElement('span', { 'data-testid': 'child' }, 'admin content')) {
   return AdminGuard({ children }) as React.ReactElement | null;
+}
+
+function findAllByType(el: unknown, type: unknown): React.ReactElement[] {
+  if (!el || typeof el !== 'object') return [];
+  const rEl = el as React.ReactElement;
+  const results: React.ReactElement[] = [];
+  if (rEl.type === type) results.push(rEl);
+  const children = (rEl.props as Record<string, unknown>)?.children;
+  if (children) {
+    const arr = Array.isArray(children) ? children : [children];
+    for (const child of arr) {
+      results.push(...findAllByType(child, type));
+    }
+  }
+  return results;
 }
 
 function findByTestId(el: React.ReactElement | null | undefined, testId: string): React.ReactElement | null {
@@ -57,9 +74,9 @@ function findByTestId(el: React.ReactElement | null | undefined, testId: string)
 }
 
 function getNavigateTo(result: React.ReactElement | null): string | null {
-  const nav = findByTestId(result, 'navigate');
-  if (!nav) return null;
-  return (nav.props as Record<string, unknown>)['data-to'] as string;
+  const navs = findAllByType(result, MockNavigate);
+  if (navs.length === 0) return null;
+  return (navs[0].props as Record<string, unknown>).to as string;
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -98,7 +115,7 @@ describe('AdminGuard', () => {
     _isLoading = true;
     const result = renderGuard();
 
-    expect(findByTestId(result, 'skeleton')).not.toBeNull();
-    expect(findByTestId(result, 'navigate')).toBeNull();
+    expect(findAllByType(result, MockSkeleton).length).toBeGreaterThan(0);
+    expect(findAllByType(result, MockNavigate).length).toBe(0);
   });
 });

@@ -25,19 +25,20 @@ vi.mock('@/contexts/AuthContext', () => ({
 }));
 
 // ── Mock react-router-dom Navigate ───────────────────────────────────────────
-// We capture the `to` prop to verify the redirect destination.
 
-vi.mock('react-router-dom', () => ({
-  Navigate: ({ to, replace }: { to: string; replace?: boolean }) =>
-    React.createElement('div', { 'data-testid': 'navigate', 'data-to': to, 'data-replace': replace }),
-}));
+let MockNavigate: React.FC<any>;
+vi.mock('react-router-dom', () => {
+  MockNavigate = (props: any) => React.createElement('div', props);
+  return { Navigate: MockNavigate };
+});
 
 // ── Mock @/components/ui/skeleton ────────────────────────────────────────────
 
-vi.mock('@/components/ui/skeleton', () => ({
-  Skeleton: ({ className }: { className?: string }) =>
-    React.createElement('div', { 'data-testid': 'skeleton', className }),
-}));
+let MockSkeleton: React.FC<any>;
+vi.mock('@/components/ui/skeleton', () => {
+  MockSkeleton = (props: any) => React.createElement('div', props);
+  return { Skeleton: MockSkeleton };
+});
 
 // Import AFTER mocks are registered
 const { AuthGuard } = await import('@/components/auth/AuthGuard');
@@ -45,11 +46,25 @@ const { AuthGuard } = await import('@/components/auth/AuthGuard');
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function renderGuard(children: React.ReactNode = React.createElement('span', null, 'protected')) {
-  // Call the component as a plain function — valid for functional components.
   return AuthGuard({ children }) as React.ReactElement | null;
 }
 
-/** Recursively search a React element tree for a node with a given data-testid. */
+/** Recursively find elements by their React component type. */
+function findAllByType(el: unknown, type: unknown): React.ReactElement[] {
+  if (!el || typeof el !== 'object') return [];
+  const rEl = el as React.ReactElement;
+  const results: React.ReactElement[] = [];
+  if (rEl.type === type) results.push(rEl);
+  const children = (rEl.props as Record<string, unknown>)?.children;
+  if (children) {
+    const arr = Array.isArray(children) ? children : [children];
+    for (const child of arr) {
+      results.push(...findAllByType(child, type));
+    }
+  }
+  return results;
+}
+
 function findByTestId(el: React.ReactElement | null | undefined, testId: string): React.ReactElement | null {
   if (!el || typeof el !== 'object') return null;
   const props = (el as React.ReactElement).props as Record<string, unknown>;
@@ -78,8 +93,8 @@ describe('AuthGuard', () => {
 
     // The guard returns a wrapper div containing Skeleton components
     expect(result).not.toBeNull();
-    const skeleton = findByTestId(result, 'skeleton');
-    expect(skeleton).not.toBeNull();
+    const skeletons = findAllByType(result, MockSkeleton);
+    expect(skeletons.length).toBeGreaterThan(0);
   });
 
   it('redirects to /login when user is null and not loading', () => {
@@ -87,9 +102,9 @@ describe('AuthGuard', () => {
     _isLoading = false;
     const result = renderGuard();
 
-    const nav = findByTestId(result, 'navigate');
-    expect(nav).not.toBeNull();
-    expect((nav!.props as Record<string, unknown>)['data-to']).toBe('/login');
+    const navs = findAllByType(result, MockNavigate);
+    expect(navs.length).toBe(1);
+    expect((navs[0].props as Record<string, unknown>).to).toBe('/login');
   });
 
   it('renders children when user is authenticated', () => {
@@ -109,7 +124,7 @@ describe('AuthGuard', () => {
     _isLoading = true;
     const result = renderGuard();
 
-    const nav = findByTestId(result, 'navigate');
-    expect(nav).toBeNull();
+    const navs = findAllByType(result, MockNavigate);
+    expect(navs.length).toBe(0);
   });
 });
