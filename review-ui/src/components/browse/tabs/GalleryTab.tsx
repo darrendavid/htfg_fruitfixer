@@ -638,14 +638,30 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     <div className="space-y-4">
       {/* Selection action bar — fixed at bottom of viewport */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-16 left-4 right-4 z-50 bg-blue-600 text-white rounded-lg p-3 flex items-center justify-center gap-3 shadow-lg">
-          <span className="text-sm font-medium">{selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''} selected</span>
-          <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={handleBulkDelete}>
-            <Trash2 className="size-3 mr-1" /> Delete Selected
-          </Button>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-white hover:text-white hover:bg-blue-700" onClick={clearSelection}>
-            Clear
-          </Button>
+        <div className="fixed bottom-16 left-4 right-4 z-50 bg-blue-600 text-white rounded-lg p-3 shadow-lg space-y-2">
+          <div className="flex items-center justify-center gap-3">
+            <span className="text-sm font-medium">{selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''} selected</span>
+            <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={handleBulkDelete}>
+              <Trash2 className="size-3 mr-1" /> Delete
+            </Button>
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-white hover:text-white hover:bg-blue-700" onClick={clearSelection}>
+              Clear
+            </Button>
+          </div>
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs shrink-0">Move to:</span>
+              <GroupPlantReassigner
+                currentPlantId={plantId}
+                imageIds={[...selectedIds]}
+                onReassigned={(ids) => {
+                  setImages((prev) => prev.filter((i) => !ids.includes(i.Id)));
+                  setTotalRows((prev) => prev - ids.length);
+                  clearSelection();
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
 
