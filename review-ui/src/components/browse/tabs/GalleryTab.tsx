@@ -1553,10 +1553,10 @@ function GroupPlantReassigner({ currentPlantId, imageIds, onReassigned }: GroupP
         <label className="text-[10px] font-medium shrink-0 text-muted-foreground">Move all to:</label>
         <Input ref={inputRef} value={query} onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-          placeholder="Plant name..." className="h-6 text-xs flex-1" />
+          placeholder="Plant name..." className="h-6 text-xs flex-1 bg-white text-black" />
       </div>
       {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 mt-1 left-0 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
+        <div className="absolute z-50 bottom-full mb-1 left-0 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
           {suggestions.map((p, i) => (
             <button key={p.Id}
               className={`w-full text-left px-2 py-1 text-xs transition-colors ${i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
@@ -1567,7 +1567,7 @@ function GroupPlantReassigner({ currentPlantId, imageIds, onReassigned }: GroupP
         </div>
       )}
       {showConfirm && (
-        <div className="absolute z-50 mt-1 left-0 right-0 bg-popover border rounded shadow-lg p-2"
+        <div className="absolute z-50 bottom-full mb-1 left-0 right-0 bg-popover border rounded shadow-lg p-2"
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleReassign(); }
             else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowConfirm(null); inputRef.current?.focus(); }
@@ -1581,7 +1581,7 @@ function GroupPlantReassigner({ currentPlantId, imageIds, onReassigned }: GroupP
         </div>
       )}
       {showCreateConfirm && (
-        <div className="absolute z-50 mt-1 left-0 right-0 bg-popover border rounded shadow-lg p-2"
+        <div className="absolute z-50 bottom-full mb-1 left-0 right-0 bg-popover border rounded shadow-lg p-2"
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateAndReassign(); }
             else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowCreateConfirm(false); inputRef.current?.focus(); }
