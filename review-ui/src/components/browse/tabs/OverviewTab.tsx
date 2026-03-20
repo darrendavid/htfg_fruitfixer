@@ -1,7 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, type MutableRefObject } from 'react';
 import { LazyImage } from '@/components/images/LazyImage';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
@@ -35,9 +34,10 @@ interface OverviewTabProps {
   editMode: boolean;
   onPlantUpdated: (plant: BrowsePlant) => void;
   onSlugChanged?: (newSlug: string) => void;
+  saveRef?: MutableRefObject<(() => Promise<void>) | null>;
 }
 
-export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, editMode, onPlantUpdated, onSlugChanged }: OverviewTabProps) {
+export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, editMode, onPlantUpdated, onSlugChanged, saveRef }: OverviewTabProps) {
   const harvestMonths = parseHarvestMonths(plant.Harvest_Months);
   const aliases = parseAliases(plant.Aliases);
   const plantSlug = (plant as any).Id1 || plant.Id;
@@ -107,6 +107,12 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
       setIsSaving(false);
     }
   };
+
+  // Expose save function to parent via ref
+  useEffect(() => {
+    if (saveRef) saveRef.current = handleSave;
+    return () => { if (saveRef) saveRef.current = null; };
+  });
 
   const handleCancel = () => {
     setEditName(plant.Canonical_Name);

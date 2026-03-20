@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthGuard } from '@/components/auth/AuthGuard';
@@ -24,6 +24,7 @@ export function PlantDetailPage() {
   const [detail, setDetail] = useState<PlantDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
+  const overviewSaveRef = useRef<(() => Promise<void>) | null>(null);
 
   const fetchDetail = useCallback(async () => {
     if (!id) return;
@@ -91,9 +92,14 @@ export function PlantDetailPage() {
                 <Button
                   variant={editMode ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => setEditMode(!editMode)}
+                  onClick={async () => {
+                    if (editMode && overviewSaveRef.current) {
+                      await overviewSaveRef.current();
+                    }
+                    setEditMode(!editMode);
+                  }}
                 >
-                  {editMode ? 'Done Editing' : 'Edit'}
+                  {editMode ? 'Save' : 'Edit'}
                 </Button>
               )}
             </div>
@@ -121,6 +127,7 @@ export function PlantDetailPage() {
                   editMode={editMode}
                   onPlantUpdated={handlePlantUpdated}
                   onSlugChanged={(newSlug) => navigate(`/plants/${newSlug}`, { replace: true })}
+                  saveRef={overviewSaveRef}
                 />
               </TabsContent>
 
