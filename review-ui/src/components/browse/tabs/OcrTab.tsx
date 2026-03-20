@@ -197,6 +197,7 @@ function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
   const [suggestions, setSuggestions] = useState<Array<{ Id: number; Id1: string; Canonical_Name: string }>>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(-1);
+  const [confirmCreate, setConfirmCreate] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
   const fetchPlants = useCallback(async (search: string) => {
@@ -213,6 +214,7 @@ function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
   const handleChange = (value: string) => {
     setQuery(value);
     setHighlightIndex(-1);
+    setConfirmCreate(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (value.trim().length >= 1) {
       debounceRef.current = setTimeout(() => fetchPlants(value.trim()), 200);
@@ -225,7 +227,23 @@ function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
   const selectPlant = (plant: { Id1: string; Canonical_Name: string }) => {
     setQuery('');
     setShowDropdown(false);
+    setConfirmCreate(null);
     onReassign(plant.Id1);
+  };
+
+  const createAndAssign = async (name: string) => {
+    try {
+      const res = await fetch('/api/browse/create-plant', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ Canonical_Name: name }),
+      });
+      if (res.ok) {
+        const plant = await res.json();
+        selectPlant({ Id1: plant.Id1, Canonical_Name: plant.Canonical_Name });
+      }
+    } catch {}
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -241,10 +259,17 @@ function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
     }
     if (e.key === 'Enter') {
       e.preventDefault(); e.stopPropagation();
-      if (highlightIndex >= 0 && highlightIndex < suggestions.length) selectPlant(suggestions[highlightIndex]);
+      if (confirmCreate) {
+        createAndAssign(confirmCreate);
+      } else if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
+        selectPlant(suggestions[highlightIndex]);
+      } else if (query.trim() && suggestions.length === 0) {
+        setConfirmCreate(query.trim());
+      }
     } else if (e.key === 'Escape') {
       e.preventDefault(); e.stopPropagation();
-      setShowDropdown(false); setQuery('');
+      if (confirmCreate) { setConfirmCreate(null); }
+      else { setShowDropdown(false); setQuery(''); }
     }
   };
 
@@ -253,10 +278,23 @@ function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
       <div className="flex items-center gap-2">
         <label className="text-xs font-medium shrink-0 text-muted-foreground">Move to:</label>
         <Input value={query} onChange={(e) => handleChange(e.target.value)}
-          onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+          onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => { setShowDropdown(false); }, 200)}
           placeholder="Reassign to another plant..." className="h-6 text-xs flex-1" />
       </div>
-      {showDropdown && suggestions.length > 0 && (
+      {confirmCreate && (
+        <div className="absolute z-50 mt-1 left-16 right-0 bg-popover border rounded shadow-lg p-2">
+          <p className="text-xs mb-2">Create new plant "<span className="font-bold">{confirmCreate}</span>"?</p>
+          <div className="flex gap-1">
+            <Button size="sm" className="h-6 text-xs" onClick={() => createAndAssign(confirmCreate)}>
+              Create
+            </Button>
+            <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => setConfirmCreate(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+      {!confirmCreate && showDropdown && suggestions.length > 0 && (
         <div className="absolute z-50 mt-1 left-16 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
           {suggestions.map((p, i) => (
             <button key={p.Id}
@@ -265,6 +303,11 @@ function OcrPlantReassigner({ ocrId, onReassign }: OcrPlantReassignerProps) {
               onMouseEnter={() => setHighlightIndex(i)}
             >{p.Canonical_Name}</button>
           ))}
+        </div>
+      )}
+      {!confirmCreate && showDropdown && suggestions.length === 0 && query.trim().length >= 2 && (
+        <div className="absolute z-50 mt-1 left-16 right-0 bg-popover border rounded shadow-lg p-2">
+          <p className="text-xs text-muted-foreground">No matches. Press Enter to create "<span className="font-bold">{query.trim()}</span>"</p>
         </div>
       )}
     </div>
