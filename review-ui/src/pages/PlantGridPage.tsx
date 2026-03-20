@@ -57,23 +57,31 @@ export function PlantGridPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState(saved.current?.search ?? '');
   const restoredScroll = useRef(false);
+  const isInitialMount = useRef(true);
 
-  // Debounce search input
+  // Debounce search input — skip page reset on initial mount (restoring saved state)
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       setDebouncedSearch(search);
-      setPage(1);
+      if (!isInitialMount.current) setPage(1);
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [search]);
 
-  // Reset page when filters change
+  // Reset page when filters change — skip on initial mount
   useEffect(() => {
+    if (isInitialMount.current) return;
     setPage(1);
   }, [category, sort]);
+
+  // Clear initial mount flag after first render cycle
+  useEffect(() => {
+    const t = setTimeout(() => { isInitialMount.current = false; }, 500);
+    return () => clearTimeout(t);
+  }, []);
 
   const fetchPlants = useCallback(async () => {
     setIsLoading(true);
