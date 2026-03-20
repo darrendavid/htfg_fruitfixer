@@ -238,10 +238,10 @@ export function DocumentsTab({ documents: initialDocuments }: DocumentsTabProps)
 
       {/* Document Dialog */}
       <Dialog open={selectedIndex !== null} onOpenChange={(open) => { if (!open) closeDialog(); }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogTitle className="sr-only">{selectedDoc?.Title ?? 'Document'}</DialogTitle>
           {selectedDoc && (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 min-h-0">
               {/* Navigation indicator */}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">
@@ -267,10 +267,10 @@ export function DocumentsTab({ documents: initialDocuments }: DocumentsTabProps)
                 <textarea
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
-                  className="text-sm whitespace-pre-wrap border rounded px-3 py-2 w-full min-h-[300px] max-h-[50vh] resize-y bg-background font-mono"
+                  className="text-sm whitespace-pre-wrap border rounded px-3 py-2 w-full min-h-[150px] max-h-[40vh] resize-y bg-background font-mono flex-1"
                 />
               ) : (
-                <div className="text-sm whitespace-pre-wrap max-h-[50vh] overflow-y-auto border rounded px-3 py-2">
+                <div className="text-sm whitespace-pre-wrap max-h-[40vh] overflow-y-auto border rounded px-3 py-2 flex-1">
                   {selectedDoc.Content_Text ?? selectedDoc.Content_Preview ?? 'No content'}
                 </div>
               )}
