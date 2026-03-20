@@ -212,14 +212,14 @@ export function PlantAutocomplete({
             onFocus={() => { if (query.trim().length >= 1) fetchPlants(query.trim()); }}
             onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
             placeholder={placeholder}
-            className={`${inputClassName}${whiteBackground ? ' bg-white text-black' : ''}`}
+            className={`${inputClassName} bg-white !text-black placeholder:text-gray-400`}
           />
         </div>
       </div>
 
       {/* Autocomplete dropdown -- opens upward */}
       {showDropdown && suggestions.length > 0 && (
-        <div className={`absolute z-50 bottom-full mb-1 ${dropdownLeftClass} right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto`}>
+        <div className={`absolute z-50 bottom-full mb-1 ${dropdownLeftClass} right-0 bg-white text-black border rounded shadow-lg max-h-40 overflow-y-auto`}>
           {suggestions.map((p, i) => (
             <button
               key={p.Id}
@@ -237,7 +237,7 @@ export function PlantAutocomplete({
       {/* Confirm selection dialog -- opens upward */}
       {showConfirm && (
         <div
-          className={`absolute z-50 bottom-full mb-1 ${dropdownLeftClass} right-0 bg-popover border rounded shadow-lg p-3`}
+          className={`absolute z-50 bottom-full mb-1 ${dropdownLeftClass} right-0 bg-white text-black border rounded shadow-lg p-3`}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleConfirmedSelect(); }
             else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowConfirm(null); inputRef.current?.focus(); }
@@ -260,7 +260,7 @@ export function PlantAutocomplete({
       {/* Create new plant confirmation -- opens upward */}
       {showCreateConfirm && onCreateAndSelect && (
         <div
-          className={`absolute z-50 bottom-full mb-1 ${dropdownLeftClass} right-0 bg-popover border rounded shadow-lg p-3`}
+          className={`absolute z-50 bottom-full mb-1 ${dropdownLeftClass} right-0 bg-white text-black border rounded shadow-lg p-3`}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateAndAssign(); }
             else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowCreateConfirm(false); inputRef.current?.focus(); }
@@ -284,7 +284,7 @@ export function PlantAutocomplete({
 
       {/* No matches hint when create is available */}
       {!showConfirm && !showCreateConfirm && showDropdown && suggestions.length === 0 && query.trim().length >= 2 && onCreateAndSelect && (
-        <div className={`absolute z-50 bottom-full mb-1 ${dropdownLeftClass} right-0 bg-popover border rounded shadow-lg p-2`}>
+        <div className={`absolute z-50 bottom-full mb-1 ${dropdownLeftClass} right-0 bg-white text-black border rounded shadow-lg p-2`}>
           <p className="text-xs text-muted-foreground">No matches. Press Enter to create &ldquo;<span className="font-bold">{query.trim()}</span>&rdquo;</p>
         </div>
       )}
