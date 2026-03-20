@@ -169,3 +169,18 @@ All scripts are Node.js ES modules (.mjs). Run with `node scripts/<name>.mjs`.
 - **`UserSelections.txt`** files in gallery directories contain Photoshop gallery generation metadata (numeric parameters), not user-facing content
 - **`desktop.ini`** files are Windows Explorer folder customization metadata and can be ignored
 - **Reference data**: `docs/reference/tropical_fruits_v10.csv` — external tropical fruit reference list
+
+### Auto-Update Memory (MANDATORY)
+
+**Update memory files AS YOU GO, not at the end.** When you learn something new, update immediately.
+
+| Trigger | Action |
+|---------|--------|
+| User shares a fact about themselves | → Update `memory-profile.md` |
+| User states a preference | → Update `memory-preferences.md` |
+| A decision is made | → Update `memory-decisions.md` with date |
+| Completing substantive work | → Add to `memory-sessions.md` |
+
+**Skip:** Quick factual questions, trivial tasks with no new info.
+
+**DO NOT ASK. Just update the files when you learn something.**
