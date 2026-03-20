@@ -649,8 +649,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             </Button>
           </div>
           {isAdmin && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs shrink-0">Move to:</span>
+            <div className="flex items-center gap-2 flex-1">
               <GroupPlantReassigner
                 currentPlantId={plantId}
                 imageIds={[...selectedIds]}
@@ -1550,7 +1549,7 @@ function GroupPlantReassigner({ currentPlantId, imageIds, onReassigned }: GroupP
   return (
     <div className="relative">
       <div className="flex items-center gap-1">
-        <label className="text-[10px] font-medium shrink-0 text-muted-foreground">Move all to:</label>
+        <label className="text-[10px] font-medium shrink-0 text-inherit">Move to:</label>
         <Input ref={inputRef} value={query} onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
           placeholder="Plant name..." className="h-6 text-xs flex-1 bg-white text-black" />
@@ -1573,7 +1572,7 @@ function GroupPlantReassigner({ currentPlantId, imageIds, onReassigned }: GroupP
             else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowConfirm(null); inputRef.current?.focus(); }
           }}
         >
-          <p className="text-xs mb-1">Move {imageIds.length} images to <strong>{showConfirm.name}</strong>?</p>
+          <p className="text-xs mb-1 text-foreground">Move {imageIds.length} images to <strong>{showConfirm.name}</strong>?</p>
           <div className="flex gap-1 justify-end">
             <Button variant="outline" size="sm" className="h-5 text-[10px]" onClick={() => setShowConfirm(null)}>Cancel</Button>
             <Button ref={confirmRef} size="sm" className="h-5 text-[10px]" onClick={handleReassign}>Move all</Button>
@@ -1587,7 +1586,7 @@ function GroupPlantReassigner({ currentPlantId, imageIds, onReassigned }: GroupP
             else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowCreateConfirm(false); inputRef.current?.focus(); }
           }}
         >
-          <p className="text-xs mb-1">Create <strong>&ldquo;{query.trim()}&rdquo;</strong> and move {imageIds.length} images?</p>
+          <p className="text-xs mb-1 text-foreground">Create <strong>&ldquo;{query.trim()}&rdquo;</strong> and move {imageIds.length} images?</p>
           <div className="flex gap-1 justify-end">
             <Button variant="outline" size="sm" className="h-5 text-[10px]" onClick={() => { setShowCreateConfirm(false); inputRef.current?.focus(); }}>Cancel</Button>
             <Button ref={createRef} size="sm" className="h-5 text-[10px]" onClick={handleCreateAndReassign}>Create &amp; Move</Button>
