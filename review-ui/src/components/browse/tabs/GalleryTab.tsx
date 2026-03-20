@@ -218,6 +218,29 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     }
   }, [lightboxIndex]);
 
+  const moveToDocuments = useCallback(async (img: BrowseImage) => {
+    try {
+      const res = await fetch(`/api/browse/image-to-document/${img.Id}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: img.Caption }),
+      });
+      if (res.ok) {
+        setTotalRows((prev) => prev - 1);
+        setImages((prev) => {
+          const next = prev.filter((i) => i.Id !== img.Id);
+          if (lightboxIndex !== null) {
+            if (next.length === 0 || lightboxIndex >= next.length) {
+              closeLightbox();
+            }
+          }
+          return next;
+        });
+      }
+    } catch {}
+  }, [lightboxIndex]);
+
   const rotateImage = useCallback(async (img: BrowseImage, direction: 'cw' | 'ccw') => {
     const current = (img as any).Rotation ?? 0;
     const newRotation = (current + (direction === 'cw' ? 90 : -90) + 360) % 360;
@@ -269,13 +292,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       else if (e.key === 'h' && isAdmin && currentImage) { e.preventDefault(); setAsHero(currentImage); }
       else if (e.key === '[' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'ccw'); }
       else if (e.key === ']' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'cw'); }
+      else if (e.key === 'd' && isAdmin && currentImage) { e.preventDefault(); moveToDocuments(currentImage); }
       else if (e.key === 'v' && isAdmin) { e.preventDefault(); varietyInputRef.current?.focus(); }
       else if (e.key === 'p' && isAdmin) { e.preventDefault(); plantInputRef.current?.focus(); }
       else if (e.key === 'Escape') { e.preventDefault(); closeLightbox(); }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [lightboxIndex, goNext, goPrev, deleteImage, setAsHero, rotateImage, isAdmin]);
+  }, [lightboxIndex, goNext, goPrev, deleteImage, setAsHero, rotateImage, moveToDocuments, isAdmin]);
 
   const isHero = (img: BrowseImage) => {
     const stripped = stripParsedPrefix(img.File_Path);
@@ -883,6 +907,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                         Delete (x)
                       </Button>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => moveToDocuments(lightboxImage)}
+                      title="Move to Documents (d)"
+                    >
+                      To Docs (d)
+                    </Button>
                   </div>
                 )}
               </div>

@@ -636,6 +636,32 @@ router.post('/exclude-image/:id', requireAdmin, asyncHandler(async (req, res) =>
   res.json({ success: true });
 }));
 
+// ── POST /image-to-document/:id — Move image to Documents table (admin) ──────
+router.post('/image-to-document/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const image = await nocodb.get('Images', id);
+  if (!image) return res.status(404).json({ error: 'Image not found' });
+
+  const title = req.body.title || image.Caption || path.basename(image.File_Path).replace(/\.\w+$/, '');
+  const plantIds = image.Plant_Id ? JSON.stringify([image.Plant_Id]) : null;
+
+  // Create document record
+  const doc = await nocodb.create('Documents', {
+    Title: title,
+    Doc_Type: 'image-document',
+    Content_Text: null,
+    Content_Preview: null,
+    Plant_Ids: plantIds,
+    Original_File_Path: image.File_Path,
+    Is_Plant_Related: !!image.Plant_Id,
+  });
+
+  // Exclude image from gallery
+  await nocodb.update('Images', id, { Excluded: true, Needs_Review: false });
+
+  res.json({ success: true, document: doc });
+}));
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NOTES ENDPOINTS (local SQLite)
 // ═══════════════════════════════════════════════════════════════════════════════
