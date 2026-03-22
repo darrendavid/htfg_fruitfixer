@@ -43,9 +43,9 @@ router.get('/', asyncHandler(async (req, res) => {
 
   // Build sort param
   let nocodbSort = 'Canonical_Name';
-  if (sort === 'name') nocodbSort = 'Canonical_Name';
-  else if (sort === '-name') nocodbSort = '-Canonical_Name';
-  else if (sort === 'images') nocodbSort = '-Image_Count';
+  if (sort === 'name' || sort === 'name_asc') nocodbSort = 'Canonical_Name';
+  else if (sort === '-name' || sort === 'name_desc') nocodbSort = '-Canonical_Name';
+  else if (sort === 'images' || sort === 'images_desc') nocodbSort = '-Image_Count';
 
   // Build where clause parts
   const whereParts: string[] = [];
