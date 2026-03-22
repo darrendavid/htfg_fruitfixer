@@ -475,6 +475,101 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
   res.json(updated);
 }));
 
+// ── DELETE /plant/:id — Delete a plant and all related data (admin) ──────────
+router.delete('/plant/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // Resolve slug to NocoDB row ID
+  let rowId = id;
+  if (isNaN(Number(id))) {
+    const result = await nocodb.list('Plants', { where: `(Id1,eq,${id})`, limit: 1 });
+    if (result.list.length === 0) return res.status(404).json({ error: 'Plant not found' });
+    rowId = result.list[0].Id;
+  }
+
+  const plant = await nocodb.get('Plants', rowId);
+  if (!plant) return res.status(404).json({ error: 'Plant not found' });
+  const slug = plant.Id1 || id;
+
+  // Delete related data from NocoDB tables
+  const simpleTables = ['Varieties', 'Images', 'Nutritional_Info', 'Growing_Notes'];
+  for (const table of simpleTables) {
+    const records = await nocodb.list(table, { where: `(Plant_Id,eq,${slug})`, limit: 1000, fields: ['Id'] });
+    if (records.list.length > 0) {
+      for (let i = 0; i < records.list.length; i += 100) {
+        const batch = records.list.slice(i, i + 100).map((r: any) => ({ Id: r.Id }));
+        await nocodb.delete(table, batch);
+      }
+    }
+  }
+
+  // For JSON Plant_Ids tables, remove the plant from the array (don't delete the record)
+  const jsonTables = ['Documents', 'Recipes', 'OCR_Extractions', 'Attachments'];
+  for (const table of jsonTables) {
+    const records = await nocodb.list(table, { where: `(Plant_Ids,like,%${slug}%)`, limit: 1000 });
+    for (const rec of records.list) {
+      try {
+        const ids = JSON.parse(rec.Plant_Ids || '[]');
+        const filtered = ids.filter((pid: string) => pid !== slug);
+        await nocodb.update(table, rec.Id, { Plant_Ids: JSON.stringify(filtered) });
+      } catch {}
+    }
+  }
+
+  // Delete local SQLite data
+  db.prepare(`DELETE FROM staff_notes WHERE plant_id = ?`).run(slug);
+  db.prepare(`DELETE FROM hero_images WHERE plant_id = ?`).run(slug);
+
+  // Delete the plant itself
+  await nocodb.delete('Plants', rowId);
+
+  res.json({ success: true, deleted: slug });
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RECIPE ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── PATCH /recipes/:id — Update recipe (admin) ─────────────────────────────
+router.patch('/recipes/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.update('Recipes', id, req.body);
+  const updated = await nocodb.get('Recipes', id);
+  res.json(updated);
+}));
+
+// ── DELETE /recipes/:id — Delete recipe (admin) ─────────────────────────────
+router.delete('/recipes/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.delete('Recipes', id);
+  res.json({ success: true });
+}));
+
+// ── POST /recipes/:id/reassign — Move recipe to another plant (admin) ───────
+router.post('/recipes/:id/reassign', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { old_plant_id, new_plant_id } = req.body;
+  if (!new_plant_id) return res.status(400).json({ error: 'new_plant_id required' });
+
+  const recipe = await nocodb.get('Recipes', id);
+  if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
+
+  let ids: string[] = [];
+  try { ids = JSON.parse(recipe.Plant_Ids || '[]'); } catch {}
+
+  // Remove old, add new
+  if (old_plant_id) {
+    ids = ids.filter((pid: string) => pid !== old_plant_id);
+  }
+  if (!ids.includes(new_plant_id)) {
+    ids.push(new_plant_id);
+  }
+
+  await nocodb.update('Recipes', id, { Plant_Ids: JSON.stringify(ids) });
+  const updated = await nocodb.get('Recipes', id);
+  res.json(updated);
+}));
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // VARIETY ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
