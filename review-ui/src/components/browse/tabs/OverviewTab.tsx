@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { rotationStyle } from '@/lib/gallery-utils';
 import type { BrowsePlant } from '@/types/browse';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -140,11 +141,12 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
     <div className="space-y-6">
       {/* Hero image — scaled to fit viewport */}
       <div className="bg-muted rounded-lg overflow-hidden max-h-[60vh] flex items-center justify-center relative">
-        {plant.Image_Count > 0 && heroSrc ? (
+        {heroSrc ? (
           <img
             src={heroSrc}
             alt={plant.Canonical_Name}
             className="max-w-full max-h-[60vh] object-contain"
+            style={rotationStyle((plant as any).hero_rotation ?? 0)}
             loading="lazy"
           />
         ) : (

@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LazyImage } from '@/components/images/LazyImage';
+import { rotationStyle } from '@/lib/gallery-utils';
 import type { BrowsePlant } from '@/types/browse';
 
 const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
@@ -39,6 +40,7 @@ export function PlantCard({ plant }: PlantCardProps) {
             src={heroSrc}
             alt={plant.Canonical_Name}
             className="w-full h-full"
+            style={rotationStyle((plant as any).hero_rotation ?? 0)}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-3xl">

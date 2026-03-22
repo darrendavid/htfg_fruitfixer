@@ -130,6 +130,31 @@ router.get('/', asyncHandler(async (req, res) => {
     return plant;
   });
 
+  // Batch-fetch rotations for hero images
+  const heroPaths = enrichedPlants.filter((p: any) => p.hero_image).map((p: any) => p.hero_image);
+  if (heroPaths.length > 0) {
+    try {
+      // Fetch rotations for all hero images in one query per plant (batch)
+      const rotationResults = await nocodb.list('Images', {
+        where: heroPaths.slice(0, 50).map((hp: string) => `(File_Path,like,%${hp.split('/').pop()}%)`).join('~or'),
+        limit: 200,
+        fields: ['File_Path', 'Rotation'],
+      });
+      const rotationMap = new Map<string, number>();
+      for (const img of rotationResults.list) {
+        if (img.Rotation) {
+          const stripped = (img.File_Path || '').replace(/^content\/parsed\//, '');
+          rotationMap.set(stripped, img.Rotation);
+        }
+      }
+      for (const plant of enrichedPlants) {
+        if (plant.hero_image && rotationMap.has(plant.hero_image)) {
+          plant.hero_rotation = rotationMap.get(plant.hero_image);
+        }
+      }
+    } catch { /* ignore rotation lookup failure */ }
+  }
+
   res.json({
     plants: enrichedPlants,
     pageInfo: result.pageInfo,
@@ -344,6 +369,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   `).all(plantSlug);
 
   // Add hero_image to plant — check hero_images table first, then filesystem
+  // Also look up rotation from NocoDB Images table
   if (plantSlug) {
     const heroRow = db.prepare(`SELECT file_path FROM hero_images WHERE plant_id = ?`).get(plantSlug) as { file_path: string } | undefined;
     if (heroRow) {
@@ -356,6 +382,19 @@ router.get('/:id', asyncHandler(async (req, res) => {
           plant.hero_image = `plants/${plantSlug}/images/${files[0]}`;
         }
       } catch { /* no directory */ }
+    }
+    // Look up rotation for the hero image
+    if (plant.hero_image) {
+      try {
+        const imgResult = await nocodb.list('Images', {
+          where: `(File_Path,like,%${plant.hero_image.replace(/'/g, "\\'")}%)`,
+          limit: 1,
+          fields: ['Rotation'],
+        });
+        if (imgResult.list.length > 0 && imgResult.list[0].Rotation) {
+          plant.hero_rotation = imgResult.list[0].Rotation;
+        }
+      } catch { /* ignore */ }
     }
   }
 
