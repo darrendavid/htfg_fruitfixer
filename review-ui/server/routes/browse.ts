@@ -383,11 +383,12 @@ router.get('/:id', asyncHandler(async (req, res) => {
         }
       } catch { /* no directory */ }
     }
-    // Look up rotation for the hero image
+    // Look up rotation for the hero image using filename
     if (plant.hero_image) {
       try {
+        const heroFilename = plant.hero_image.split('/').pop();
         const imgResult = await nocodb.list('Images', {
-          where: `(File_Path,like,%${plant.hero_image.replace(/'/g, "\\'")}%)`,
+          where: `(Plant_Id,eq,${plantSlug})~and(File_Path,like,%${heroFilename}%)`,
           limit: 1,
           fields: ['Rotation'],
         });
