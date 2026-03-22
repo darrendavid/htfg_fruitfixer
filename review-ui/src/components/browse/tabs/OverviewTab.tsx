@@ -50,6 +50,7 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
   const [editName, setEditName] = useState(plant.Canonical_Name);
   const [editBotanical, setEditBotanical] = useState(plant.Botanical_Name ?? '');
   const [editDescription, setEditDescription] = useState(plant.Description ?? '');
+  const [editTastingNotes, setEditTastingNotes] = useState(plant.Tasting_Notes ?? '');
   const [editAltNames, setEditAltNames] = useState((plant as any).Alternative_Names ?? '');
   const [editOrigin, setEditOrigin] = useState((plant as any).Origin ?? '');
   const [editFlowerColors, setEditFlowerColors] = useState((plant as any).Flower_Colors ?? '');
@@ -74,6 +75,7 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           Canonical_Name: editName,
           Botanical_Name: editBotanical || null,
           Description: editDescription || null,
+          Tasting_Notes: editTastingNotes || null,
           Alternative_Names: editAltNames || null,
           Origin: editOrigin || null,
           Flower_Colors: editFlowerColors || null,
@@ -119,6 +121,7 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
     setEditName(plant.Canonical_Name);
     setEditBotanical(plant.Botanical_Name ?? '');
     setEditDescription(plant.Description ?? '');
+    setEditTastingNotes(plant.Tasting_Notes ?? '');
     setEditAltNames((plant as any).Alternative_Names ?? '');
     setEditOrigin((plant as any).Origin ?? '');
     setEditFlowerColors((plant as any).Flower_Colors ?? '');
@@ -165,6 +168,10 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           <div>
             <label className="text-sm font-medium">Description</label>
             <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={4} />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Tasting Notes</label>
+            <Textarea value={editTastingNotes} onChange={(e) => setEditTastingNotes(e.target.value)} rows={2} placeholder="e.g. Sweet, tart, creamy texture..." />
           </div>
           <div>
             <label className="text-sm font-medium">Alternative Names</label>
@@ -266,6 +273,14 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
         <div>
           <h3 className="text-sm font-medium mb-1">Description</h3>
           <p className="text-sm text-muted-foreground whitespace-pre-wrap select-text">{plant.Description}</p>
+        </div>
+      )}
+
+      {/* Tasting Notes */}
+      {!editMode && plant.Tasting_Notes && (
+        <div>
+          <h3 className="text-sm font-medium mb-1">Tasting Notes</h3>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap select-text">{plant.Tasting_Notes}</p>
         </div>
       )}
 

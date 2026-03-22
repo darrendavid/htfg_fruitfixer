@@ -377,7 +377,7 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const allowed = [
     'Canonical_Name', 'Botanical_Name', 'Aliases', 'Description', 'Category',
-    'Alternative_Names', 'Origin', 'Flower_Colors', 'Elevation_Range',
+    'Tasting_Notes', 'Alternative_Names', 'Origin', 'Flower_Colors', 'Elevation_Range',
     'Distribution', 'Culinary_Regions', 'Primary_Use',
     'Total_Varieties', 'Classification_Methods', 'Parent_Species',
     'Chromosome_Groups', 'Genetic_Contribution',
