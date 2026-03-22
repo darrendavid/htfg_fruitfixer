@@ -515,6 +515,46 @@ router.delete('/varieties/:id', requireAdmin, asyncHandler(async (req, res) => {
   res.json({ success: true });
 }));
 
+// ── POST /varieties/merge — Merge varieties into a primary (admin) ───────────
+router.post('/varieties/merge', requireAdmin, asyncHandler(async (req, res) => {
+  const { primary_id, merge_ids } = req.body;
+  if (!primary_id || !Array.isArray(merge_ids) || merge_ids.length === 0) {
+    return res.status(400).json({ error: 'primary_id and merge_ids[] required' });
+  }
+
+  // Get the primary variety name
+  const primary = await nocodb.get('Varieties', primary_id);
+  if (!primary) return res.status(404).json({ error: 'Primary variety not found' });
+  const primaryName = primary.Variety_Name;
+
+  // Get names of varieties being merged
+  const mergeNames: string[] = [];
+  for (const id of merge_ids) {
+    const v = await nocodb.get('Varieties', id);
+    if (v) mergeNames.push(v.Variety_Name);
+  }
+
+  // Reassign images: update Variety_Name on images that reference any merged variety
+  for (const oldName of mergeNames) {
+    const images = await nocodb.list('Images', {
+      where: `(Variety_Name,eq,${oldName})`,
+      limit: 1000,
+      fields: ['Id'],
+    });
+    if (images.list.length > 0) {
+      const updates = images.list.map((img: any) => ({ Id: img.Id, Variety_Name: primaryName }));
+      await nocodb.bulkUpdate('Images', updates);
+    }
+  }
+
+  // Delete merged varieties
+  for (const id of merge_ids) {
+    await nocodb.delete('Varieties', id);
+  }
+
+  res.json({ success: true, primary: primaryName, merged_count: merge_ids.length, images_reassigned: mergeNames });
+}));
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NUTRITIONAL ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════

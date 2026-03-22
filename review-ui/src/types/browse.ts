@@ -17,6 +17,7 @@ export interface BrowseVariety {
   Plant_Id: string;
   Characteristics: string | null;
   Tasting_Notes: string | null;
+  Genome_Group: string | null;
   Source: string | null;
 }
 
