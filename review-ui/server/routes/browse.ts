@@ -592,7 +592,9 @@ router.post('/:plantId/varieties', requireAdmin, asyncHandler(async (req, res) =
   const { plantId } = req.params;
   const data = { ...req.body, Plant_Id: plantId };
   const result = await nocodb.create('Varieties', data);
-  res.status(201).json(result);
+  // NocoDB create only returns {Id}, fetch full record
+  const full = await nocodb.get('Varieties', result.Id);
+  res.status(201).json(full);
 }));
 
 // ── PATCH /varieties/:id — Update variety (admin) ────────────────────────────
