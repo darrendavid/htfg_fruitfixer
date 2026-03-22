@@ -212,7 +212,8 @@ export function PlantAutocomplete({
             onFocus={() => { if (query.trim().length >= 1) fetchPlants(query.trim()); }}
             onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
             placeholder={placeholder}
-            className={`${inputClassName} bg-white !text-black placeholder:text-gray-400`}
+            className={inputClassName}
+            style={{ backgroundColor: '#ffffff', color: '#000000' }}
           />
         </div>
       </div>

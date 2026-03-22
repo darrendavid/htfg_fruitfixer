@@ -619,7 +619,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             <div className="flex items-center gap-2 flex-1">
               <PlantAutocomplete
                 label="Move to:"
-                labelClassName="text-[10px] font-medium shrink-0 text-inherit"
+                labelClassName="text-[10px] font-medium shrink-0 text-white"
                 placeholder="Plant name..."
                 inputClassName="h-6 text-xs"
                 whiteBackground
