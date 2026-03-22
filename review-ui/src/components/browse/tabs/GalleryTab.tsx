@@ -400,21 +400,22 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         return next;
       });
     } else if (e.ctrlKey || e.metaKey) {
-      // Toggle individual
+      // Toggle individual — only update lastClickedIdx on select, not deselect
+      const isDeselect = selectedIds.has(imgId);
       setSelectedIds((prev) => {
         const next = new Set(prev);
         if (next.has(imgId)) next.delete(imgId);
         else next.add(imgId);
         return next;
       });
-      setLastClickedIdx(flatIdx);
+      if (!isDeselect) setLastClickedIdx(flatIdx);
     } else {
       // Normal click — open lightbox (no selection)
       openLightbox(flatIdx);
       return;
     }
     // Don't open lightbox on shift/ctrl clicks
-  }, [lastClickedIdx, displayImages, openLightbox]);
+  }, [lastClickedIdx, selectedIds, displayImages, openLightbox]);
 
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
