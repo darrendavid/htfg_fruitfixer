@@ -234,9 +234,13 @@ interface GroupVarietyPickerProps {
   plantId: string;
   imageIds: number[];
   onSet: (name: string | null) => void;
+  /** Use white background for dark parent containers */
+  whiteBackground?: boolean;
 }
 
-export function GroupVarietyPicker({ plantId, imageIds, onSet }: GroupVarietyPickerProps) {
+export function GroupVarietyPicker({ plantId, imageIds, onSet, whiteBackground }: GroupVarietyPickerProps) {
+  const [showCreateConfirm, setShowCreateConfirm] = useState(false);
+  const [pendingNewName, setPendingNewName] = useState('');
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<BrowseVariety[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
@@ -285,30 +289,64 @@ export function GroupVarietyPicker({ plantId, imageIds, onSet }: GroupVarietyPic
     }
     if (e.key === 'Enter') {
       e.preventDefault(); e.stopPropagation();
-      if (highlightIndex >= 0 && highlightIndex < suggestions.length) selectVariety(suggestions[highlightIndex]);
+      if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
+        selectVariety(suggestions[highlightIndex]);
+      } else if (query.trim() && suggestions.length === 0) {
+        // No match — offer to create new variety
+        setPendingNewName(query.trim());
+        setShowCreateConfirm(true);
+        setShowDropdown(false);
+      }
     } else if (e.key === 'Escape') {
       e.preventDefault(); e.stopPropagation();
       setShowDropdown(false); setQuery('');
     }
   };
 
+  const createVarietyAndSet = async (name: string) => {
+    try {
+      const res = await fetch(`/api/browse/${plantId}/varieties`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ Variety_Name: name }),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        onSet(name);
+      }
+    } catch {}
+    setShowCreateConfirm(false);
+    setPendingNewName('');
+    setQuery('');
+  };
+
   return (
     <div className="relative">
       <div className="flex items-center gap-1">
-        <label className="text-[10px] font-medium shrink-0 text-muted-foreground">Set variety:</label>
+        <label className={`text-[10px] font-medium shrink-0 ${whiteBackground ? 'text-white' : 'text-muted-foreground'}`}>Variety:</label>
         <Input value={query} onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-          placeholder="Variety name..." className="h-6 text-xs flex-1" />
+          placeholder="Variety name..."
+          className={`h-6 text-xs flex-1 ${whiteBackground ? 'bg-white text-black border-white/50' : ''}`} />
       </div>
       {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 mt-1 left-0 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
+        <div className="absolute z-50 bottom-full mb-1 left-0 right-0 bg-white border rounded shadow-lg max-h-40 overflow-y-auto">
           {suggestions.map((v, i) => (
             <button key={v.Id}
-              className={`w-full text-left px-2 py-1 text-xs transition-colors ${i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
+              className={`w-full text-left px-2 py-1 text-xs text-black transition-colors ${i === highlightIndex ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
               onMouseDown={(e) => { e.preventDefault(); selectVariety(v); }}
               onMouseEnter={() => setHighlightIndex(i)}
             >{v.Variety_Name}</button>
           ))}
+        </div>
+      )}
+      {showCreateConfirm && (
+        <div className="absolute z-50 bottom-full mb-1 left-0 right-0 bg-white border rounded shadow-lg p-3 text-black">
+          <p className="text-xs mb-2">Create variety "{pendingNewName}" and assign to {imageIds.length} image{imageIds.length !== 1 ? 's' : ''}?</p>
+          <div className="flex gap-1 justify-end">
+            <button className="text-xs px-2 py-1 rounded hover:bg-gray-100" onClick={() => { setShowCreateConfirm(false); setPendingNewName(''); }}>Cancel</button>
+            <button className="text-xs px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700" onClick={() => createVarietyAndSet(pendingNewName)}>Create & Assign</button>
+          </div>
         </div>
       )}
     </div>

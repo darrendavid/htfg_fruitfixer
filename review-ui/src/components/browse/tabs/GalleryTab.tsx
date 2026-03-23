@@ -725,7 +725,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                 <GroupVarietyPicker
                   plantId={plantId}
                   imageIds={[...selectedIds]}
-                  onVarietySet={() => {
+                  whiteBackground
+                  onSet={() => {
                     clearSelection();
                     fetchImages();
                   }}
