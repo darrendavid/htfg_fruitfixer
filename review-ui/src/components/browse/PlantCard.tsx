@@ -41,6 +41,7 @@ export function PlantCard({ plant }: PlantCardProps) {
             alt={plant.Canonical_Name}
             className="w-full h-full"
             style={rotationStyle((plant as any).hero_rotation ?? 0)}
+            objectFit={(plant as any).hero_rotation && ((plant as any).hero_rotation % 180 !== 0) ? 'contain' : 'cover'}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-3xl">

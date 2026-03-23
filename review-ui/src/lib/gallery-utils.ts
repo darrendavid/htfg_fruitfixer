@@ -17,11 +17,6 @@ export function stripParsedPrefix(filePath: string) {
 export function rotationStyle(deg: number | undefined | null): React.CSSProperties {
   const d = ((deg ?? 0) % 360 + 360) % 360;
   if (d === 0) return {};
-  // For 90/270, we need to scale down so the rotated image fits in the original container
-  // The image's width becomes height and vice versa after rotation
-  if (d === 90 || d === 270) {
-    return { transform: `rotate(${d}deg)`, transformOrigin: 'center center' };
-  }
   return { transform: `rotate(${d}deg)`, transformOrigin: 'center center' };
 }
 
