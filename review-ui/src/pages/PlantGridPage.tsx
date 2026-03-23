@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
@@ -14,10 +13,8 @@ import {
 import { PlantCard } from '@/components/browse/PlantCard';
 import type { BrowsePlant } from '@/types/browse';
 
-const PAGE_SIZE = 24;
-
 const CATEGORIES = [
-  { value: 'all', label: 'All Categories' },
+  { value: 'all', label: 'All' },
   { value: 'fruit', label: 'Fruit' },
   { value: 'nut', label: 'Nut' },
   { value: 'spice', label: 'Spice' },
@@ -26,8 +23,8 @@ const CATEGORIES = [
 ];
 
 const SORT_OPTIONS = [
-  { value: 'name_asc', label: 'Name A-Z' },
-  { value: 'name_desc', label: 'Name Z-A' },
+  { value: 'name_asc', label: 'A-Z' },
+  { value: 'name_desc', label: 'Z-A' },
   { value: 'images_desc', label: 'Most Images' },
 ];
 
@@ -41,85 +38,71 @@ function loadGridState() {
   return null;
 }
 
-function saveGridState(state: { search: string; category: string; sort: string; page: number; scrollY: number }) {
+function saveGridState(state: { search: string; category: string; sort: string; scrollY: number }) {
   try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
 }
 
 export function PlantGridPage() {
   const saved = useRef(loadGridState());
-  const [plants, setPlants] = useState<BrowsePlant[]>([]);
+  const [allPlants, setAllPlants] = useState<BrowsePlant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState(saved.current?.search ?? '');
   const [category, setCategory] = useState(saved.current?.category ?? 'all');
   const [sort, setSort] = useState(saved.current?.sort ?? 'name_asc');
-  const [page, setPage] = useState(saved.current?.page ?? 1);
-  const [totalPages, setTotalPages] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState(saved.current?.search ?? '');
   const restoredScroll = useRef(false);
-  const isInitialMount = useRef(true);
 
-  // Debounce search input — skip page reset on initial mount (restoring saved state)
+  // Debounce search input
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setDebouncedSearch(search);
-      if (!isInitialMount.current) setPage(1);
-    }, 300);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
+    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search]);
 
-  // Reset page when filters change — skip on initial mount
-  useEffect(() => {
-    if (isInitialMount.current) return;
-    setPage(1);
-  }, [category, sort]);
-
-  // Clear initial mount flag after first render cycle
-  useEffect(() => {
-    const t = setTimeout(() => { isInitialMount.current = false; }, 500);
-    return () => clearTimeout(t);
-  }, []);
-
+  // Fetch all plants once (no pagination)
   const fetchPlants = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(PAGE_SIZE),
-        sort,
-      });
-      if (debouncedSearch) params.set('search', debouncedSearch);
-      if (category !== 'all') params.set('category', category);
-
-      const res = await fetch(`/api/browse?${params}`, { credentials: 'include' });
-      if (res.ok) {
+      // Fetch all pages
+      let all: BrowsePlant[] = [];
+      let page = 1;
+      while (true) {
+        const params = new URLSearchParams({ page: String(page), limit: '200', sort });
+        const res = await fetch(`/api/browse?${params}`, { credentials: 'include' });
+        if (!res.ok) break;
         const data = await res.json();
-        setPlants(data.plants);
-        const total = data.pageInfo?.totalRows ?? 0;
-        setTotalPages(Math.max(1, Math.ceil(total / PAGE_SIZE)));
+        all.push(...data.plants);
+        if (data.pageInfo?.isLastPage || data.plants.length < 200) break;
+        page++;
       }
+      setAllPlants(all);
     } catch {
-      // Network error — leave current state
+      // Network error
     } finally {
       setIsLoading(false);
     }
-  }, [page, debouncedSearch, category, sort]);
+  }, [sort]);
 
-  useEffect(() => {
-    fetchPlants();
-    // Scroll to top on page/filter changes, but not on initial mount (restore)
-    if (!isInitialMount.current) {
-      window.scrollTo(0, 0);
+  useEffect(() => { fetchPlants(); }, [fetchPlants]);
+
+  // Client-side filter and sort
+  const filteredPlants = allPlants.filter(p => {
+    if (category !== 'all' && p.Category !== category) return false;
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      const name = p.Canonical_Name?.toLowerCase() ?? '';
+      const botanical = (p.Botanical_Name ?? '').toLowerCase();
+      const aliases = (p.Aliases ?? '').toLowerCase();
+      if (!name.includes(q) && !botanical.includes(q) && !aliases.includes(q)) return false;
     }
-  }, [fetchPlants]);
+    return true;
+  });
 
-  // Save grid state on every change (for back-navigation restoration)
+  // Save grid state on every change
   useEffect(() => {
-    saveGridState({ search, category, sort, page, scrollY: window.scrollY });
-  }, [search, category, sort, page]);
+    saveGridState({ search, category, sort, scrollY: window.scrollY });
+  }, [search, category, sort]);
 
   // Save scroll position on scroll (throttled)
   useEffect(() => {
@@ -128,70 +111,68 @@ export function PlantGridPage() {
       if (!ticking) {
         ticking = true;
         requestAnimationFrame(() => {
-          saveGridState({ search, category, sort, page, scrollY: window.scrollY });
+          saveGridState({ search, category, sort, scrollY: window.scrollY });
           ticking = false;
         });
       }
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [search, category, sort, page]);
+  }, [search, category, sort]);
 
   // Restore scroll position after data loads (only once)
   useEffect(() => {
-    if (!isLoading && plants.length > 0 && !restoredScroll.current && saved.current?.scrollY) {
+    if (!isLoading && allPlants.length > 0 && !restoredScroll.current && saved.current?.scrollY) {
       restoredScroll.current = true;
       requestAnimationFrame(() => {
         window.scrollTo(0, saved.current!.scrollY);
       });
     }
-  }, [isLoading, plants.length]);
+  }, [isLoading, allPlants.length]);
 
   return (
     <AuthGuard>
       <AppShell title="Plants">
         <div className="p-4 space-y-4">
-          {/* Search + Filters */}
-          <div className="space-y-2">
+          {/* Search + Category + Sort — single row */}
+          <div className="flex gap-2 items-center">
             <Input
               placeholder="Search plants..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full"
+              className="flex-1"
             />
-            <div className="flex gap-2">
-              <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((c) => (
-                    <SelectItem key={c.value} value={c.value}>
-                      {c.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={sort} onValueChange={setSort}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SORT_OPTIONS.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>
-                      {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Select value={category} onValueChange={setCategory}>
+              <SelectTrigger className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={sort} onValueChange={setSort}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+
+          {/* Count */}
+          {!isLoading && (
+            <p className="text-xs text-muted-foreground">{filteredPlants.length} plants</p>
+          )}
 
           {/* Loading skeleton */}
           {isLoading && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {Array.from({ length: 12 }).map((_, i) => (
+              {Array.from({ length: 20 }).map((_, i) => (
                 <div key={i} className="space-y-2">
                   <Skeleton className="aspect-square w-full rounded-lg" />
                   <Skeleton className="h-4 w-3/4" />
@@ -202,7 +183,7 @@ export function PlantGridPage() {
           )}
 
           {/* Empty state */}
-          {!isLoading && plants.length === 0 && (
+          {!isLoading && filteredPlants.length === 0 && (
             <div className="flex flex-col items-center justify-center h-48 text-center">
               <p className="text-lg text-muted-foreground">No plants found</p>
               {debouncedSearch && (
@@ -213,37 +194,12 @@ export function PlantGridPage() {
             </div>
           )}
 
-          {/* Plant grid */}
-          {!isLoading && plants.length > 0 && (
+          {/* Plant grid — all plants, lazy-loaded images */}
+          {!isLoading && filteredPlants.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {plants.map((plant) => (
+              {filteredPlants.map((plant) => (
                 <PlantCard key={plant.Id} plant={plant} />
               ))}
-            </div>
-          )}
-
-          {/* Pagination */}
-          {!isLoading && totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                Page {page} of {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </Button>
             </div>
           )}
         </div>
