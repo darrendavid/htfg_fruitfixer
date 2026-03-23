@@ -490,6 +490,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       if (e.key === 'x' && isAdmin) {
         e.preventDefault();
         handleBulkDelete();
+      } else if (e.key === 'f' && isAdmin) {
+        e.preventDefault();
+        document.getElementById('multiselect-fruit-input')?.focus();
+      } else if (e.key === 'v' && isAdmin) {
+        e.preventDefault();
+        document.getElementById('multiselect-variety-input')?.focus();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         clearSelection();
@@ -699,6 +705,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   labelClassName="text-[10px] font-medium shrink-0 text-white"
                   placeholder="Move to..."
                   inputClassName="h-6 text-xs"
+                  inputId="multiselect-fruit-input"
                   whiteBackground
                   dropdownLeftClass="left-0"
                   excludePlantId={plantId}
@@ -726,6 +733,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   plantId={plantId}
                   imageIds={[...selectedIds]}
                   whiteBackground
+                  inputId="multiselect-variety-input"
                   onSet={async (name) => {
                     await handleBulkVariety([...selectedIds], name);
                     clearSelection();

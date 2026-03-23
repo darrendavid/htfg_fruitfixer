@@ -42,6 +42,8 @@ interface PlantAutocompleteProps {
   dropdownLeftClass?: string;
   /** Show category in dropdown items */
   showCategory?: boolean;
+  /** HTML id for the input element */
+  inputId?: string;
 }
 
 export function PlantAutocomplete({
@@ -60,6 +62,7 @@ export function PlantAutocomplete({
   labelClassName = 'text-xs font-medium shrink-0',
   whiteBackground = false,
   dropdownLeftClass = 'left-12',
+  inputId,
   showCategory = false,
 }: PlantAutocompleteProps) {
   const [query, setQuery] = useState('');
@@ -213,6 +216,7 @@ export function PlantAutocomplete({
             onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
             placeholder={placeholder}
             className={inputClassName}
+            id={inputId}
             style={{ backgroundColor: '#ffffff', color: '#000000' }}
           />
         </div>

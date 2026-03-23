@@ -236,9 +236,11 @@ interface GroupVarietyPickerProps {
   onSet: (name: string | null) => void;
   /** Use white background for dark parent containers */
   whiteBackground?: boolean;
+  /** HTML id for the input element */
+  inputId?: string;
 }
 
-export function GroupVarietyPicker({ plantId, imageIds, onSet, whiteBackground }: GroupVarietyPickerProps) {
+export function GroupVarietyPicker({ plantId, imageIds, onSet, whiteBackground, inputId }: GroupVarietyPickerProps) {
   const [showCreateConfirm, setShowCreateConfirm] = useState(false);
   const [pendingNewName, setPendingNewName] = useState('');
   const [query, setQuery] = useState('');
@@ -331,6 +333,7 @@ export function GroupVarietyPicker({ plantId, imageIds, onSet, whiteBackground }
           onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
           placeholder="Variety name..."
           className="h-6 text-xs flex-1"
+          id={inputId}
           style={whiteBackground ? { backgroundColor: '#ffffff', color: '#000000' } : undefined} />
       </div>
       {showDropdown && suggestions.length > 0 && (
