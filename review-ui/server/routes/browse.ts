@@ -206,8 +206,8 @@ router.get('/:plantId/images', asyncHandler(async (req, res) => {
   const { plantId } = req.params;
   const all = req.query.all === 'true';
   const showDeleted = req.query.showDeleted === 'true';
-  const excludeFilter = showDeleted ? '' : '~and(Excluded,neq,1)';
-  const where = `(Plant_Id,eq,${plantId})${excludeFilter}`;
+  const statusFilter = showDeleted ? '' : '~and(Status,neq,hidden)';
+  const where = `(Plant_Id,eq,${plantId})${statusFilter}`;
 
   if (all) {
     const allImages: any[] = [];
@@ -352,7 +352,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const [varieties, nutritional, images, documents, attachments, recipes, ocr] = await Promise.all([
     nocodb.list('Varieties', { where: `(Plant_Id,eq,${plantSlug})`, limit: 200 }).catch(() => ({ list: [] })),
     nocodb.list('Nutritional_Info', { where: `(Plant_Id,eq,${plantSlug})`, limit: 200 }).catch(() => ({ list: [] })),
-    nocodb.list('Images', { where: `(Plant_Id,eq,${plantSlug})~and(Excluded,neq,1)`, limit: imageLimit, offset: imageOffset }).catch(() => ({ list: [], pageInfo: {} })),
+    nocodb.list('Images', { where: `(Plant_Id,eq,${plantSlug})~and(Status,neq,hidden)`, limit: imageLimit, offset: imageOffset }).catch(() => ({ list: [], pageInfo: {} })),
     nocodb.list('Documents', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 100 }).catch(() => ({ list: [] })),
     nocodb.list('Attachments', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 200 }).catch(() => ({ list: [] })),
     nocodb.list('Recipes', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 100 }).catch(() => ({ list: [] })),
@@ -808,18 +808,39 @@ router.post('/rotate-image/:id', requireAdmin, asyncHandler(async (req, res) => 
   res.json({ success: true, rotation: deg });
 }));
 
-// ── POST /restore-image/:id — Restore an excluded image (admin) ──────────────
+// ── POST /restore-image/:id — Restore a hidden image to assigned (admin) ─────
 router.post('/restore-image/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  await nocodb.update('Images', id, { Excluded: false });
+  await nocodb.update('Images', id, { Excluded: false, Status: 'assigned' });
   res.json({ success: true });
 }));
 
-// ── POST /exclude-image/:id — Exclude image and prevent re-import (admin) ────
+// ── POST /exclude-image/:id — Hide image (admin) ────────────────────────────
 router.post('/exclude-image/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  await nocodb.update('Images', id, { Excluded: true, Needs_Review: false });
+  await nocodb.update('Images', id, { Excluded: true, Needs_Review: false, Status: 'hidden' });
   res.json({ success: true });
+}));
+
+// ── POST /unassign-image/:id — Mark image as unassigned for later triage ─────
+router.post('/unassign-image/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.update('Images', id, { Status: 'unassigned' });
+  res.json({ success: true });
+}));
+
+// ── POST /bulk-set-status — Set status on multiple images (admin) ────────────
+router.post('/bulk-set-status', requireAdmin, asyncHandler(async (req, res) => {
+  const { image_ids, status } = req.body;
+  if (!Array.isArray(image_ids) || !status) return res.status(400).json({ error: 'image_ids[] and status required' });
+  const validStatuses = ['assigned', 'hidden', 'unassigned', 'unclassified'];
+  if (!validStatuses.includes(status)) return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
+  const excluded = status === 'hidden';
+  const updates = image_ids.map((id: number) => ({ Id: id, Status: status, Excluded: excluded }));
+  for (let i = 0; i < updates.length; i += 100) {
+    await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
+  }
+  res.json({ success: true, count: image_ids.length });
 }));
 
 // ── POST /image-to-attachment/:id — Move image to Attachments table (admin) ──
@@ -844,8 +865,8 @@ router.post('/image-to-attachment/:id', requireAdmin, asyncHandler(async (req, r
     Description: null,
   });
 
-  // Exclude image from gallery
-  await nocodb.update('Images', id, { Excluded: true, Needs_Review: false });
+  // Hide image from gallery (moved to attachments)
+  await nocodb.update('Images', id, { Excluded: true, Needs_Review: false, Status: 'hidden' });
 
   res.json({ success: true, attachment });
 }));

@@ -208,6 +208,23 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     } catch {}
   }, [lightboxIndex]);
 
+  const unassignImage = useCallback(async (img: BrowseImage) => {
+    try {
+      const res = await fetch(`/api/browse/unassign-image/${img.Id}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setTotalRows((prev) => prev - 1);
+        setImages((prev) => prev.filter((i) => i.Id !== img.Id));
+        if (lightboxIndex !== null) {
+          const newLen = displayImagesLenRef.current - 1;
+          if (newLen === 0 || lightboxIndex >= newLen) closeLightbox();
+        }
+      }
+    } catch { /* error */ }
+  }, [lightboxIndex]);
+
   const rotateImage = useCallback(async (img: BrowseImage, direction: 'cw' | 'ccw') => {
     const current = (img as any).Rotation ?? 0;
     const newRotation = (current + (direction === 'cw' ? 90 : -90) + 360) % 360;
@@ -259,6 +276,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       else if (e.key === 'h' && isAdmin && currentImage) { e.preventDefault(); setAsHero(currentImage); }
       else if (e.key === '[' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'ccw'); }
       else if (e.key === ']' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'cw'); }
+      else if (e.key === 'u' && isAdmin && currentImage) { e.preventDefault(); unassignImage(currentImage); }
       else if (e.key === 'a' && isAdmin && currentImage) { e.preventDefault(); moveToDocuments(currentImage); }
       else if (e.key === 'v' && isAdmin) { e.preventDefault(); varietyInputRef.current?.focus(); }
       else if (e.key === 'p' && isAdmin) { e.preventDefault(); plantInputRef.current?.focus(); }
@@ -266,7 +284,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [lightboxIndex, goNext, goPrev, deleteImage, setAsHero, rotateImage, moveToDocuments, isAdmin]);
+  }, [lightboxIndex, goNext, goPrev, deleteImage, unassignImage, setAsHero, rotateImage, moveToDocuments, isAdmin]);
 
   const isHero = (img: BrowseImage) => {
     const stripped = stripParsedPrefix(img.File_Path);
@@ -440,6 +458,24 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     clearSelection();
   }, [selectedIds, clearSelection]);
 
+  const handleBulkUnassign = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    try {
+      const res = await fetch('/api/browse/bulk-set-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ image_ids: ids, status: 'unassigned' }),
+      });
+      if (res.ok) {
+        setImages((prev) => prev.filter((i) => !selectedIds.has(i.Id)));
+        setTotalRows((prev) => prev - ids.length);
+      }
+    } catch { /* error */ }
+    clearSelection();
+  }, [selectedIds, clearSelection]);
+
   // Grid-level keyboard shortcuts — active when images are selected (no lightbox open)
   useEffect(() => {
     if (lightboxIndex !== null) return;
@@ -498,7 +534,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       });
       if (res.ok) {
         setImages((prev) =>
-          prev.map((i) => (i.Id === img.Id ? { ...i, Excluded: false } as any : i))
+          prev.map((i) => (i.Id === img.Id ? { ...i, Excluded: false, Status: 'assigned' } as any : i))
         );
       }
     } catch {}
@@ -532,7 +568,11 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   const renderImageThumbnail = (img: BrowseImage, idx: number) => {
     const isSelected = selectedIds.has(img.Id);
-    const isExcluded = (img as any).Excluded === 1 || (img as any).Excluded === true;
+    const imgStatus = (img as any).Status || 'assigned';
+    const statusOverlay = imgStatus === 'hidden' ? { bg: 'bg-red-500/40', label: 'HIDDEN', labelBg: 'bg-red-600/80' }
+      : imgStatus === 'unassigned' ? { bg: 'bg-amber-500/30', label: 'UNASSIGNED', labelBg: 'bg-amber-600/80' }
+      : imgStatus === 'unclassified' ? { bg: 'bg-gray-500/30', label: 'UNCLASSIFIED', labelBg: 'bg-gray-600/80' }
+      : null;
     return (
     <div key={img.Id} className="space-y-1">
       <div
@@ -541,9 +581,9 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         }`}
         onClick={(e) => handleImageClick(e, img.Id, idx)}
       >
-        {isExcluded && (
-          <div className="absolute inset-0 z-10 bg-red-500/40 flex items-center justify-center">
-            <span className="text-white text-xs font-bold bg-red-600/80 px-2 py-0.5 rounded">DELETED</span>
+        {statusOverlay && (
+          <div className={`absolute inset-0 z-10 ${statusOverlay.bg} flex items-center justify-center`}>
+            <span className={`text-white text-[9px] font-bold ${statusOverlay.labelBg} px-1.5 py-0.5 rounded`}>{statusOverlay.label}</span>
           </div>
         )}
         <div className={`w-full h-full ${rotationClass((img as any).Rotation)} ${isSelected ? 'opacity-75' : ''}`}>
@@ -610,7 +650,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           <div className="flex items-center justify-center gap-3">
             <span className="text-sm font-medium">{selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''} selected</span>
             <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={handleBulkDelete}>
-              <Trash2 className="size-3 mr-1" /> Delete
+              <Trash2 className="size-3 mr-1" /> Hide
+            </Button>
+            <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={handleBulkUnassign}>
+              Unassign
             </Button>
             <Button variant="ghost" size="sm" className="h-7 text-xs text-white hover:text-white hover:bg-blue-700" onClick={clearSelection}>
               Clear
@@ -652,7 +695,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           <p className="text-sm text-muted-foreground">{totalRows} images total</p>
           <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer ml-2">
             <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} className="rounded" />
-            Show deleted
+            Show hidden
           </label>
         </div>
         <div className="flex gap-1">
@@ -933,12 +976,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     >
                       {isHero(lightboxImage) ? '★ Hero' : 'Hero (h)'}
                     </Button>
-                    {(lightboxImage as any).Excluded ? (
+                    {(lightboxImage as any).Status === 'hidden' || (lightboxImage as any).Status === 'unassigned' ? (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => restoreImage(lightboxImage)}
-                        title="Restore image"
+                        title="Restore to assigned"
                         className="text-green-600 border-green-600 hover:bg-green-50"
                       >
                         Restore
@@ -948,9 +991,17 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                         variant="destructive"
                         size="sm"
                         onClick={() => deleteImage(lightboxImage)}
-                        title="Delete image (x)"
+                        title="Hide image (x)"
                       >
-                        Delete (x)
+                        Hide (x)
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => unassignImage(lightboxImage)}
+                        title="Mark as unassigned (u)"
+                      >
+                        Unassign (u)
                       </Button>
                     )}
                     <Button

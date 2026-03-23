@@ -961,7 +961,7 @@ describe('Browse API', () => {
         .set('Cookie', cookie);
 
       expect(mockNocodb.list).toHaveBeenCalledWith('Images', expect.objectContaining({
-        where: expect.stringContaining('Excluded,neq,1'),
+        where: expect.stringContaining('Status,neq,hidden'),
       }));
     });
   });
@@ -1102,6 +1102,7 @@ describe('Browse API', () => {
       expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', {
         Excluded: true,
         Needs_Review: false,
+        Status: 'hidden',
       });
     });
   });
@@ -1869,6 +1870,7 @@ describe('Browse API', () => {
       expect(res.body.success).toBe(true);
       expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', {
         Excluded: false,
+        Status: 'assigned',
       });
     });
 
@@ -1929,7 +1931,7 @@ describe('Browse API', () => {
 
       // The where clause should include the Excluded filter
       const whereArg = mockNocodb.list.mock.calls[0][1]?.where;
-      expect(whereArg).toContain('(Excluded,neq,1)');
+      expect(whereArg).toContain('(Status,neq,hidden)');
     });
 
     it('works with showDeleted=true and all=true combined', async () => {
