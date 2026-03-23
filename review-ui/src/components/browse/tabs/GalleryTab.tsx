@@ -726,7 +726,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   plantId={plantId}
                   imageIds={[...selectedIds]}
                   whiteBackground
-                  onSet={() => {
+                  onSet={async (name) => {
+                    await handleBulkVariety([...selectedIds], name);
                     clearSelection();
                     fetchImages();
                   }}

@@ -291,7 +291,10 @@ export function GroupVarietyPicker({ plantId, imageIds, onSet, whiteBackground }
       e.preventDefault(); e.stopPropagation();
       if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
         selectVariety(suggestions[highlightIndex]);
-      } else if (query.trim() && suggestions.length === 0) {
+      } else if (suggestions.length > 0) {
+        // Suggestions available but none highlighted — select first
+        selectVariety(suggestions[0]);
+      } else if (query.trim()) {
         // No match — offer to create new variety
         setPendingNewName(query.trim());
         setShowCreateConfirm(true);
