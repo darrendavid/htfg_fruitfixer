@@ -729,7 +729,6 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   onSet={async (name) => {
                     await handleBulkVariety([...selectedIds], name);
                     clearSelection();
-                    fetchImages();
                   }}
                 />
               </div>

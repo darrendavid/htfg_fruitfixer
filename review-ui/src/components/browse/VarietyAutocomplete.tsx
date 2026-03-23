@@ -330,7 +330,8 @@ export function GroupVarietyPicker({ plantId, imageIds, onSet, whiteBackground }
         <Input value={query} onChange={(e) => handleChange(e.target.value)}
           onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
           placeholder="Variety name..."
-          className={`h-6 text-xs flex-1 ${whiteBackground ? 'bg-white text-black border-white/50' : ''}`} />
+          className="h-6 text-xs flex-1"
+          style={whiteBackground ? { backgroundColor: '#ffffff', color: '#000000' } : undefined} />
       </div>
       {showDropdown && suggestions.length > 0 && (
         <div className="absolute z-50 bottom-full mb-1 left-0 right-0 bg-white border rounded shadow-lg max-h-40 overflow-y-auto">
