@@ -604,6 +604,21 @@ router.post('/:plantId/varieties', requireAdmin, asyncHandler(async (req, res) =
 // ── PATCH /varieties/:id — Update variety (admin) ────────────────────────────
 router.patch('/varieties/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
+  // If renaming, cascade to Images.Variety_Name
+  if (req.body.Variety_Name) {
+    const old = await nocodb.get('Varieties', id);
+    if (old && old.Variety_Name !== req.body.Variety_Name) {
+      const images = await nocodb.list('Images', {
+        where: `(Variety_Name,eq,${old.Variety_Name})`,
+        limit: 1000,
+        fields: ['Id'],
+      });
+      if (images.list.length > 0) {
+        const updates = images.list.map((img: any) => ({ Id: img.Id, Variety_Name: req.body.Variety_Name }));
+        await nocodb.bulkUpdate('Images', updates);
+      }
+    }
+  }
   await nocodb.update('Varieties', id, req.body);
   const updated = await nocodb.get('Varieties', id);
   res.json(updated);
