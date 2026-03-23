@@ -384,17 +384,24 @@ router.get('/:id', asyncHandler(async (req, res) => {
         }
       } catch { /* no directory */ }
     }
-    // Look up rotation for the hero image using filename
+    // Look up rotation for the hero image using full path match
     if (plant.hero_image) {
       try {
-        const heroFilename = plant.hero_image.split('/').pop();
+        // hero_image has content/parsed/ stripped; NocoDB has full path
+        // Use the last 2 path segments for a unique match
+        const segments = plant.hero_image.split('/');
+        const matchSuffix = segments.slice(-2).join('/');
         const imgResult = await nocodb.list('Images', {
-          where: `(Plant_Id,eq,${plantSlug})~and(File_Path,like,%${heroFilename}%)`,
-          limit: 1,
-          fields: ['Rotation'],
+          where: `(Plant_Id,eq,${plantSlug})~and(File_Path,like,%${matchSuffix}%)`,
+          limit: 5,
+          fields: ['File_Path', 'Rotation'],
         });
-        if (imgResult.list.length > 0 && imgResult.list[0].Rotation) {
-          plant.hero_rotation = imgResult.list[0].Rotation;
+        // Find exact match by checking the full path ends with hero_image
+        const exactMatch = imgResult.list.find((r: any) =>
+          r.File_Path?.endsWith(plant.hero_image)
+        ) || imgResult.list[0];
+        if (exactMatch?.Rotation) {
+          plant.hero_rotation = exactMatch.Rotation;
         }
       } catch { /* ignore */ }
     }
