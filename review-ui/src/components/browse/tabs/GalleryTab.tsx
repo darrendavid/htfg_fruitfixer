@@ -987,22 +987,24 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                         Restore
                       </Button>
                     ) : (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => deleteImage(lightboxImage)}
-                        title="Hide image (x)"
-                      >
-                        Hide (x)
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => unassignImage(lightboxImage)}
-                        title="Mark as unassigned (u)"
-                      >
-                        Unassign (u)
-                      </Button>
+                      <>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => deleteImage(lightboxImage)}
+                          title="Hide image (x)"
+                        >
+                          Hide (x)
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => unassignImage(lightboxImage)}
+                          title="Mark as unassigned (u)"
+                        >
+                          Unassign (u)
+                        </Button>
+                      </>
                     )}
                     <Button
                       variant="outline"
