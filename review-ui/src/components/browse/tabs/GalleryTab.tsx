@@ -683,47 +683,59 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     <div className="space-y-4">
       {/* Selection action bar — fixed at bottom of viewport */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-16 left-4 right-4 z-50 bg-blue-600 text-white rounded-lg p-3 shadow-lg space-y-2">
-          <div className="flex items-center justify-center gap-3">
-            <span className="text-sm font-medium">{selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''} selected</span>
-            <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={handleBulkDelete}>
+        <div className="fixed bottom-16 left-4 right-4 z-50 bg-blue-600 text-white rounded-lg p-2 shadow-lg">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium shrink-0">{selectedIds.size} selected</span>
+            <Button variant="secondary" size="sm" className="h-6 text-xs px-2" onClick={handleBulkDelete}>
               <Trash2 className="size-3 mr-1" /> Hide
             </Button>
-            <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={handleBulkUnassign}>
+            <Button variant="secondary" size="sm" className="h-6 text-xs px-2" onClick={handleBulkUnassign}>
               Unassign
             </Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-white hover:text-white hover:bg-blue-700" onClick={clearSelection}>
+            {isAdmin && (
+              <div className="flex items-center gap-1 flex-1 min-w-[140px]">
+                <PlantAutocomplete
+                  label="Fruit:"
+                  labelClassName="text-[10px] font-medium shrink-0 text-white"
+                  placeholder="Move to..."
+                  inputClassName="h-6 text-xs"
+                  whiteBackground
+                  dropdownLeftClass="left-0"
+                  excludePlantId={plantId}
+                  showCategory
+                  confirmMessage={(p) => `Move ${selectedIds.size} images to ${p.Canonical_Name}?`}
+                  confirmLabel="Move"
+                  createMessage={(name) => `Create "${name}" and move ${selectedIds.size} images?`}
+                  createLabel="Create & Move"
+                  onSelect={async (plant) => {
+                    const ids = [...selectedIds];
+                    await handleBulkReassign(ids, plant.Id1);
+                    clearSelection();
+                  }}
+                  onCreateAndSelect={async (_name, slug) => {
+                    const ids = [...selectedIds];
+                    await handleBulkReassign(ids, slug);
+                    clearSelection();
+                  }}
+                />
+              </div>
+            )}
+            {isAdmin && (
+              <div className="flex items-center gap-1 min-w-[120px]">
+                <GroupVarietyPicker
+                  plantId={plantId}
+                  imageIds={[...selectedIds]}
+                  onVarietySet={() => {
+                    clearSelection();
+                    fetchImages();
+                  }}
+                />
+              </div>
+            )}
+            <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-white hover:text-white hover:bg-blue-700 ml-auto" onClick={clearSelection}>
               Clear
             </Button>
           </div>
-          {isAdmin && (
-            <div className="flex items-center gap-2 flex-1">
-              <PlantAutocomplete
-                label="Move to:"
-                labelClassName="text-[10px] font-medium shrink-0 text-white"
-                placeholder="Plant name..."
-                inputClassName="h-6 text-xs"
-                whiteBackground
-                dropdownLeftClass="left-0"
-                excludePlantId={plantId}
-                showCategory
-                confirmMessage={(p) => `Move ${selectedIds.size} images to ${p.Canonical_Name}?`}
-                confirmLabel="Move all"
-                createMessage={(name) => `Create "${name}" and move ${selectedIds.size} images?`}
-                createLabel="Create & Move"
-                onSelect={async (plant) => {
-                  const ids = [...selectedIds];
-                  await handleBulkReassign(ids, plant.Id1);
-                  clearSelection();
-                }}
-                onCreateAndSelect={async (_name, slug) => {
-                  const ids = [...selectedIds];
-                  await handleBulkReassign(ids, slug);
-                  clearSelection();
-                }}
-              />
-            </div>
-          )}
         </div>
       )}
 
