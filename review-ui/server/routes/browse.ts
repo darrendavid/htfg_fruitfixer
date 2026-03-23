@@ -104,17 +104,18 @@ router.get('/', asyncHandler(async (req, res) => {
 
   // Enrich each plant with a hero image path
   // Check hero_images table first (user-selected), fall back to filesystem
-  const heroRows = db.prepare(`SELECT plant_id, file_path FROM hero_images`).all() as Array<{ plant_id: string; file_path: string }>;
-  const heroMap = new Map(heroRows.map((r) => [r.plant_id, r.file_path]));
+  const heroRows = db.prepare(`SELECT plant_id, file_path, rotation FROM hero_images`).all() as Array<{ plant_id: string; file_path: string; rotation: number }>;
+  const heroMap = new Map(heroRows.map((r) => [r.plant_id, { path: r.file_path, rotation: r.rotation ?? 0 }]));
 
   const enrichedPlants = result.list.map((plant: any) => {
     const slug = plant.Id1;
     if (!slug) return plant;
 
     // Check for user-selected hero
-    const heroPath = heroMap.get(slug);
-    if (heroPath) {
-      plant.hero_image = heroPath.replace(/^content\/parsed\//, '');
+    const heroEntry = heroMap.get(slug);
+    if (heroEntry) {
+      plant.hero_image = heroEntry.path.replace(/^content\/parsed\//, '');
+      if (heroEntry.rotation) plant.hero_rotation = heroEntry.rotation;
       return plant;
     }
 
@@ -131,30 +132,8 @@ router.get('/', asyncHandler(async (req, res) => {
     return plant;
   });
 
-  // Batch-fetch rotations for hero images
-  const heroPaths = enrichedPlants.filter((p: any) => p.hero_image).map((p: any) => p.hero_image);
-  if (heroPaths.length > 0) {
-    try {
-      // Fetch rotations for all hero images in one query per plant (batch)
-      const rotationResults = await nocodb.list('Images', {
-        where: heroPaths.slice(0, 50).map((hp: string) => `(File_Path,like,%${hp.split('/').pop()}%)`).join('~or'),
-        limit: 200,
-        fields: ['File_Path', 'Rotation'],
-      });
-      const rotationMap = new Map<string, number>();
-      for (const img of rotationResults.list) {
-        if (img.Rotation) {
-          const stripped = (img.File_Path || '').replace(/^content\/parsed\//, '');
-          rotationMap.set(stripped, img.Rotation);
-        }
-      }
-      for (const plant of enrichedPlants) {
-        if (plant.hero_image && rotationMap.has(plant.hero_image)) {
-          plant.hero_rotation = rotationMap.get(plant.hero_image);
-        }
-      }
-    } catch { /* ignore rotation lookup failure */ }
-  }
+  // Hero rotations are now stored in local SQLite hero_images table
+  // (set when hero is selected or image is rotated)
 
   res.json({
     plants: enrichedPlants,
@@ -372,9 +351,10 @@ router.get('/:id', asyncHandler(async (req, res) => {
   // Add hero_image to plant — check hero_images table first, then filesystem
   // Also look up rotation from NocoDB Images table
   if (plantSlug) {
-    const heroRow = db.prepare(`SELECT file_path FROM hero_images WHERE plant_id = ?`).get(plantSlug) as { file_path: string } | undefined;
+    const heroRow = db.prepare(`SELECT file_path, rotation FROM hero_images WHERE plant_id = ?`).get(plantSlug) as { file_path: string; rotation: number } | undefined;
     if (heroRow) {
       plant.hero_image = heroRow.file_path.replace(/^content\/parsed\//, '');
+      if (heroRow.rotation) plant.hero_rotation = heroRow.rotation;
     } else {
       try {
         const plantDir = path.join(config.IMAGE_MOUNT_PATH, 'plants', plantSlug, 'images');
@@ -383,27 +363,6 @@ router.get('/:id', asyncHandler(async (req, res) => {
           plant.hero_image = `plants/${plantSlug}/images/${files[0]}`;
         }
       } catch { /* no directory */ }
-    }
-    // Look up rotation for the hero image using full path match
-    if (plant.hero_image) {
-      try {
-        // hero_image has content/parsed/ stripped; NocoDB has full path
-        // Use the last 2 path segments for a unique match
-        const segments = plant.hero_image.split('/');
-        const matchSuffix = segments.slice(-2).join('/');
-        const imgResult = await nocodb.list('Images', {
-          where: `(Plant_Id,eq,${plantSlug})~and(File_Path,like,%${matchSuffix}%)`,
-          limit: 5,
-          fields: ['File_Path', 'Rotation'],
-        });
-        // Find exact match by checking the full path ends with hero_image
-        const exactMatch = imgResult.list.find((r: any) =>
-          r.File_Path?.endsWith(plant.hero_image)
-        ) || imgResult.list[0];
-        if (exactMatch?.Rotation) {
-          plant.hero_rotation = exactMatch.Rotation;
-        }
-      } catch { /* ignore */ }
     }
   }
 
@@ -743,13 +702,14 @@ router.post('/set-hero/:imageId', requireAdmin, asyncHandler(async (req, res) =>
     return;
   }
 
-  // Store hero preference in local SQLite (simple key-value)
+  // Store hero preference in local SQLite with rotation
+  const rotation = image.Rotation ?? 0;
   db.prepare(`
-    INSERT OR REPLACE INTO hero_images (plant_id, image_id, file_path)
-    VALUES (?, ?, ?)
-  `).run(plant_id, imageId, image.File_Path);
+    INSERT OR REPLACE INTO hero_images (plant_id, image_id, file_path, rotation)
+    VALUES (?, ?, ?, ?)
+  `).run(plant_id, imageId, image.File_Path, rotation);
 
-  res.json({ success: true, file_path: image.File_Path });
+  res.json({ success: true, file_path: image.File_Path, rotation });
 }));
 
 // ── POST /reassign-image/:id — Move image to a different plant (admin) ────────
@@ -813,6 +773,8 @@ router.post('/rotate-image/:id', requireAdmin, asyncHandler(async (req, res) => 
   const { rotation } = req.body ?? {};
   const deg = ((rotation ?? 0) % 360 + 360) % 360;
   await nocodb.update('Images', id, { Rotation: deg });
+  // Sync hero_images if this image is a hero
+  db.prepare(`UPDATE hero_images SET rotation = ? WHERE image_id = ?`).run(deg, id);
   res.json({ success: true, rotation: deg });
 }));
 
