@@ -139,22 +139,10 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
 
   return (
     <div className="space-y-6">
-      {/* Hero image — scaled to fit viewport */}
-      <div className="bg-muted rounded-lg overflow-hidden max-h-[60vh] flex items-center justify-center relative">
-        {heroSrc ? (
-          <img
-            src={heroSrc}
-            alt={plant.Canonical_Name}
-            className="max-w-full max-h-[60vh] object-contain"
-            style={rotationStyle((plant as any).hero_rotation ?? 0)}
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-48 flex items-center justify-center text-muted-foreground text-5xl">
-            <span aria-hidden="true">&#x1F331;</span>
-          </div>
-        )}
-      </div>
+      {/* Two-column layout: text left (2/3), hero right (1/3) */}
+      <div className="flex gap-6 items-start">
+        {/* Left column — text fields */}
+        <div className="flex-1 min-w-0 space-y-4">
 
       {/* Name and details */}
       {editMode ? (
@@ -327,6 +315,28 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           )}
         </div>
       )}
+
+        </div>{/* end left column */}
+
+        {/* Right column — hero image (1/3 width) */}
+        <div className="w-1/3 shrink-0">
+          <div className="bg-muted rounded-lg overflow-hidden flex items-start justify-center sticky top-4">
+            {heroSrc ? (
+              <img
+                src={heroSrc}
+                alt={plant.Canonical_Name}
+                className="w-full object-contain max-h-[70vh]"
+                style={rotationStyle((plant as any).hero_rotation ?? 0)}
+                loading="lazy"
+              />
+            ) : (
+              <div className="w-full h-48 flex items-center justify-center text-muted-foreground text-5xl">
+                <span aria-hidden="true">&#x1F331;</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>{/* end two-column layout */}
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
