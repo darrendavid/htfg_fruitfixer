@@ -502,11 +502,8 @@ router.delete('/plant/:id', requireAdmin, asyncHandler(async (req, res) => {
   const simpleTables = ['Varieties', 'Images', 'Nutritional_Info', 'Growing_Notes'];
   for (const table of simpleTables) {
     const records = await nocodb.list(table, { where: `(Plant_Id,eq,${slug})`, limit: 1000, fields: ['Id'] });
-    if (records.list.length > 0) {
-      for (let i = 0; i < records.list.length; i += 100) {
-        const batch = records.list.slice(i, i + 100).map((r: any) => ({ Id: r.Id }));
-        await nocodb.delete(table, batch);
-      }
+    for (const rec of records.list) {
+      try { await nocodb.delete(table, rec.Id); } catch { /* skip if already deleted */ }
     }
   }
 
