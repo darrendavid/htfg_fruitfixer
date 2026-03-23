@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import path from 'path';
-import { readdirSync } from 'fs';
+import { readdirSync, existsSync, mkdirSync } from 'fs';
+import multer from 'multer';
 import { requireAdmin } from '../middleware/auth.js';
 import { nocodb, type ListOptions } from '../lib/nocodb.js';
 import { config } from '../config.js';
@@ -869,6 +870,55 @@ router.post('/image-to-attachment/:id', requireAdmin, asyncHandler(async (req, r
   await nocodb.update('Images', id, { Excluded: true, Needs_Review: false, Status: 'hidden' });
 
   res.json({ success: true, attachment });
+}));
+
+// ── POST /upload-images/:plantId — Upload images to a plant (admin) ──────────
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50), asyncHandler(async (req, res) => {
+  const { plantId } = req.params;
+  const files = req.files as Express.Multer.File[];
+  if (!files || files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
+
+  const plantDir = path.join(config.IMAGE_MOUNT_PATH, 'plants', plantId, 'images');
+  if (!existsSync(plantDir)) mkdirSync(plantDir, { recursive: true });
+
+  const results: Array<{ filename: string; id: number }> = [];
+
+  for (const file of files) {
+    // Generate unique filename — add numeric suffix if conflict
+    let baseName = file.originalname.replace(/[<>:"/\\|?*]/g, '_');
+    let destPath = path.join(plantDir, baseName);
+    if (existsSync(destPath)) {
+      const ext = path.extname(baseName);
+      const stem = baseName.slice(0, -ext.length || undefined);
+      let counter = 1;
+      while (existsSync(destPath)) {
+        baseName = `${stem}_${counter}${ext}`;
+        destPath = path.join(plantDir, baseName);
+        counter++;
+      }
+    }
+
+    // Write file to disk
+    const { writeFileSync } = await import('fs');
+    writeFileSync(destPath, file.buffer);
+
+    // Create NocoDB record
+    const filePath = `content/parsed/plants/${plantId}/images/${baseName}`;
+    const record = await nocodb.create('Images', {
+      File_Path: filePath,
+      Plant_Id: plantId,
+      Caption: baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' '),
+      Source_Directory: `plants/${plantId}/images`,
+      Size_Bytes: file.size,
+      Status: 'assigned',
+      Excluded: false,
+    });
+
+    results.push({ filename: baseName, id: record.Id });
+  }
+
+  res.json({ success: true, uploaded: results.length, files: results });
 }));
 
 // ── POST /reassign-document/:id — Move document to a different plant (admin) ──

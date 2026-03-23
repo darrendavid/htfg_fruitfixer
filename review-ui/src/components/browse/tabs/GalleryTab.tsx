@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { RotateCcw, RotateCw, LayoutGrid, FolderOpen, Tags, Copy, Trash2 } from 'lucide-react';
+import { RotateCcw, RotateCw, LayoutGrid, FolderOpen, Tags, Copy, Trash2, Upload } from 'lucide-react';
 import { LazyImage } from '@/components/images/LazyImage';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -36,6 +36,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [dimMap, setDimMap] = useState<Record<number, string>>({});
   const [showDeleted, setShowDeleted] = useState(false);
   const [visibleGroupCount, setVisibleGroupCount] = useState(20);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const lightboxImgRef = useRef<HTMLImageElement>(null);
   const plantInputRef = useRef<HTMLInputElement>(null);
@@ -548,6 +552,39 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     </div>
   );
 
+  const handleUpload = useCallback(async () => {
+    if (uploadFiles.length === 0) return;
+    setIsUploading(true);
+    setUploadProgress(`Uploading 0/${uploadFiles.length}...`);
+    try {
+      const formData = new FormData();
+      uploadFiles.forEach(f => formData.append('images', f));
+      const res = await fetch(`/api/browse/upload-images/${plantId}`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUploadProgress(`Uploaded ${data.uploaded} images`);
+        setUploadFiles([]);
+        // Refresh gallery
+        setTimeout(() => {
+          setShowUploadDialog(false);
+          setUploadProgress('');
+          fetchImages();
+        }, 1000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setUploadProgress(`Error: ${err.error || 'Upload failed'}`);
+      }
+    } catch {
+      setUploadProgress('Error: Upload failed');
+    } finally {
+      setIsUploading(false);
+    }
+  }, [uploadFiles, plantId, fetchImages]);
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -715,6 +752,11 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             onClick={() => { setViewMode('similarity'); clearSelection(); }} title="Group by similarity">
             <Copy className="size-4" />
           </Button>
+          {isAdmin && (
+            <Button variant="outline" size="sm" className="h-8 ml-2" onClick={() => setShowUploadDialog(true)}>
+              <Upload className="size-4 mr-1" /> Add Images
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1021,7 +1063,71 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Upload dialog */}
+      <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); } }}>
+        <DialogContent className="max-w-md">
+          <DialogTitle>Add Images to {plantId}</DialogTitle>
+          <div
+            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+              uploadFiles.length > 0 ? 'border-blue-400 bg-blue-50' : 'border-muted-foreground/30 hover:border-muted-foreground/50'
+            }`}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => {
+              e.preventDefault(); e.stopPropagation();
+              const files = Array.from(e.dataTransfer.files).filter(f => /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f.name));
+              setUploadFiles(prev => [...prev, ...files]);
+            }}
+          >
+            <Upload className="size-8 mx-auto mb-2 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground mb-2">Drag and drop images here, or</p>
+            <label className="cursor-pointer">
+              <span className="text-sm font-medium text-blue-600 hover:text-blue-800 underline">browse files</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  setUploadFiles(prev => [...prev, ...files]);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+
+          {uploadFiles.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium">{uploadFiles.length} file{uploadFiles.length !== 1 ? 's' : ''} selected:</div>
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {uploadFiles.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+                    <span className="truncate mr-2">{f.name}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
+                      <button className="text-destructive hover:text-destructive/80" onClick={() => setUploadFiles(prev => prev.filter((_, j) => j !== i))}>
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {uploadProgress && <p className="text-sm text-muted-foreground">{uploadProgress}</p>}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); }}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpload} disabled={isUploading || uploadFiles.length === 0}>
+              {isUploading ? 'Uploading...' : `Upload ${uploadFiles.length} image${uploadFiles.length !== 1 ? 's' : ''}`}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
