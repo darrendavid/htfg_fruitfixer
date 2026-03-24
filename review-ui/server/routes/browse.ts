@@ -885,13 +885,16 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
     const { writeFileSync } = await import('fs');
     writeFileSync(destPath, file.buffer);
 
-    // Create NocoDB record
-    const filePath = `content/pass_01/assigned/${plantId}/images/${baseName}`;
+    // Create NocoDB record — derive path relative to content/ from actual save location
+    const contentRoot = path.resolve(config.IMAGE_MOUNT_PATH, '..');
+    const relFromContent = path.relative(contentRoot, destPath).split(path.sep).join('/');
+    const filePath = `content/${relFromContent}`;
+    const relDir = path.relative(contentRoot, plantDir).split(path.sep).join('/');
     const record = await nocodb.create('Images', {
       File_Path: filePath,
       Plant_Id: plantId,
       Caption: baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' '),
-      Source_Directory: `pass_01/assigned/${plantId}/images`,
+      Source_Directory: relDir,
       Size_Bytes: file.size,
       Status: 'assigned',
       Excluded: false,
