@@ -11,7 +11,11 @@ export function hammingDistance(h1: string, h2: string): number {
 }
 
 export function stripParsedPrefix(filePath: string) {
-  return filePath.replace(/^content\/parsed\//, '').replace(/#/g, '%23');
+  return filePath
+    .replace(/^content\/pass_01\/assigned\//, '')
+    .replace(/^content\/parsed\//, '')
+    .replace(/^content\//, '')
+    .replace(/#/g, '%23');
 }
 
 export function rotationStyle(deg: number | undefined | null): React.CSSProperties {
