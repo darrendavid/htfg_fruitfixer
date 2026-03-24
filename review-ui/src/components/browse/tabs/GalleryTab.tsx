@@ -603,8 +603,48 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   if (images.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-48 text-center">
+      <div className="flex flex-col items-center justify-center h-48 text-center space-y-3">
         <p className="text-lg text-muted-foreground">No images available</p>
+        {isAdmin && (
+          <Button variant="outline" size="sm" onClick={() => setShowUploadDialog(true)}>
+            <Upload className="size-4 mr-1" /> Add Images
+          </Button>
+        )}
+        {/* Upload dialog needed here too */}
+        <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); } }}>
+          <DialogContent className="max-w-md">
+            <DialogTitle>Add Images to {plantId}</DialogTitle>
+            <div
+              className="border-2 border-dashed rounded-lg p-8 text-center border-muted-foreground/30 hover:border-muted-foreground/50"
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const files = Array.from(e.dataTransfer.files).filter(f => /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f.name)); setUploadFiles(prev => [...prev, ...files]); }}
+            >
+              <Upload className="size-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground mb-2">Drag and drop images here, or</p>
+              <label className="cursor-pointer">
+                <span className="text-sm font-medium text-blue-600 hover:text-blue-800 underline">browse files</span>
+                <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => { setUploadFiles(prev => [...prev, ...Array.from(e.target.files ?? [])]); e.target.value = ''; }} />
+              </label>
+            </div>
+            {uploadFiles.length > 0 && (
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {uploadFiles.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+                    <span className="truncate mr-2">{f.name}</span>
+                    <button className="text-destructive" onClick={() => setUploadFiles(prev => prev.filter((_, j) => j !== i))}>&times;</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {uploadProgress && <p className="text-sm text-muted-foreground">{uploadProgress}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { setShowUploadDialog(false); setUploadFiles([]); }}>Cancel</Button>
+              <Button onClick={handleUpload} disabled={isUploading || uploadFiles.length === 0}>
+                {isUploading ? 'Uploading...' : `Upload ${uploadFiles.length}`}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
