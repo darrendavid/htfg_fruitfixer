@@ -73,7 +73,7 @@ export function PlantGridPage() {
         if (!res.ok) break;
         const data = await res.json();
         all.push(...data.plants);
-        if (data.pageInfo?.isLastPage || data.plants.length < 200) break;
+        if (data.pageInfo?.isLastPage || data.plants.length === 0) break;
         page++;
       }
       setAllPlants(all);

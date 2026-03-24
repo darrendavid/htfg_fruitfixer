@@ -341,7 +341,7 @@ describe('Browse API', () => {
       expect(plantCall![1].offset).toBe(20); // (page 3 - 1) * 10
     });
 
-    it('clamps limit to 100 max', async () => {
+    it('clamps limit to 200 max', async () => {
       const cookie = await getAdminCookie();
       mockNocodb.list.mockResolvedValue(defaultListResult([], 0));
 
@@ -352,7 +352,7 @@ describe('Browse API', () => {
       const plantCall = mockNocodb.list.mock.calls.find(
         (c: any[]) => c[0] === 'Plants',
       );
-      expect(plantCall![1].limit).toBe(100);
+      expect(plantCall![1].limit).toBe(200);
     });
 
     it('clamps limit to 1 min', async () => {
