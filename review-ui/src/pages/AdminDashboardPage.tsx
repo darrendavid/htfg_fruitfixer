@@ -130,6 +130,15 @@ export function AdminDashboardPage() {
           >
             Fruit Database
           </Button>
+          <Button
+            variant="outline"
+            className="w-full mb-4"
+            onClick={() => {
+              window.open('/api/admin/export', '_blank');
+            }}
+          >
+            Export Database (JSON)
+          </Button>
           <Tabs defaultValue="overview">
             <TabsList className="w-full mb-4">
               <TabsTrigger value="overview" className="flex-1 text-xs">Overview</TabsTrigger>
