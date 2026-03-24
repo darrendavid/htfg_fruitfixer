@@ -1,8 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
+import { Upload } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -43,8 +49,16 @@ function saveGridState(state: { search: string; category: string; sort: string; 
 }
 
 export function PlantGridPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const saved = useRef(loadGridState());
   const [allPlants, setAllPlants] = useState<BrowsePlant[]>([]);
+  const [showNewPlant, setShowNewPlant] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newBotanical, setNewBotanical] = useState('');
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [isCreating, setIsCreating] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState(saved.current?.search ?? '');
   const [category, setCategory] = useState(saved.current?.category ?? 'all');
@@ -130,6 +144,58 @@ export function PlantGridPage() {
     }
   }, [isLoading, allPlants.length]);
 
+  const handleCreatePlant = useCallback(async () => {
+    if (!newName.trim()) return;
+    setIsCreating(true);
+    try {
+      // Create the plant
+      const res = await fetch('/api/browse/create-plant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          Canonical_Name: newName.trim(),
+          Botanical_Name: newBotanical.trim() || null,
+          Category: 'fruit',
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || 'Failed to create plant');
+        setIsCreating(false);
+        return;
+      }
+      const created = await res.json();
+      // Get the slug
+      const detailRes = await fetch(`/api/browse/${created.Id}`, { credentials: 'include' });
+      const detail = detailRes.ok ? await detailRes.json() : null;
+      const slug = detail?.plant?.Id1 || created.Id;
+
+      // Upload images if any
+      if (newFiles.length > 0) {
+        const formData = new FormData();
+        newFiles.forEach(f => formData.append('images', f));
+        await fetch(`/api/browse/upload-images/${slug}`, {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        });
+      }
+
+      toast.success(`Created "${newName.trim()}"`);
+      setShowNewPlant(false);
+      setNewName('');
+      setNewBotanical('');
+      setNewFiles([]);
+      // Navigate to the new plant
+      navigate(`/plants/${slug}`);
+    } catch {
+      toast.error('Failed to create plant');
+    } finally {
+      setIsCreating(false);
+    }
+  }, [newName, newBotanical, newFiles, navigate]);
+
   return (
     <AuthGuard>
       <AppShell title="Plants">
@@ -162,6 +228,11 @@ export function PlantGridPage() {
                 ))}
               </SelectContent>
             </Select>
+            {isAdmin && (
+              <Button size="sm" className="shrink-0" onClick={() => setShowNewPlant(true)}>
+                + New Plant
+              </Button>
+            )}
           </div>
 
           {/* Count */}
@@ -203,6 +274,72 @@ export function PlantGridPage() {
             </div>
           )}
         </div>
+
+        {/* New Plant Dialog */}
+        <Dialog open={showNewPlant} onOpenChange={(open) => { if (!open) { setShowNewPlant(false); setNewName(''); setNewBotanical(''); setNewFiles([]); } }}>
+          <DialogContent className="max-w-md">
+            <DialogTitle>New Plant</DialogTitle>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium">Name *</label>
+                <Input
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  placeholder="e.g. Dragon Fruit"
+                  autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter' && newName.trim()) handleCreatePlant(); }}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Scientific Name</label>
+                <Input
+                  value={newBotanical}
+                  onChange={e => setNewBotanical(e.target.value)}
+                  placeholder="e.g. Hylocereus undatus"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Initial Photos (optional)</label>
+                <div
+                  className="border-2 border-dashed rounded-lg p-4 text-center border-muted-foreground/30 hover:border-muted-foreground/50 transition-colors"
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={e => {
+                    e.preventDefault(); e.stopPropagation();
+                    const files = Array.from(e.dataTransfer.files).filter(f => /\.(jpe?g|png|gif|webp)$/i.test(f.name));
+                    setNewFiles(prev => [...prev, ...files]);
+                  }}
+                >
+                  <Upload className="size-6 mx-auto mb-1 text-muted-foreground" />
+                  <p className="text-xs text-muted-foreground">Drag & drop or{' '}
+                    <label className="text-blue-600 hover:text-blue-800 underline cursor-pointer">
+                      browse
+                      <input type="file" multiple accept="image/*" className="hidden"
+                        onChange={e => { setNewFiles(prev => [...prev, ...Array.from(e.target.files ?? [])]); e.target.value = ''; }} />
+                    </label>
+                  </p>
+                </div>
+                {newFiles.length > 0 && (
+                  <div className="mt-2 max-h-24 overflow-y-auto space-y-1">
+                    {newFiles.map((f, i) => (
+                      <div key={i} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+                        <span className="truncate mr-2">{f.name}</span>
+                        <button className="text-destructive shrink-0" onClick={() => setNewFiles(prev => prev.filter((_, j) => j !== i))}>&times;</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <Button variant="outline" onClick={() => { setShowNewPlant(false); setNewName(''); setNewBotanical(''); setNewFiles([]); }}>
+                Cancel
+              </Button>
+              <Button onClick={handleCreatePlant} disabled={isCreating || !newName.trim()}>
+                {isCreating ? 'Creating...' : `Create${newFiles.length > 0 ? ` + ${newFiles.length} photo${newFiles.length !== 1 ? 's' : ''}` : ''}`}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </AppShell>
     </AuthGuard>
   );

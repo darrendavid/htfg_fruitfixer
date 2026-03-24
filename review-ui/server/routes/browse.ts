@@ -276,12 +276,13 @@ router.post('/:plantId/attachments', requireAdmin, asyncHandler(async (req, res)
 
 // ── POST /create-plant — Create a new plant (admin) ──────────────────────────
 router.post('/create-plant', requireAdmin, asyncHandler(async (req, res) => {
-  const { Canonical_Name, Id1, Category } = req.body ?? {};
+  const { Canonical_Name, Botanical_Name, Id1, Category } = req.body ?? {};
   if (!Canonical_Name) { res.status(400).json({ error: 'Canonical_Name required' }); return; }
   const slug = Id1 || Canonical_Name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const result = await nocodb.create('Plants', {
     Id1: slug,
     Canonical_Name,
+    Botanical_Name: Botanical_Name || null,
     Category: Category || 'fruit',
     Image_Count: 0,
     Source_Count: 0,
