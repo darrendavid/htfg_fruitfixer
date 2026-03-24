@@ -860,7 +860,7 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
   const files = req.files as Express.Multer.File[];
   if (!files || files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
 
-  const plantDir = path.join(config.IMAGE_MOUNT_PATH, 'plants', plantId, 'images');
+  const plantDir = path.join(config.IMAGE_MOUNT_PATH, plantId, 'images');
   if (!existsSync(plantDir)) mkdirSync(plantDir, { recursive: true });
 
   const results: Array<{ filename: string; id: number }> = [];
@@ -885,12 +885,12 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
     writeFileSync(destPath, file.buffer);
 
     // Create NocoDB record
-    const filePath = `content/parsed/plants/${plantId}/images/${baseName}`;
+    const filePath = `content/pass_01/assigned/${plantId}/images/${baseName}`;
     const record = await nocodb.create('Images', {
       File_Path: filePath,
       Plant_Id: plantId,
       Caption: baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' '),
-      Source_Directory: `plants/${plantId}/images`,
+      Source_Directory: `pass_01/assigned/${plantId}/images`,
       Size_Bytes: file.size,
       Status: 'assigned',
       Excluded: false,
