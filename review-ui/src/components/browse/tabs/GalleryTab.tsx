@@ -1030,7 +1030,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   >&#8250;</button>
                 )}
 
-                <div className="relative flex items-center justify-center overflow-hidden" style={{ height: '55vh' }}>
+                <div className="relative flex items-center justify-center overflow-hidden" style={{ maxHeight: '55vh' }}>
                   <img
                     ref={lightboxImgRef}
                     src={`${buildImageUrl(lightboxImage.File_Path)}`}
