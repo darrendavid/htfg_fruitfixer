@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { LazyImage } from '@/components/images/LazyImage';
-import { rotationStyle } from '@/lib/gallery-utils';
+import { rotationStyle, buildImageUrl } from '@/lib/gallery-utils';
 import type { BrowsePlant } from '@/types/browse';
 
 const MONTH_LABELS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
@@ -25,7 +25,7 @@ export function PlantCard({ plant }: PlantCardProps) {
   const harvestMonths = parseHarvestMonths(plant.Harvest_Months);
   const plantSlug = (plant as any).Id1 || plant.Id;
   const heroSrc = (plant as any).hero_image
-    ? `/images/${(plant as any).hero_image}`
+    ? buildImageUrl((plant as any).hero_image)
     : '';
 
   return (

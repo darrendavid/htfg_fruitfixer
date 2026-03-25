@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
-import { hammingDistance, stripParsedPrefix, rotationStyle, rotationClass } from '@/lib/gallery-utils';
+import { hammingDistance, stripParsedPrefix, toRelativeImagePath, buildImageUrl, rotationStyle, rotationClass } from '@/lib/gallery-utils';
 import { PlantAutocomplete } from '@/components/browse/PlantAutocomplete';
 import { VarietyPicker, GroupVarietyPicker } from '@/components/browse/VarietyAutocomplete';
 import type { BrowseImage } from '@/types/browse';
@@ -671,7 +671,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         )}
         <div className={`w-full h-full ${rotationClass((img as any).Rotation)} ${isSelected ? 'opacity-75' : ''}`}>
           <LazyImage
-            src={`/images/${stripParsedPrefix(img.File_Path)}`}
+            src={`${buildImageUrl(img.File_Path)}`}
             alt={img.Caption ?? ''}
             className="w-full h-full"
             onLoad={(e) => {
@@ -932,7 +932,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                 <div className="relative flex items-center justify-center overflow-hidden" style={{ height: '55vh' }}>
                   <img
                     ref={lightboxImgRef}
-                    src={`/images/${stripParsedPrefix(lightboxImage.File_Path)}`}
+                    src={`${buildImageUrl(lightboxImage.File_Path)}`}
                     alt={lightboxImage.Caption ?? ''}
                     className="object-contain rounded"
                     style={{

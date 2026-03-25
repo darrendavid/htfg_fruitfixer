@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { rotationStyle } from '@/lib/gallery-utils';
+import { rotationStyle, buildImageUrl } from '@/lib/gallery-utils';
 import type { BrowsePlant } from '@/types/browse';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -44,8 +44,8 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
   const aliases = parseAliases(plant.Aliases);
   const plantSlug = (plant as any).Id1 || plant.Id;
   const heroSrc = (plant as any).hero_image
-    ? `/images/${(plant as any).hero_image}`
-    : plant.Image_Count > 0 ? `/images/plants/${plantSlug}/images/` : '';
+    ? buildImageUrl((plant as any).hero_image)
+    : '';
 
   // Edit state
   const [editName, setEditName] = useState(plant.Canonical_Name);
