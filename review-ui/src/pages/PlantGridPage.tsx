@@ -17,7 +17,15 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { PlantCard } from '@/components/browse/PlantCard';
+import { useThumbSize } from '@/hooks/use-thumb-size';
+import { ThumbSizeToggle } from '@/components/ui/thumb-size-toggle';
 import type { BrowsePlant } from '@/types/browse';
+
+const PLANT_GRID_CLASSES = {
+  lg: 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4',
+  md: 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-4',
+  sm: 'grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-4',
+} as const;
 
 const CATEGORIES = [
   { value: 'all', label: 'All' },
@@ -63,6 +71,7 @@ export function PlantGridPage() {
   const [search, setSearch] = useState(saved.current?.search ?? '');
   const [category, setCategory] = useState(saved.current?.category ?? 'all');
   const [sort, setSort] = useState(saved.current?.sort ?? 'name_asc');
+  const [thumbSize, setThumbSize] = useThumbSize();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState(saved.current?.search ?? '');
   const restoredScroll = useRef(false);
@@ -228,6 +237,7 @@ export function PlantGridPage() {
                 ))}
               </SelectContent>
             </Select>
+            <ThumbSizeToggle value={thumbSize} onChange={setThumbSize} />
             {isAdmin && (
               <Button size="sm" className="shrink-0" onClick={() => setShowNewPlant(true)}>
                 + New Plant
@@ -242,7 +252,7 @@ export function PlantGridPage() {
 
           {/* Loading skeleton */}
           {isLoading && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className={PLANT_GRID_CLASSES[thumbSize]}>
               {Array.from({ length: 20 }).map((_, i) => (
                 <div key={i} className="space-y-2">
                   <Skeleton className="aspect-square w-full rounded-lg" />
@@ -267,9 +277,9 @@ export function PlantGridPage() {
 
           {/* Plant grid — all plants, lazy-loaded images */}
           {!isLoading && filteredPlants.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            <div className={PLANT_GRID_CLASSES[thumbSize]}>
               {filteredPlants.map((plant) => (
-                <PlantCard key={plant.Id} plant={plant} />
+                <PlantCard key={plant.Id} plant={plant} compact={thumbSize !== 'lg'} />
               ))}
             </div>
           )}

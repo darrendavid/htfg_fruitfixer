@@ -9,7 +9,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { hammingDistance, stripParsedPrefix, toRelativeImagePath, buildImageUrl, rotationStyle, rotationClass } from '@/lib/gallery-utils';
 import { PlantAutocomplete } from '@/components/browse/PlantAutocomplete';
 import { VarietyPicker, GroupVarietyPicker } from '@/components/browse/VarietyAutocomplete';
+import { useThumbSize } from '@/hooks/use-thumb-size';
+import { ThumbSizeToggle } from '@/components/ui/thumb-size-toggle';
 import type { BrowseImage } from '@/types/browse';
+
+const GALLERY_GRID_CLASSES = {
+  lg: 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2',
+  md: 'grid grid-cols-5 sm:grid-cols-6 lg:grid-cols-8 gap-2',
+  sm: 'grid grid-cols-8 sm:grid-cols-10 lg:grid-cols-12 gap-2',
+} as const;
 
 const PAGE_SIZE = 50;
 
@@ -92,6 +100,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
+  const [thumbSize, setThumbSize] = useThumbSize();
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const lightboxImgRef = useRef<HTMLImageElement>(null);
   const plantInputRef = useRef<HTMLInputElement>(null);
@@ -664,7 +673,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+      <div className={GALLERY_GRID_CLASSES[thumbSize]}>
         {Array.from({ length: 12 }).map((_, i) => (
           <Skeleton key={i} className="aspect-square rounded" />
         ))}
@@ -883,7 +892,9 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             Hidden
           </label>
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
+          <ThumbSizeToggle value={thumbSize} onChange={setThumbSize} />
+          <div className="w-px h-6 bg-border mx-1" />
           <Button variant={viewMode === 'grid' ? 'default' : 'outline'} size="icon" className="h-8 w-8"
             onClick={() => { setViewMode('grid'); clearSelection(); }} title="Grid view">
             <LayoutGrid className="size-4" />
@@ -910,7 +921,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
       {viewMode === 'grid' ? (
         <>
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+          <div className={GALLERY_GRID_CLASSES[thumbSize]}>
             {images.map((img, idx) => renderImageThumbnail(img, idx))}
           </div>
 
@@ -976,7 +987,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     </div>
                   )}
                 </div>
-                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                <div className={GALLERY_GRID_CLASSES[thumbSize]}>
                   {groupImgs.map((img) => {
                     const idx = displayImages.indexOf(img);
                     return renderImageThumbnail(img, idx >= 0 ? idx : 0);
