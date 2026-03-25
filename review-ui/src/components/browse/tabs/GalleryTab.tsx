@@ -623,7 +623,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
               <p className="text-sm text-muted-foreground mb-2">Drag and drop images here, or</p>
               <label className="cursor-pointer">
                 <span className="text-sm font-medium text-blue-600 hover:text-blue-800 underline">browse files</span>
-                <input type="file" multiple accept="image/*" className="hidden" onChange={(e) => { setUploadFiles(prev => [...prev, ...Array.from(e.target.files ?? [])]); e.target.value = ''; }} />
+                <input type="file" multiple accept="image/*" className="sr-only" onChange={(e) => { setUploadFiles(prev => [...prev, ...Array.from(e.target.files ?? [])]); e.target.value = ''; }} />
               </label>
             </div>
             {uploadFiles.length > 0 && (
@@ -1148,7 +1148,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                 type="file"
                 multiple
                 accept="image/*"
-                className="hidden"
+                className="sr-only"
                 onChange={(e) => {
                   const files = Array.from(e.target.files ?? []);
                   setUploadFiles(prev => [...prev, ...files]);

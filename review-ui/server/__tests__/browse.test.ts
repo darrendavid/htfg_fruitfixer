@@ -385,7 +385,7 @@ describe('Browse API', () => {
         .get('/api/browse')
         .set('Cookie', cookie);
       expect(res.status).toBe(200);
-      expect(res.body.plants[0].hero_image).toBe('plants/mango/images/hero.jpg');
+      expect(res.body.plants[0].hero_image).toBe('mango/images/hero.jpg');
     });
 
     it('cross-table search includes plant IDs from Documents, Recipes, OCR, Varieties', async () => {
@@ -638,7 +638,7 @@ describe('Browse API', () => {
         .get('/api/browse/1')
         .set('Cookie', cookie);
       expect(res.status).toBe(200);
-      expect(res.body.plant.hero_image).toBe('plants/mango/images/best.jpg');
+      expect(res.body.plant.hero_image).toBe('mango/images/best.jpg');
     });
 
     it('respects imageLimit and imageOffset parameters', async () => {

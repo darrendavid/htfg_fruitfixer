@@ -313,7 +313,7 @@ export function PlantGridPage() {
                   <p className="text-xs text-muted-foreground">Drag & drop or{' '}
                     <label className="text-blue-600 hover:text-blue-800 underline cursor-pointer">
                       browse
-                      <input type="file" multiple accept="image/*" className="hidden"
+                      <input type="file" multiple accept="image/*" className="sr-only"
                         onChange={e => { setNewFiles(prev => [...prev, ...Array.from(e.target.files ?? [])]); e.target.value = ''; }} />
                     </label>
                   </p>
