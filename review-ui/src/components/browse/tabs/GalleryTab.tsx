@@ -1343,14 +1343,17 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
           {/* Variety selector */}
           <div className="flex items-center gap-2">
-            <label className="text-xs text-muted-foreground shrink-0">Variety:</label>
-            <input
-              type="text"
-              value={uploadVariety}
-              onChange={e => setUploadVariety(e.target.value)}
-              placeholder="(optional)"
-              className="flex-1 h-7 text-xs border rounded px-2 bg-background"
+            <GroupVarietyPicker
+              plantId={plantId}
+              imageIds={[]}
+              onSet={(name) => setUploadVariety(name ?? '')}
             />
+            {uploadVariety && (
+              <Badge variant="secondary" className="text-xs shrink-0">
+                {uploadVariety}
+                <button className="ml-1 text-muted-foreground hover:text-foreground" onClick={() => setUploadVariety('')}>&times;</button>
+              </Badge>
+            )}
           </div>
 
           {uploadProgress && <p className="text-sm text-muted-foreground">{uploadProgress}</p>}
