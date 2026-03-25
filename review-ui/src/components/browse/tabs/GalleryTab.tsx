@@ -922,7 +922,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       {viewMode === 'grid' ? (
         <>
           <div className={GALLERY_GRID_CLASSES[thumbSize]}>
-            {images.map((img, idx) => renderImageThumbnail(img, idx))}
+            {displayImages.map((img, idx) => renderImageThumbnail(img, idx))}
           </div>
 
           {/* Pagination */}
