@@ -780,6 +780,14 @@ router.post('/set-image-variety/:id', requireAdmin, asyncHandler(async (req, res
   res.json({ success: true, variety_name: variety_name || null });
 }));
 
+// ── POST /update-image-caption/:id — Update image caption (admin) ────────────
+router.post('/update-image-caption/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { caption } = req.body ?? {};
+  await nocodb.update('Images', id, { Caption: caption ?? '' });
+  res.json({ success: true });
+}));
+
 // ── POST /rotate-image/:id — Set rotation for an image (admin) ───────────────
 router.post('/rotate-image/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;

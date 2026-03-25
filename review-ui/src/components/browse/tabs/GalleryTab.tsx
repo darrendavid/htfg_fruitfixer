@@ -13,6 +13,53 @@ import type { BrowseImage } from '@/types/browse';
 
 const PAGE_SIZE = 50;
 
+/** Inline editable caption — click to edit, Enter to save, Esc to cancel */
+function EditableCaption({ imageId, caption, onSaved }: { imageId: number; caption: string; onSaved: (c: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(caption);
+
+  const save = async () => {
+    const trimmed = value.trim();
+    try {
+      const res = await fetch(`/api/browse/update-image-caption/${imageId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ caption: trimmed }),
+      });
+      if (res.ok) onSaved(trimmed);
+    } catch { /* error */ }
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => {
+          e.stopPropagation();
+          if (e.key === 'Enter') save();
+          if (e.key === 'Escape') { setValue(caption); setEditing(false); }
+        }}
+        onBlur={save}
+        className="text-sm font-medium w-full border-b border-blue-400 outline-none bg-transparent"
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <p
+      className="text-sm font-medium cursor-pointer hover:text-blue-600 transition-colors"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      title="Click to edit caption"
+    >
+      {caption || <span className="text-muted-foreground italic">Add caption...</span>}
+    </p>
+  );
+}
+
 interface GalleryTabProps {
   plantId: string;
   currentHeroPath?: string;
@@ -955,11 +1002,19 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
               <div className="space-y-2 px-1">
                 {/* Row 1: file info */}
                 <div>
-                  {lightboxImage.Caption && (
-                    <p className="text-sm font-medium">{lightboxImage.Caption}</p>
+                  {isAdmin ? (
+                    <EditableCaption
+                      imageId={lightboxImage.Id}
+                      caption={lightboxImage.Caption ?? ''}
+                      onSaved={(newCaption) => {
+                        setImages(prev => prev.map(i => i.Id === lightboxImage.Id ? { ...i, Caption: newCaption } as any : i));
+                      }}
+                    />
+                  ) : (
+                    lightboxImage.Caption && <p className="text-sm font-medium">{lightboxImage.Caption}</p>
                   )}
                   <p className="text-xs text-muted-foreground font-mono break-all">
-                    {stripParsedPrefix(lightboxImage.File_Path)}
+                    {toRelativeImagePath(lightboxImage.File_Path)}
                   </p>
                   <div className="flex items-center gap-2 flex-wrap mt-0.5">
                     {imageDimensions && (
