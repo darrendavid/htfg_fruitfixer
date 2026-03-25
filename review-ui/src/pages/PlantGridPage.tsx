@@ -302,10 +302,11 @@ export function PlantGridPage() {
                 <label className="text-sm font-medium">Initial Photos (optional)</label>
                 <div
                   className="border-2 border-dashed rounded-lg p-4 text-center border-muted-foreground/30 hover:border-muted-foreground/50 transition-colors"
-                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; }}
+                  onDragEnter={e => { e.preventDefault(); e.stopPropagation(); }}
                   onDrop={e => {
                     e.preventDefault(); e.stopPropagation();
-                    const files = Array.from(e.dataTransfer.files).filter(f => /\.(jpe?g|png|gif|webp)$/i.test(f.name));
+                    const files = Array.from(e.dataTransfer.files);
                     setNewFiles(prev => [...prev, ...files]);
                   }}
                 >

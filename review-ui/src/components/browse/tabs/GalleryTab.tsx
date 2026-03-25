@@ -1127,17 +1127,32 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
       {/* Upload dialog */}
       <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); } }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md"
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; }}
+          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={(e) => {
+            e.preventDefault(); e.stopPropagation();
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 0) setUploadFiles(prev => [...prev, ...files]);
+          }}
+        >
           <DialogTitle>Add Images to {plantId}</DialogTitle>
           <div
             className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
               uploadFiles.length > 0 ? 'border-blue-400 bg-blue-50' : 'border-muted-foreground/30 hover:border-muted-foreground/50'
             }`}
-            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; }}
+            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
             onDrop={(e) => {
               e.preventDefault(); e.stopPropagation();
               const files = Array.from(e.dataTransfer.files).filter(f => /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f.name));
-              setUploadFiles(prev => [...prev, ...files]);
+              if (files.length === 0) {
+                // If filter removed all files, try without filter (user might be dragging non-standard extensions)
+                const allFiles = Array.from(e.dataTransfer.files);
+                if (allFiles.length > 0) setUploadFiles(prev => [...prev, ...allFiles]);
+              } else {
+                setUploadFiles(prev => [...prev, ...files]);
+              }
             }}
           >
             <Upload className="size-8 mx-auto mb-2 text-muted-foreground" />
