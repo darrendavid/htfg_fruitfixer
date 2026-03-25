@@ -114,7 +114,7 @@ router.get('/', asyncHandler(async (req, res) => {
     // Check for user-selected hero
     const heroEntry = heroMap.get(slug);
     if (heroEntry) {
-      plant.hero_image = heroEntry.path.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '');
+      plant.hero_image = heroEntry.path.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
       if (heroEntry.rotation) plant.hero_rotation = heroEntry.rotation;
       return plant;
     }
@@ -122,10 +122,10 @@ router.get('/', asyncHandler(async (req, res) => {
     // Fall back to first image on disk
     if (plant.Image_Count > 0) {
       try {
-        const plantDir = path.join(config.IMAGE_MOUNT_PATH, 'plants', slug, 'images');
+        const plantDir = path.join(config.IMAGE_MOUNT_PATH, slug, 'images');
         const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
         if (files.length > 0) {
-          plant.hero_image = `plants/${slug}/images/${files[0]}`;
+          plant.hero_image = `${slug}/images/${files[0]}`;
         }
       } catch { /* no directory */ }
     }
@@ -354,14 +354,14 @@ router.get('/:id', asyncHandler(async (req, res) => {
   if (plantSlug) {
     const heroRow = db.prepare(`SELECT file_path, rotation FROM hero_images WHERE plant_id = ?`).get(plantSlug) as { file_path: string; rotation: number } | undefined;
     if (heroRow) {
-      plant.hero_image = heroRow.file_path.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '');
+      plant.hero_image = heroRow.file_path.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
       if (heroRow.rotation) plant.hero_rotation = heroRow.rotation;
     } else {
       try {
-        const plantDir = path.join(config.IMAGE_MOUNT_PATH, 'plants', plantSlug, 'images');
+        const plantDir = path.join(config.IMAGE_MOUNT_PATH, plantSlug, 'images');
         const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
         if (files.length > 0) {
-          plant.hero_image = `plants/${plantSlug}/images/${files[0]}`;
+          plant.hero_image = `${plantSlug}/images/${files[0]}`;
         }
       } catch { /* no directory */ }
     }

@@ -15,6 +15,7 @@ export function stripParsedPrefix(filePath: string) {
     .replace(/^content\/pass_01\/assigned\//, '')
     .replace(/^content\/parsed\//, '')
     .replace(/^content\//, '')
+    .replace(/^plants\//, '')
     .replace(/#/g, '%23');
 }
 
