@@ -119,16 +119,14 @@ router.get('/', asyncHandler(async (req, res) => {
       return plant;
     }
 
-    // Fall back to first image on disk
-    if (plant.Image_Count > 0) {
-      try {
-        const plantDir = path.join(config.IMAGE_MOUNT_PATH, slug, 'images');
-        const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
-        if (files.length > 0) {
-          plant.hero_image = `${slug}/images/${files[0]}`;
-        }
-      } catch { /* no directory */ }
-    }
+    // Fall back to first image on disk (don't rely on Image_Count which may be stale)
+    try {
+      const plantDir = path.join(config.IMAGE_MOUNT_PATH, slug, 'images');
+      const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
+      if (files.length > 0) {
+        plant.hero_image = `${slug}/images/${files[0]}`;
+      }
+    } catch { /* no directory */ }
     return plant;
   });
 
@@ -909,6 +907,17 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
     });
 
     results.push({ filename: baseName, id: record.Id });
+  }
+
+  // Auto-set first uploaded image as hero if plant has no hero yet
+  if (results.length > 0) {
+    const existing = db.prepare('SELECT plant_id FROM hero_images WHERE plant_id = ?').get(plantId);
+    if (!existing) {
+      const firstFile = results[0];
+      const firstPath = `content/${path.relative(contentRoot, path.join(plantDir, firstFile.filename)).split(path.sep).join('/')}`;
+      db.prepare('INSERT OR REPLACE INTO hero_images (plant_id, image_id, file_path, rotation) VALUES (?, ?, ?, 0)')
+        .run(plantId, firstFile.id, firstPath);
+    }
   }
 
   res.json({ success: true, uploaded: results.length, files: results });
