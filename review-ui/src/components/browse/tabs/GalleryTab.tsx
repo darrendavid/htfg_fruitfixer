@@ -1012,11 +1012,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
       {/* Lightbox */}
       <Dialog open={lightboxIndex !== null} onOpenChange={(open) => { if (!open) closeLightbox(); }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-2 flex flex-col overflow-hidden" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-4xl p-2 flex flex-col" style={{ maxHeight: '90dvh' }} onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogTitle className="sr-only">{lightboxImage?.Caption ?? 'Image preview'}</DialogTitle>
           {lightboxImage && (
-            <div className="flex flex-col gap-2 min-h-0">
-              <div className="relative flex-1 min-h-0">
+            <div className="flex flex-col min-h-0 flex-1">
+              {/* Image area — shrinks to fit available space */}
+              <div className="relative flex-1 min-h-0 flex items-center justify-center">
                 {/* Left arrow */}
                 {lightboxIndex !== null && lightboxIndex > 0 && (
                   <button onClick={(e) => { e.stopPropagation(); goPrev(); }}
@@ -1030,30 +1031,28 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   >&#8250;</button>
                 )}
 
-                <div className="relative flex items-center justify-center overflow-hidden" style={{ maxHeight: '55vh' }}>
-                  <img
-                    ref={lightboxImgRef}
-                    src={`${buildImageUrl(lightboxImage.File_Path)}`}
-                    alt={lightboxImage.Caption ?? ''}
-                    className="object-contain rounded"
-                    style={{
-                      maxWidth: '100%',
-                      maxHeight: '55vh',
-                      ...rotationStyle((lightboxImage as any).Rotation),
-                      // For 90/270 rotation, constrain by swapping max dimensions
-                      ...(((((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 90 ||
-                           (((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 270)
-                        ? { maxWidth: '55vh', maxHeight: '100%' }
-                        : {}),
-                    }}
-                    onLoad={handleImageLoad}
-                  />
-                  {isHero(lightboxImage) && <GoldStar />}
-                </div>
+                <img
+                  ref={lightboxImgRef}
+                  src={`${buildImageUrl(lightboxImage.File_Path)}`}
+                  alt={lightboxImage.Caption ?? ''}
+                  className="object-contain rounded"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    ...rotationStyle((lightboxImage as any).Rotation),
+                    // For 90/270 rotation, constrain by swapping max dimensions
+                    ...(((((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 90 ||
+                         (((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 270)
+                      ? { maxWidth: '100%', maxHeight: '100%' }
+                      : {}),
+                  }}
+                  onLoad={handleImageLoad}
+                />
+                {isHero(lightboxImage) && <GoldStar />}
               </div>
 
-              {/* Info section — stacked rows */}
-              <div className="space-y-2 px-1">
+              {/* Info section — fixed at bottom, scrollable if needed */}
+              <div className="flex-shrink-0 space-y-2 px-1 pt-2 max-h-[40dvh] overflow-y-auto">
                 {/* Row 1: file info */}
                 <div>
                   {isAdmin ? (
