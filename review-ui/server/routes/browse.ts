@@ -254,7 +254,52 @@ router.get('/:plantId/attachments', asyncHandler(async (req, res) => {
   res.json(result.list);
 }));
 
-// ── POST /:plantId/attachments — Create attachment (admin) ───────────────────
+// ── POST /upload-attachment/:plantId — Upload attachment file (admin) ─────────
+const attachUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+router.post('/upload-attachment/:plantId', requireAdmin, attachUpload.single('file'), asyncHandler(async (req, res) => {
+  const { plantId } = req.params;
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: 'No file uploaded' });
+
+  const attachDir = path.join(config.IMAGE_MOUNT_PATH, plantId, 'attachments');
+  if (!existsSync(attachDir)) mkdirSync(attachDir, { recursive: true });
+
+  let baseName = file.originalname.replace(/[<>:"/\\|?*]/g, '_');
+  let destPath = path.join(attachDir, baseName);
+  if (existsSync(destPath)) {
+    const ext = path.extname(baseName);
+    const stem = baseName.slice(0, -ext.length || undefined);
+    let counter = 1;
+    while (existsSync(destPath)) {
+      baseName = `${stem}_${counter}${ext}`;
+      destPath = path.join(attachDir, baseName);
+      counter++;
+    }
+  }
+
+  const { writeFileSync } = await import('fs');
+  writeFileSync(destPath, file.buffer);
+
+  const contentRoot = path.resolve(config.IMAGE_MOUNT_PATH, '..');
+  const relPath = path.relative(contentRoot, destPath).split(path.sep).join('/');
+  const ext = path.extname(baseName).replace('.', '').toLowerCase();
+  const title = req.body.title || baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' ');
+
+  const record = await nocodb.create('Attachments', {
+    Title: title,
+    File_Path: `content/${relPath}`,
+    File_Name: baseName,
+    File_Type: ext || 'bin',
+    File_Size: file.size,
+    Plant_Ids: JSON.stringify([plantId]),
+    Description: req.body.description || null,
+  });
+
+  const full = await nocodb.get('Attachments', record.Id);
+  res.status(201).json(full);
+}));
+
+// ── POST /:plantId/attachments — Create attachment metadata (admin) ──────────
 router.post('/:plantId/attachments', requireAdmin, asyncHandler(async (req, res) => {
   const { plantId } = req.params;
   const { Title, File_Path, File_Name, File_Type, File_Size, Description } = req.body;

@@ -46,6 +46,10 @@ export function AttachmentsTab({ plantId, attachments: initialAttachments, editM
   const [editDescription, setEditDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadDescription, setUploadDescription] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   const [newAttachment, setNewAttachment] = useState({
     Title: '',
     File_Path: '',
@@ -149,16 +153,77 @@ export function AttachmentsTab({ plantId, attachments: initialAttachments, editM
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{attachments.length} attachment{attachments.length !== 1 ? 's' : ''}</p>
-        {isAdmin && editMode && (
+        {isAdmin && (
           <Button variant="outline" size="sm" onClick={() => setShowAddForm(!showAddForm)}>
-            {showAddForm ? 'Cancel' : '+ Add Attachment'}
+            {showAddForm ? 'Cancel' : '+ Upload Attachment'}
           </Button>
         )}
       </div>
 
-      <p className="text-xs text-muted-foreground italic">
-        File uploads will be available after migration to final deployment.
-      </p>
+      {/* Upload form */}
+      {showAddForm && isAdmin && (
+        <div className="border-2 border-dashed rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <label className="cursor-pointer shrink-0">
+              <Button variant="outline" size="sm" asChild>
+                <span>{uploadFile ? 'Change File' : 'Choose File'}</span>
+              </Button>
+              <input type="file" className="sr-only" onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setUploadFile(f);
+                  if (!uploadTitle) setUploadTitle(f.name.replace(/\.\w+$/, '').replace(/[_-]/g, ' '));
+                }
+                e.target.value = '';
+              }} />
+            </label>
+            {uploadFile && <span className="text-xs text-muted-foreground truncate">{uploadFile.name} ({(uploadFile.size / 1024).toFixed(0)} KB)</span>}
+          </div>
+          <input
+            type="text"
+            value={uploadTitle}
+            onChange={e => setUploadTitle(e.target.value)}
+            placeholder="Title"
+            className="w-full border rounded px-2 py-1 text-sm bg-background"
+          />
+          <input
+            type="text"
+            value={uploadDescription}
+            onChange={e => setUploadDescription(e.target.value)}
+            placeholder="Description (optional)"
+            className="w-full border rounded px-2 py-1 text-sm bg-background"
+          />
+          <div className="flex gap-2">
+            <Button size="sm" disabled={!uploadFile || isUploading} onClick={async () => {
+              if (!uploadFile) return;
+              setIsUploading(true);
+              try {
+                const formData = new FormData();
+                formData.append('file', uploadFile);
+                formData.append('title', uploadTitle);
+                formData.append('description', uploadDescription);
+                const res = await fetch(`/api/browse/upload-attachment/${plantId}`, {
+                  method: 'POST', credentials: 'include', body: formData,
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  setAttachments(prev => [...prev, data]);
+                  setUploadFile(null);
+                  setUploadTitle('');
+                  setUploadDescription('');
+                  setShowAddForm(false);
+                }
+              } catch { /* error */ }
+              finally { setIsUploading(false); }
+            }}>
+              {isUploading ? 'Uploading...' : 'Upload'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => { setShowAddForm(false); setUploadFile(null); setUploadTitle(''); setUploadDescription(''); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Add form */}
       {showAddForm && isAdmin && (
