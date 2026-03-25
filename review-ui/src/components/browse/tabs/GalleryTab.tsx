@@ -366,7 +366,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       result = result.filter(img => {
         const filename = img.File_Path.split('/').pop()?.toLowerCase() ?? '';
         const caption = (img.Caption ?? '').toLowerCase();
-        return filename.includes(q) || caption.includes(q);
+        const variety = ((img as any).Variety_Name ?? '').toLowerCase();
+        return filename.includes(q) || caption.includes(q) || variety.includes(q);
       });
     }
     if (sortOrder === 'newest') {
@@ -877,7 +878,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             type="text"
             value={filenameFilter}
             onChange={e => setFilenameFilter(e.target.value)}
-            placeholder="Filter by filename..."
+            placeholder="Filter by name, caption, variety..."
             className="h-7 text-xs border rounded px-2 w-36"
           />
           <select
