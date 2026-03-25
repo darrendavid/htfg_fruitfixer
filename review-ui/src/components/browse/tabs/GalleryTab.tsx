@@ -100,6 +100,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
+  const [uploadVariety, setUploadVariety] = useState('');
   const [thumbSize, setThumbSize] = useThumbSize();
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const lightboxImgRef = useRef<HTMLImageElement>(null);
@@ -645,6 +646,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     try {
       const formData = new FormData();
       uploadFiles.forEach(f => formData.append('images', f));
+      if (uploadVariety) formData.append('variety_name', uploadVariety);
       const res = await fetch(`/api/browse/upload-images/${plantId}`, {
         method: 'POST',
         credentials: 'include',
@@ -669,7 +671,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     } finally {
       setIsUploading(false);
     }
-  }, [uploadFiles, plantId, fetchImages]);
+  }, [uploadFiles, uploadVariety, plantId, fetchImages]);
 
   if (isLoading) {
     return (
@@ -691,7 +693,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           </Button>
         )}
         {/* Upload dialog needed here too */}
-        <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); } }}>
+        <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(''); } }}>
           <DialogContent className="max-w-md">
             <DialogTitle>Add Images to {plantId}</DialogTitle>
             <div
@@ -1273,7 +1275,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       </Dialog>
 
       {/* Upload dialog */}
-      <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); } }}>
+      <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(''); } }}>
         <DialogContent className="max-w-md"
           onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; }}
           onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -1339,10 +1341,22 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             </div>
           )}
 
+          {/* Variety selector */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground shrink-0">Variety:</label>
+            <input
+              type="text"
+              value={uploadVariety}
+              onChange={e => setUploadVariety(e.target.value)}
+              placeholder="(optional)"
+              className="flex-1 h-7 text-xs border rounded px-2 bg-background"
+            />
+          </div>
+
           {uploadProgress && <p className="text-sm text-muted-foreground">{uploadProgress}</p>}
 
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); }}>
+            <Button variant="outline" onClick={() => { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(''); }}>
               Cancel
             </Button>
             <Button onClick={handleUpload} disabled={isUploading || uploadFiles.length === 0}>

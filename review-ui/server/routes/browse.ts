@@ -1004,10 +1004,12 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
     const relFromContent = path.relative(contentRoot, destPath).split(path.sep).join('/');
     const filePath = `content/${relFromContent}`;
     const relDir = path.relative(contentRoot, plantDir).split(path.sep).join('/');
+    const varietyName = req.body?.variety_name || null;
     const record = await nocodb.create('Images', {
       File_Path: filePath,
       Plant_Id: plantId,
       Caption: baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' '),
+      Variety_Name: varietyName,
       Attribution: config.IMAGES_AUTO_ATTRIBUTION || null,
       Source_Directory: relDir,
       Size_Bytes: file.size,
