@@ -1089,6 +1089,15 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                       </span>
                     )}
                   </div>
+                  {/* Attribution & License */}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {(lightboxImage as any).Attribution && (
+                      <span>© {(lightboxImage as any).Attribution}</span>
+                    )}
+                    {(lightboxImage as any).License && (
+                      <span>({(lightboxImage as any).License})</span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Row 2: plant reassign + variety picker */}
