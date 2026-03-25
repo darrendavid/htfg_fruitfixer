@@ -932,6 +932,7 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
 
   const plantDir = path.join(config.IMAGE_MOUNT_PATH, plantId, 'images');
   if (!existsSync(plantDir)) mkdirSync(plantDir, { recursive: true });
+  const contentRoot = path.resolve(config.IMAGE_MOUNT_PATH, '..');
 
   const results: Array<{ filename: string; id: number }> = [];
 
@@ -953,9 +954,6 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
     // Write file to disk
     const { writeFileSync } = await import('fs');
     writeFileSync(destPath, file.buffer);
-
-    // Create NocoDB record — derive path relative to content/ from actual save location
-    const contentRoot = path.resolve(config.IMAGE_MOUNT_PATH, '..');
     const relFromContent = path.relative(contentRoot, destPath).split(path.sep).join('/');
     const filePath = `content/${relFromContent}`;
     const relDir = path.relative(contentRoot, plantDir).split(path.sep).join('/');
