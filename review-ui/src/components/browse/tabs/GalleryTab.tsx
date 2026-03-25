@@ -85,6 +85,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null);
   const [dimMap, setDimMap] = useState<Record<number, string>>({});
   const [showDeleted, setShowDeleted] = useState(false);
+  const [filenameFilter, setFilenameFilter] = useState('');
+  const [sortOrder, setSortOrder] = useState<'default' | 'newest' | 'oldest'>('default');
   const [visibleGroupCount, setVisibleGroupCount] = useState(20);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
@@ -346,12 +348,31 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   };
 
   // Grouped view data — must be before any early returns (Rules of Hooks)
+  // Filter and sort images
+  const filteredImages = useMemo(() => {
+    let result = images;
+    if (filenameFilter) {
+      const q = filenameFilter.toLowerCase();
+      result = result.filter(img => {
+        const filename = img.File_Path.split('/').pop()?.toLowerCase() ?? '';
+        const caption = (img.Caption ?? '').toLowerCase();
+        return filename.includes(q) || caption.includes(q);
+      });
+    }
+    if (sortOrder === 'newest') {
+      result = [...result].sort((a, b) => (b as any).CreatedAt?.localeCompare((a as any).CreatedAt ?? '') ?? 0);
+    } else if (sortOrder === 'oldest') {
+      result = [...result].sort((a, b) => (a as any).CreatedAt?.localeCompare((b as any).CreatedAt ?? '') ?? 0);
+    }
+    return result;
+  }, [images, filenameFilter, sortOrder]);
+
   const groupedImages = useMemo(() => {
     if (viewMode === 'grid') return [];
 
     if (viewMode === 'grouped') {
       const groups: Record<string, BrowseImage[]> = {};
-      for (const img of images) {
+      for (const img of filteredImages) {
         const path = stripParsedPrefix(img.File_Path);
         const dir = path.substring(0, path.lastIndexOf('/'));
         const label = dir.includes('images/') ? dir.substring(dir.indexOf('images/') + 7) : dir;
@@ -363,7 +384,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
     if (viewMode === 'variety') {
       const groups: Record<string, BrowseImage[]> = {};
-      for (const img of images) {
+      for (const img of filteredImages) {
         const variety = (img as any).Variety_Name || '(unassigned)';
         if (!groups[variety]) groups[variety] = [];
         groups[variety].push(img);
@@ -401,7 +422,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         }
 
         const clusters: Record<number, BrowseImage[]> = {};
-        for (const img of images) {
+        for (const img of filteredImages) {
           const root = find(img.Id);
           if (!clusters[root]) clusters[root] = [];
           clusters[root].push(img);
@@ -423,7 +444,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
       // Fallback: group by filename stem
       const groups: Record<string, BrowseImage[]> = {};
-      for (const img of images) {
+      for (const img of filteredImages) {
         const filename = img.File_Path.split('/').pop() || '';
         const stem = filename.replace(/\.\w+$/, '').toLowerCase()
           .replace(/[\s_-]+/g, ' ').replace(/\bcopy\b/g, '').replace(/\d+$/, '').trim();
@@ -445,13 +466,13 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     }
 
     return [];
-  }, [images, viewMode]);
+  }, [filteredImages, viewMode]);
 
   // Display order: in grouped modes, flatten groupedImages to get visual order
   const displayImages = useMemo(() => {
-    if (viewMode === 'grid') return images;
+    if (viewMode === 'grid') return filteredImages;
     return groupedImages.flatMap(([, imgs]) => imgs);
-  }, [viewMode, images, groupedImages]);
+  }, [viewMode, filteredImages, groupedImages]);
 
   // Keep refs in sync for callbacks that can't access the memo directly
   displayImagesLenRef.current = displayImages.length;
@@ -838,12 +859,28 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
-          <p className="text-sm text-muted-foreground">{totalRows} images total</p>
-          <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer ml-2">
+          <p className="text-sm text-muted-foreground shrink-0">{filteredImages.length}{filteredImages.length !== totalRows ? ` / ${totalRows}` : ''} images</p>
+          <input
+            type="text"
+            value={filenameFilter}
+            onChange={e => setFilenameFilter(e.target.value)}
+            placeholder="Filter by filename..."
+            className="h-7 text-xs border rounded px-2 w-36"
+          />
+          <select
+            value={sortOrder}
+            onChange={e => setSortOrder(e.target.value as any)}
+            className="h-7 text-xs border rounded px-1"
+          >
+            <option value="default">Default</option>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+          <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
             <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} className="rounded" />
-            Show hidden
+            Hidden
           </label>
         </div>
         <div className="flex gap-1">
