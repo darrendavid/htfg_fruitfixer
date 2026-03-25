@@ -159,8 +159,10 @@ export function PlantDetailPage() {
               <TabsContent value="overview">
                 <OverviewTab
                   plant={detail.plant}
+                  imageCount={detail.images?.pageInfo?.totalRows ?? detail.images?.list?.length ?? 0}
                   varietyCount={detail.varieties.length}
                   documentCount={detail.documents.length}
+                  attachmentCount={detail.attachments?.length ?? 0}
                   recipeCount={detail.recipes.length}
                   editMode={editMode}
                   onPlantUpdated={handlePlantUpdated}

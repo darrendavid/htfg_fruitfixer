@@ -18,6 +18,9 @@ function EditableCaption({ imageId, caption, onSaved }: { imageId: number; capti
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(caption);
 
+  // Sync value when caption prop changes (e.g. navigating between images)
+  useEffect(() => { setValue(caption); }, [caption]);
+
   const save = async () => {
     const trimmed = value.trim();
     try {

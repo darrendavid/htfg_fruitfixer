@@ -30,8 +30,10 @@ function parseAliases(raw: string | null): string[] {
 
 interface OverviewTabProps {
   plant: BrowsePlant;
+  imageCount: number;
   varietyCount: number;
   documentCount: number;
+  attachmentCount: number;
   recipeCount: number;
   editMode: boolean;
   onPlantUpdated: (plant: BrowsePlant) => void;
@@ -39,7 +41,7 @@ interface OverviewTabProps {
   saveRef?: MutableRefObject<(() => Promise<void>) | null>;
 }
 
-export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, editMode, onPlantUpdated, onSlugChanged, saveRef }: OverviewTabProps) {
+export function OverviewTab({ plant, imageCount, varietyCount, documentCount, attachmentCount, recipeCount, editMode, onPlantUpdated, onSlugChanged, saveRef }: OverviewTabProps) {
   const harvestMonths = parseHarvestMonths(plant.Harvest_Months);
   const aliases = parseAliases(plant.Aliases);
   const plantSlug = (plant as any).Id1 || plant.Id;
@@ -339,10 +341,11 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
       </div>{/* end two-column layout */}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatBox label="Images" value={plant.Image_Count} />
+      <div className="grid grid-cols-5 gap-3">
+        <StatBox label="Images" value={imageCount} />
         <StatBox label="Varieties" value={varietyCount} />
         <StatBox label="Documents" value={documentCount} />
+        <StatBox label="Attachments" value={attachmentCount} />
         <StatBox label="Recipes" value={recipeCount} />
       </div>
     </div>
