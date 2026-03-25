@@ -1212,6 +1212,38 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     >
                       Attach (a)
                     </Button>
+                    <label className="cursor-pointer">
+                      <Button variant="outline" size="sm" asChild>
+                        <span>Replace</span>
+                      </Button>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file || !lightboxImage) return;
+                          e.target.value = '';
+                          const formData = new FormData();
+                          formData.append('image', file);
+                          try {
+                            const res = await fetch(`/api/browse/replace-image/${lightboxImage.Id}`, {
+                              method: 'POST',
+                              credentials: 'include',
+                              body: formData,
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              // Replace old image with new in local state
+                              setImages(prev => prev.map(i =>
+                                i.Id === lightboxImage.Id ? data.newImage : i
+                              ));
+                              setImageDimensions(null);
+                            }
+                          } catch { /* error */ }
+                        }}
+                      />
+                    </label>
                   </div>
                 )}
               </div>

@@ -786,6 +786,69 @@ router.post('/update-image-caption/:id', requireAdmin, asyncHandler(async (req, 
   res.json({ success: true });
 }));
 
+// ── POST /replace-image/:id — Replace image with new upload (admin) ──────────
+const replaceUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+router.post('/replace-image/:id', requireAdmin, replaceUpload.single('image'), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: 'No file uploaded' });
+
+  // Get the old image record
+  const oldImage = await nocodb.get('Images', id);
+  if (!oldImage) return res.status(404).json({ error: 'Image not found' });
+
+  const plantId = oldImage.Plant_Id;
+  const plantDir = path.join(config.IMAGE_MOUNT_PATH, plantId, 'images');
+  if (!existsSync(plantDir)) mkdirSync(plantDir, { recursive: true });
+
+  // Generate filename (avoid conflicts)
+  let baseName = file.originalname.replace(/[<>:"/\\|?*]/g, '_');
+  let destPath = path.join(plantDir, baseName);
+  if (existsSync(destPath)) {
+    const ext = path.extname(baseName);
+    const stem = baseName.slice(0, -ext.length || undefined);
+    let counter = 1;
+    while (existsSync(destPath)) {
+      baseName = `${stem}_${counter}${ext}`;
+      destPath = path.join(plantDir, baseName);
+      counter++;
+    }
+  }
+
+  // Write file
+  const { writeFileSync } = await import('fs');
+  writeFileSync(destPath, file.buffer);
+
+  // Create new NocoDB record with same caption/variety
+  const contentRoot = path.resolve(config.IMAGE_MOUNT_PATH, '..');
+  const relFromContent = path.relative(contentRoot, destPath).split(path.sep).join('/');
+  const filePath = `content/${relFromContent}`;
+  const newRecord = await nocodb.create('Images', {
+    File_Path: filePath,
+    Plant_Id: plantId,
+    Caption: oldImage.Caption || baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' '),
+    Variety_Name: oldImage.Variety_Name || null,
+    Source_Directory: path.relative(contentRoot, plantDir).split(path.sep).join('/'),
+    Size_Bytes: file.size,
+    Status: 'assigned',
+    Excluded: false,
+  });
+
+  // Mark old image as hidden
+  await nocodb.update('Images', id, { Excluded: true, Status: 'hidden' });
+
+  // If old image was hero, update hero to new image
+  const heroRow = db.prepare('SELECT plant_id FROM hero_images WHERE image_id = ?').get(id) as any;
+  if (heroRow) {
+    db.prepare('UPDATE hero_images SET image_id = ?, file_path = ?, rotation = 0 WHERE plant_id = ?')
+      .run(newRecord.Id, filePath, plantId);
+  }
+
+  // Fetch full new record
+  const full = await nocodb.get('Images', newRecord.Id);
+  res.json({ success: true, newImage: full, oldImageId: id });
+}));
+
 // ── POST /rotate-image/:id — Set rotation for an image (admin) ───────────────
 router.post('/rotate-image/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
