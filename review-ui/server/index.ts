@@ -16,6 +16,7 @@ import leaderboardRouter from './routes/leaderboard.js';
 import meRouter from './routes/me.js';
 import ocrReviewRouter from './routes/ocr-review.js';
 import browseRouter from './routes/browse.js';
+import matchesRouter from './routes/matches.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -59,6 +60,12 @@ app.use('/api/leaderboard', requireAuth, leaderboardRouter);
 app.use('/api/me', requireAuth, meRouter);
 app.use('/api/ocr-review', requireAuth, ocrReviewRouter);
 app.use('/api/browse', requireAuth, browseRouter);
+app.use('/api/matches', requireAuth, matchesRouter);
+
+// Serve unassigned images for match review UI
+const unassignedPath = path.resolve(config.IMAGE_MOUNT_PATH, '..', 'unassigned');
+app.use('/unassigned-images', requireAuth, express.static(unassignedPath),
+  (_req: Request, res: Response) => res.sendStatus(404));
 
 // ── Production: serve built client ───────────────────────────────────────────
 if (process.env.NODE_ENV === 'production') {

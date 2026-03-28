@@ -21,6 +21,7 @@ export default defineConfig({
       '/images': 'http://localhost:3001',
       '/thumbnails': 'http://localhost:3001',
       '/content-files': 'http://localhost:3001',
+      '/unassigned-images': 'http://localhost:3001',
     },
   },
 })
