@@ -5,7 +5,9 @@ import { AuthGuard } from '@/components/auth/AuthGuard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 import { OverviewTab } from '@/components/browse/tabs/OverviewTab';
 import { GalleryTab } from '@/components/browse/tabs/GalleryTab';
 import { VarietiesTab } from '@/components/browse/tabs/VarietiesTab';
@@ -25,6 +27,31 @@ export function PlantDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
   const overviewSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeletePlant = useCallback(async () => {
+    if (!id) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/browse/plant/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        toast.success(`Deleted "${detail?.plant?.Canonical_Name ?? id}"`);
+        navigate('/plants', { replace: true });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || 'Failed to delete');
+      }
+    } catch {
+      toast.error('Failed to delete');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }, [id, detail, navigate]);
 
   const fetchDetail = useCallback(async () => {
     if (!id) return;
@@ -89,18 +116,29 @@ export function PlantDetailPage() {
                 &larr; Back
               </Button>
               {isAdmin && (
-                <Button
-                  variant={editMode ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={async () => {
-                    if (editMode && overviewSaveRef.current) {
-                      await overviewSaveRef.current();
-                    }
-                    setEditMode(!editMode);
-                  }}
-                >
-                  {editMode ? 'Save' : 'Edit'}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant={editMode ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={async () => {
+                      if (editMode && overviewSaveRef.current) {
+                        await overviewSaveRef.current();
+                      }
+                      setEditMode(!editMode);
+                    }}
+                  >
+                    {editMode ? 'Save' : 'Edit'}
+                  </Button>
+                  {editMode && (
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setShowDeleteConfirm(true)}
+                    >
+                      Delete Plant
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -121,8 +159,10 @@ export function PlantDetailPage() {
               <TabsContent value="overview">
                 <OverviewTab
                   plant={detail.plant}
+                  imageCount={detail.images?.pageInfo?.totalRows ?? detail.images?.list?.length ?? 0}
                   varietyCount={detail.varieties.length}
                   documentCount={detail.documents.length}
+                  attachmentCount={detail.attachments?.length ?? 0}
                   recipeCount={detail.recipes.length}
                   editMode={editMode}
                   onPlantUpdated={handlePlantUpdated}
@@ -175,7 +215,11 @@ export function PlantDetailPage() {
               </TabsContent>
 
               <TabsContent value="recipes">
-                <RecipesTab recipes={detail.recipes} />
+                <RecipesTab
+                  plantId={(detail.plant as any).Id1 || detail.plant.Id}
+                  recipes={detail.recipes}
+                  onRecipesChanged={(recipes) => setDetail(prev => prev ? { ...prev, recipes } : prev)}
+                />
               </TabsContent>
 
               <TabsContent value="ocr">
@@ -202,6 +246,21 @@ export function PlantDetailPage() {
             </Button>
           </div>
         )}
+        {/* Delete confirmation dialog */}
+        <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <DialogContent className="max-w-sm">
+            <DialogTitle>Delete Plant</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Are you sure you want to delete <strong>{detail?.plant?.Canonical_Name}</strong>? This will remove all associated varieties, images, nutritional info, and growing notes. Documents and recipes will have this plant removed from their associations.
+            </p>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={handleDeletePlant} disabled={isDeleting}>
+                {isDeleting ? 'Deleting...' : 'Delete Permanently'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </AppShell>
     </AuthGuard>
   );

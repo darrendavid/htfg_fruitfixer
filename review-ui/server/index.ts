@@ -16,6 +16,7 @@ import leaderboardRouter from './routes/leaderboard.js';
 import meRouter from './routes/me.js';
 import ocrReviewRouter from './routes/ocr-review.js';
 import browseRouter from './routes/browse.js';
+import matchesRouter from './routes/matches.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,7 +45,8 @@ app.use('/images', requireAuth, express.static(config.IMAGE_MOUNT_PATH),
 app.use('/thumbnails', requireAuth, express.static(config.THUMBNAILS_PATH),
   (_req: Request, res: Response) => res.sendStatus(404));
 // Serve source content files for OCR image references (content/source/, content/website/)
-const contentRoot = config.CONTENT_ROOT || path.resolve(config.IMAGE_MOUNT_PATH, '..');
+// CONTENT_ROOT should point to the content/ directory (parent of source/, parsed/, pass_01/)
+const contentRoot = config.CONTENT_ROOT || path.resolve(config.IMAGE_MOUNT_PATH, '..', '..');
 app.use('/content-files', requireAuth, express.static(contentRoot),
   (_req: Request, res: Response) => res.sendStatus(404));
 
@@ -58,6 +60,12 @@ app.use('/api/leaderboard', requireAuth, leaderboardRouter);
 app.use('/api/me', requireAuth, meRouter);
 app.use('/api/ocr-review', requireAuth, ocrReviewRouter);
 app.use('/api/browse', requireAuth, browseRouter);
+app.use('/api/matches', requireAuth, matchesRouter);
+
+// Serve unassigned images for match review UI
+const unassignedPath = path.resolve(config.IMAGE_MOUNT_PATH, '..', 'unassigned');
+app.use('/unassigned-images', requireAuth, express.static(unassignedPath),
+  (_req: Request, res: Response) => res.sendStatus(404));
 
 // ── Production: serve built client ───────────────────────────────────────────
 if (process.env.NODE_ENV === 'production') {

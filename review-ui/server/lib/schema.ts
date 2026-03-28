@@ -133,6 +133,7 @@ export const SCHEMA_SQL = `
     plant_id    TEXT PRIMARY KEY,
     image_id    INTEGER NOT NULL,
     file_path   TEXT NOT NULL,
+    rotation    INTEGER NOT NULL DEFAULT 0,
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `;

@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import * as dal from '../lib/dal.js';
 import { importProgress, runImport, repairPaths } from '../scripts/import.js';
+import { nocodb } from '../lib/nocodb.js';
+import db from '../lib/db.js';
 
 const router = Router();
 // Note: requireAdmin is already applied at the router level in server/index.ts
@@ -81,6 +83,59 @@ router.post('/repair-paths', (_req, res) => {
 router.get('/import-status', (_req, res) => {
   const counts = dal.getImportCounts();
   res.json({ ...importProgress, counts });
+});
+
+// ── GET /api/admin/export — Download full database as JSON ───────────────────
+router.get('/export', async (_req, res) => {
+  try {
+    const tables = nocodb.getTableNames();
+    const data: Record<string, any[]> = {};
+
+    for (const table of tables) {
+      const all: any[] = [];
+      let offset = 0;
+      while (true) {
+        const result = await nocodb.list(table, { limit: 200, offset });
+        all.push(...result.list);
+        if (result.pageInfo?.isLastPage || result.list.length === 0) break;
+        offset += 200;
+      }
+      data[table] = all;
+    }
+
+    // Also export local SQLite tables
+    data._sqlite_hero_images = db.prepare('SELECT * FROM hero_images').all();
+    data._sqlite_staff_notes = db.prepare('SELECT * FROM staff_notes').all();
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="htfg-export-${timestamp}.json"`);
+    res.json({
+      exported_at: new Date().toISOString(),
+      tables: Object.keys(data).map(t => ({ name: t, count: data[t].length })),
+      data,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Export failed' });
+  }
+});
+
+// ── POST /api/admin/import — Restore database from exported JSON ────────────
+router.post('/import', async (req, res) => {
+  // This is the existing import from files — keep it as-is
+  // The JSON restore would be a separate feature if needed
+  if (importProgress.status === 'running') {
+    res.status(409).json({ error: 'Import is already running' });
+    return;
+  }
+
+  runImport().catch((err) => {
+    console.error('[admin] import error:', err);
+    importProgress.status = 'error';
+    importProgress.error = err.message;
+  });
+
+  res.status(202).json({ status: 'started' });
 });
 
 export default router;

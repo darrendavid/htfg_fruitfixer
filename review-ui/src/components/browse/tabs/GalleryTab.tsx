@@ -1,49 +1,74 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { RotateCcw, RotateCw, LayoutGrid, FolderOpen, Tags, Copy, Trash2 } from 'lucide-react';
+import { RotateCcw, RotateCw, LayoutGrid, FolderOpen, Tags, Copy, Trash2, Upload } from 'lucide-react';
 import { LazyImage } from '@/components/images/LazyImage';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
-import type { BrowseImage, BrowseVariety } from '@/types/browse';
+import { hammingDistance, stripParsedPrefix, toRelativeImagePath, buildImageUrl, rotationStyle, rotationClass } from '@/lib/gallery-utils';
+import { PlantAutocomplete } from '@/components/browse/PlantAutocomplete';
+import { VarietyPicker, GroupVarietyPicker } from '@/components/browse/VarietyAutocomplete';
+import { useThumbSize } from '@/hooks/use-thumb-size';
+import { ThumbSizeToggle } from '@/components/ui/thumb-size-toggle';
+import type { BrowseImage } from '@/types/browse';
+
+const GALLERY_GRID_CLASSES = {
+  lg: 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2',
+  md: 'grid grid-cols-5 sm:grid-cols-6 lg:grid-cols-8 gap-2',
+  sm: 'grid grid-cols-8 sm:grid-cols-10 lg:grid-cols-12 gap-2',
+} as const;
 
 const PAGE_SIZE = 50;
 
-/** Hamming distance between two hex hash strings */
-function hammingDistance(h1: string, h2: string): number {
-  if (h1.length !== h2.length) return 64;
-  let dist = 0;
-  for (let i = 0; i < h1.length; i++) {
-    const xor = parseInt(h1[i], 16) ^ parseInt(h2[i], 16);
-    // Count bits in nibble
-    dist += ((xor >> 3) & 1) + ((xor >> 2) & 1) + ((xor >> 1) & 1) + (xor & 1);
+/** Inline editable caption — click to edit, Enter to save, Esc to cancel */
+function EditableCaption({ imageId, caption, onSaved }: { imageId: number; caption: string; onSaved: (c: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(caption);
+
+  // Sync value when caption prop changes (e.g. navigating between images)
+  useEffect(() => { setValue(caption); }, [caption]);
+
+  const save = async () => {
+    const trimmed = value.trim();
+    try {
+      const res = await fetch(`/api/browse/update-image-caption/${imageId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ caption: trimmed }),
+      });
+      if (res.ok) onSaved(trimmed);
+    } catch { /* error */ }
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => {
+          e.stopPropagation();
+          if (e.key === 'Enter') save();
+          if (e.key === 'Escape') { setValue(caption); setEditing(false); }
+        }}
+        onBlur={save}
+        className="text-sm font-medium w-full border-b border-blue-400 outline-none bg-transparent"
+        autoFocus
+      />
+    );
   }
-  return dist;
-}
 
-function stripParsedPrefix(filePath: string) {
-  return filePath.replace(/^content\/parsed\//, '').replace(/#/g, '%23');
-}
-
-function rotationStyle(deg: number | undefined | null): React.CSSProperties {
-  const d = ((deg ?? 0) % 360 + 360) % 360;
-  if (d === 0) return {};
-  // For 90/270, we need to scale down so the rotated image fits in the original container
-  // The image's width becomes height and vice versa after rotation
-  if (d === 90 || d === 270) {
-    return { transform: `rotate(${d}deg)`, transformOrigin: 'center center' };
-  }
-  return { transform: `rotate(${d}deg)`, transformOrigin: 'center center' };
-}
-
-function rotationClass(deg: number | undefined | null): string {
-  const d = ((deg ?? 0) % 360 + 360) % 360;
-  if (d === 90) return 'rotate-90';
-  if (d === 180) return 'rotate-180';
-  if (d === 270) return '-rotate-90';
-  return '';
+  return (
+    <p
+      className="text-sm font-medium cursor-pointer hover:text-blue-600 transition-colors"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      title="Click to edit caption"
+    >
+      {caption || <span className="text-muted-foreground italic">Add caption...</span>}
+    </p>
+  );
 }
 
 interface GalleryTabProps {
@@ -68,7 +93,15 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null);
   const [dimMap, setDimMap] = useState<Record<number, string>>({});
   const [showDeleted, setShowDeleted] = useState(false);
+  const [filenameFilter, setFilenameFilter] = useState('');
+  const [sortOrder, setSortOrder] = useState<'default' | 'newest' | 'oldest'>('default');
   const [visibleGroupCount, setVisibleGroupCount] = useState(20);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
+  const [uploadVariety, setUploadVariety] = useState<{ id: number; name: string } | null>(null);
+  const [thumbSize, setThumbSize] = useThumbSize();
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const lightboxImgRef = useRef<HTMLImageElement>(null);
   const plantInputRef = useRef<HTMLInputElement>(null);
@@ -241,6 +274,23 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     } catch {}
   }, [lightboxIndex]);
 
+  const unassignImage = useCallback(async (img: BrowseImage) => {
+    try {
+      const res = await fetch(`/api/browse/unassign-image/${img.Id}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setTotalRows((prev) => prev - 1);
+        setImages((prev) => prev.filter((i) => i.Id !== img.Id));
+        if (lightboxIndex !== null) {
+          const newLen = displayImagesLenRef.current - 1;
+          if (newLen === 0 || lightboxIndex >= newLen) closeLightbox();
+        }
+      }
+    } catch { /* error */ }
+  }, [lightboxIndex]);
+
   const rotateImage = useCallback(async (img: BrowseImage, direction: 'cw' | 'ccw') => {
     const current = (img as any).Rotation ?? 0;
     const newRotation = (current + (direction === 'cw' ? 90 : -90) + 360) % 360;
@@ -261,17 +311,17 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     }
   }, []);
 
-  const setImageVariety = useCallback(async (img: BrowseImage, varietyName: string | null) => {
+  const setImageVariety = useCallback(async (img: BrowseImage, variety: { id: number; name: string } | null) => {
     try {
       const res = await fetch(`/api/browse/set-image-variety/${img.Id}`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variety_name: varietyName }),
+        body: JSON.stringify({ variety_id: variety?.id ?? null }),
       });
       if (res.ok) {
         setImages((prev) =>
-          prev.map((i) => (i.Id === img.Id ? { ...i, Variety_Name: varietyName } as any : i))
+          prev.map((i) => (i.Id === img.Id ? { ...i, Variety_Id: variety?.id ?? null, Variety_Name: variety?.name ?? null } as any : i))
         );
       }
     } catch {
@@ -292,6 +342,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       else if (e.key === 'h' && isAdmin && currentImage) { e.preventDefault(); setAsHero(currentImage); }
       else if (e.key === '[' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'ccw'); }
       else if (e.key === ']' && isAdmin && currentImage) { e.preventDefault(); rotateImage(currentImage, 'cw'); }
+      else if (e.key === 'u' && isAdmin && currentImage) { e.preventDefault(); unassignImage(currentImage); }
       else if (e.key === 'a' && isAdmin && currentImage) { e.preventDefault(); moveToDocuments(currentImage); }
       else if (e.key === 'v' && isAdmin) { e.preventDefault(); varietyInputRef.current?.focus(); }
       else if (e.key === 'p' && isAdmin) { e.preventDefault(); plantInputRef.current?.focus(); }
@@ -299,7 +350,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [lightboxIndex, goNext, goPrev, deleteImage, setAsHero, rotateImage, moveToDocuments, isAdmin]);
+  }, [lightboxIndex, goNext, goPrev, deleteImage, unassignImage, setAsHero, rotateImage, moveToDocuments, isAdmin]);
 
   const isHero = (img: BrowseImage) => {
     const stripped = stripParsedPrefix(img.File_Path);
@@ -307,12 +358,32 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   };
 
   // Grouped view data — must be before any early returns (Rules of Hooks)
+  // Filter and sort images
+  const filteredImages = useMemo(() => {
+    let result = images;
+    if (filenameFilter) {
+      const q = filenameFilter.toLowerCase();
+      result = result.filter(img => {
+        const filename = img.File_Path.split('/').pop()?.toLowerCase() ?? '';
+        const caption = (img.Caption ?? '').toLowerCase();
+        const variety = ((img as any).Variety_Name ?? '').toLowerCase();
+        return filename.includes(q) || caption.includes(q) || variety.includes(q);
+      });
+    }
+    if (sortOrder === 'newest') {
+      result = [...result].sort((a, b) => (b as any).CreatedAt?.localeCompare((a as any).CreatedAt ?? '') ?? 0);
+    } else if (sortOrder === 'oldest') {
+      result = [...result].sort((a, b) => (a as any).CreatedAt?.localeCompare((b as any).CreatedAt ?? '') ?? 0);
+    }
+    return result;
+  }, [images, filenameFilter, sortOrder]);
+
   const groupedImages = useMemo(() => {
     if (viewMode === 'grid') return [];
 
     if (viewMode === 'grouped') {
       const groups: Record<string, BrowseImage[]> = {};
-      for (const img of images) {
+      for (const img of filteredImages) {
         const path = stripParsedPrefix(img.File_Path);
         const dir = path.substring(0, path.lastIndexOf('/'));
         const label = dir.includes('images/') ? dir.substring(dir.indexOf('images/') + 7) : dir;
@@ -324,7 +395,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
     if (viewMode === 'variety') {
       const groups: Record<string, BrowseImage[]> = {};
-      for (const img of images) {
+      for (const img of filteredImages) {
         const variety = (img as any).Variety_Name || '(unassigned)';
         if (!groups[variety]) groups[variety] = [];
         groups[variety].push(img);
@@ -362,7 +433,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         }
 
         const clusters: Record<number, BrowseImage[]> = {};
-        for (const img of images) {
+        for (const img of filteredImages) {
           const root = find(img.Id);
           if (!clusters[root]) clusters[root] = [];
           clusters[root].push(img);
@@ -384,7 +455,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
       // Fallback: group by filename stem
       const groups: Record<string, BrowseImage[]> = {};
-      for (const img of images) {
+      for (const img of filteredImages) {
         const filename = img.File_Path.split('/').pop() || '';
         const stem = filename.replace(/\.\w+$/, '').toLowerCase()
           .replace(/[\s_-]+/g, ' ').replace(/\bcopy\b/g, '').replace(/\d+$/, '').trim();
@@ -406,13 +477,13 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     }
 
     return [];
-  }, [images, viewMode]);
+  }, [filteredImages, viewMode]);
 
   // Display order: in grouped modes, flatten groupedImages to get visual order
   const displayImages = useMemo(() => {
-    if (viewMode === 'grid') return images;
+    if (viewMode === 'grid') return filteredImages;
     return groupedImages.flatMap(([, imgs]) => imgs);
-  }, [viewMode, images, groupedImages]);
+  }, [viewMode, filteredImages, groupedImages]);
 
   // Keep refs in sync for callbacks that can't access the memo directly
   displayImagesLenRef.current = displayImages.length;
@@ -433,21 +504,22 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         return next;
       });
     } else if (e.ctrlKey || e.metaKey) {
-      // Toggle individual
+      // Toggle individual — only update lastClickedIdx on select, not deselect
+      const isDeselect = selectedIds.has(imgId);
       setSelectedIds((prev) => {
         const next = new Set(prev);
         if (next.has(imgId)) next.delete(imgId);
         else next.add(imgId);
         return next;
       });
-      setLastClickedIdx(flatIdx);
+      if (!isDeselect) setLastClickedIdx(flatIdx);
     } else {
       // Normal click — open lightbox (no selection)
       openLightbox(flatIdx);
       return;
     }
     // Don't open lightbox on shift/ctrl clicks
-  }, [lastClickedIdx, displayImages, openLightbox]);
+  }, [lastClickedIdx, selectedIds, displayImages, openLightbox]);
 
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
@@ -472,6 +544,24 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     clearSelection();
   }, [selectedIds, clearSelection]);
 
+  const handleBulkUnassign = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    try {
+      const res = await fetch('/api/browse/bulk-set-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ image_ids: ids, status: 'unassigned' }),
+      });
+      if (res.ok) {
+        setImages((prev) => prev.filter((i) => !selectedIds.has(i.Id)));
+        setTotalRows((prev) => prev - ids.length);
+      }
+    } catch { /* error */ }
+    clearSelection();
+  }, [selectedIds, clearSelection]);
+
   // Grid-level keyboard shortcuts — active when images are selected (no lightbox open)
   useEffect(() => {
     if (lightboxIndex !== null) return;
@@ -482,6 +572,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       if (e.key === 'x' && isAdmin) {
         e.preventDefault();
         handleBulkDelete();
+      } else if (e.key === 'f' && isAdmin) {
+        e.preventDefault();
+        document.getElementById('multiselect-fruit-input')?.focus();
+      } else if (e.key === 'v' && isAdmin) {
+        e.preventDefault();
+        document.getElementById('multiselect-variety-input')?.focus();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         clearSelection();
@@ -506,17 +602,17 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     } catch {}
   }, []);
 
-  const handleBulkVariety = useCallback(async (imageIds: number[], varietyName: string | null) => {
+  const handleBulkVariety = useCallback(async (imageIds: number[], variety: { id: number; name: string } | null) => {
     try {
       const res = await fetch('/api/browse/bulk-set-variety', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_ids: imageIds, variety_name: varietyName }),
+        body: JSON.stringify({ image_ids: imageIds, variety_id: variety?.id ?? null }),
       });
       if (res.ok) {
         setImages((prev) =>
-          prev.map((i) => imageIds.includes(i.Id) ? { ...i, Variety_Name: varietyName } as any : i)
+          prev.map((i) => imageIds.includes(i.Id) ? { ...i, Variety_Id: variety?.id ?? null, Variety_Name: variety?.name ?? null } as any : i)
         );
       }
     } catch {}
@@ -530,7 +626,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       });
       if (res.ok) {
         setImages((prev) =>
-          prev.map((i) => (i.Id === img.Id ? { ...i, Excluded: false } as any : i))
+          prev.map((i) => (i.Id === img.Id ? { ...i, Excluded: false, Status: 'assigned' } as any : i))
         );
       }
     } catch {}
@@ -544,9 +640,43 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     </div>
   );
 
+  const handleUpload = useCallback(async () => {
+    if (uploadFiles.length === 0) return;
+    setIsUploading(true);
+    setUploadProgress(`Uploading 0/${uploadFiles.length}...`);
+    try {
+      const formData = new FormData();
+      uploadFiles.forEach(f => formData.append('images', f));
+      if (uploadVariety) formData.append('variety_id', String(uploadVariety.id));
+      const res = await fetch(`/api/browse/upload-images/${plantId}`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUploadProgress(`Uploaded ${data.uploaded} images`);
+        setUploadFiles([]);
+        // Refresh gallery
+        setTimeout(() => {
+          setShowUploadDialog(false);
+          setUploadProgress('');
+          fetchImages();
+        }, 1000);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setUploadProgress(`Error: ${err.error || 'Upload failed'}`);
+      }
+    } catch {
+      setUploadProgress('Error: Upload failed');
+    } finally {
+      setIsUploading(false);
+    }
+  }, [uploadFiles, uploadVariety, plantId, fetchImages]);
+
   if (isLoading) {
     return (
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+      <div className={GALLERY_GRID_CLASSES[thumbSize]}>
         {Array.from({ length: 12 }).map((_, i) => (
           <Skeleton key={i} className="aspect-square rounded" />
         ))}
@@ -556,15 +686,59 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
   if (images.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-48 text-center">
+      <div className="flex flex-col items-center justify-center h-48 text-center space-y-3">
         <p className="text-lg text-muted-foreground">No images available</p>
+        {isAdmin && (
+          <Button variant="outline" size="sm" onClick={() => setShowUploadDialog(true)}>
+            <Upload className="size-4 mr-1" /> Add Images
+          </Button>
+        )}
+        {/* Upload dialog needed here too */}
+        <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(null); } }}>
+          <DialogContent className="max-w-md">
+            <DialogTitle>Add Images to {plantId}</DialogTitle>
+            <div
+              className="border-2 border-dashed rounded-lg p-8 text-center border-muted-foreground/30 hover:border-muted-foreground/50"
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const files = Array.from(e.dataTransfer.files).filter(f => /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f.name)); setUploadFiles(prev => [...prev, ...files]); }}
+            >
+              <Upload className="size-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground mb-2">Drag and drop images here, or</p>
+              <label className="cursor-pointer">
+                <span className="text-sm font-medium text-blue-600 hover:text-blue-800 underline">browse files</span>
+                <input type="file" multiple accept="image/*" className="sr-only" onChange={(e) => { setUploadFiles(prev => [...prev, ...Array.from(e.target.files ?? [])]); e.target.value = ''; }} />
+              </label>
+            </div>
+            {uploadFiles.length > 0 && (
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {uploadFiles.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+                    <span className="truncate mr-2">{f.name}</span>
+                    <button className="text-destructive" onClick={() => setUploadFiles(prev => prev.filter((_, j) => j !== i))}>&times;</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {uploadProgress && <p className="text-sm text-muted-foreground">{uploadProgress}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => { setShowUploadDialog(false); setUploadFiles([]); }}>Cancel</Button>
+              <Button onClick={handleUpload} disabled={isUploading || uploadFiles.length === 0}>
+                {isUploading ? 'Uploading...' : `Upload ${uploadFiles.length}`}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }
 
   const renderImageThumbnail = (img: BrowseImage, idx: number) => {
     const isSelected = selectedIds.has(img.Id);
-    const isExcluded = (img as any).Excluded === 1 || (img as any).Excluded === true;
+    const imgStatus = (img as any).Status || 'assigned';
+    const statusOverlay = imgStatus === 'hidden' ? { bg: 'bg-red-500/40', label: 'HIDDEN', labelBg: 'bg-red-600/80' }
+      : imgStatus === 'unassigned' ? { bg: 'bg-amber-500/30', label: 'UNASSIGNED', labelBg: 'bg-amber-600/80' }
+      : imgStatus === 'unclassified' ? { bg: 'bg-gray-500/30', label: 'UNCLASSIFIED', labelBg: 'bg-gray-600/80' }
+      : null;
     return (
     <div key={img.Id} className="space-y-1">
       <div
@@ -573,14 +747,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         }`}
         onClick={(e) => handleImageClick(e, img.Id, idx)}
       >
-        {isExcluded && (
-          <div className="absolute inset-0 z-10 bg-red-500/40 flex items-center justify-center">
-            <span className="text-white text-xs font-bold bg-red-600/80 px-2 py-0.5 rounded">DELETED</span>
+        {statusOverlay && (
+          <div className={`absolute inset-0 z-10 ${statusOverlay.bg} flex items-center justify-center`}>
+            <span className={`text-white text-[9px] font-bold ${statusOverlay.labelBg} px-1.5 py-0.5 rounded`}>{statusOverlay.label}</span>
           </div>
         )}
         <div className={`w-full h-full ${rotationClass((img as any).Rotation)} ${isSelected ? 'opacity-75' : ''}`}>
           <LazyImage
-            src={`/images/${stripParsedPrefix(img.File_Path)}`}
+            src={`${buildImageUrl(img.File_Path)}`}
             alt={img.Caption ?? ''}
             className="w-full h-full"
             onLoad={(e) => {
@@ -638,41 +812,92 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     <div className="space-y-4">
       {/* Selection action bar — fixed at bottom of viewport */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-16 left-4 right-4 z-50 bg-blue-600 text-white rounded-lg p-3 shadow-lg space-y-2">
-          <div className="flex items-center justify-center gap-3">
-            <span className="text-sm font-medium">{selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''} selected</span>
-            <Button variant="secondary" size="sm" className="h-7 text-xs" onClick={handleBulkDelete}>
-              <Trash2 className="size-3 mr-1" /> Delete
+        <div className="fixed bottom-16 left-4 right-4 z-50 bg-blue-600 text-white rounded-lg p-2 shadow-lg">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium shrink-0">{selectedIds.size} selected</span>
+            <Button variant="secondary" size="sm" className="h-6 text-xs px-2" onClick={handleBulkDelete}>
+              <Trash2 className="size-3 mr-1" /> Hide
             </Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs text-white hover:text-white hover:bg-blue-700" onClick={clearSelection}>
+            <Button variant="secondary" size="sm" className="h-6 text-xs px-2" onClick={handleBulkUnassign}>
+              Unassign
+            </Button>
+            {isAdmin && (
+              <div className="flex items-center gap-1 flex-1 min-w-[140px]">
+                <PlantAutocomplete
+                  label="Fruit:"
+                  labelClassName="text-[10px] font-medium shrink-0 text-white"
+                  placeholder="Move to..."
+                  inputClassName="h-6 text-xs"
+                  inputId="multiselect-fruit-input"
+                  whiteBackground
+                  dropdownLeftClass="left-0"
+                  excludePlantId={plantId}
+                  showCategory
+                  confirmMessage={(p) => `Move ${selectedIds.size} images to ${p.Canonical_Name}?`}
+                  confirmLabel="Move"
+                  createMessage={(name) => `Create "${name}" and move ${selectedIds.size} images?`}
+                  createLabel="Create & Move"
+                  onSelect={async (plant) => {
+                    const ids = [...selectedIds];
+                    await handleBulkReassign(ids, plant.Id1);
+                    clearSelection();
+                  }}
+                  onCreateAndSelect={async (_name, slug) => {
+                    const ids = [...selectedIds];
+                    await handleBulkReassign(ids, slug);
+                    clearSelection();
+                  }}
+                />
+              </div>
+            )}
+            {isAdmin && (
+              <div className="flex items-center gap-1 min-w-[120px]">
+                <GroupVarietyPicker
+                  plantId={plantId}
+                  imageIds={[...selectedIds]}
+                  whiteBackground
+                  inputId="multiselect-variety-input"
+                  onSet={async (variety) => {
+                    await handleBulkVariety([...selectedIds], variety);
+                    clearSelection();
+                  }}
+                />
+              </div>
+            )}
+            <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-white hover:text-white hover:bg-blue-700 ml-auto" onClick={clearSelection}>
               Clear
             </Button>
           </div>
-          {isAdmin && (
-            <div className="flex items-center gap-2 flex-1">
-              <GroupPlantReassigner
-                currentPlantId={plantId}
-                imageIds={[...selectedIds]}
-                onReassigned={(ids) => {
-                  setImages((prev) => prev.filter((i) => !ids.includes(i.Id)));
-                  setTotalRows((prev) => prev - ids.length);
-                  clearSelection();
-                }}
-              />
-            </div>
-          )}
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
-          <p className="text-sm text-muted-foreground">{totalRows} images total</p>
-          <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer ml-2">
+          <p className="text-sm text-muted-foreground shrink-0">{filteredImages.length}{filteredImages.length !== totalRows ? ` / ${totalRows}` : ''} images</p>
+          <input
+            type="text"
+            value={filenameFilter}
+            onChange={e => setFilenameFilter(e.target.value)}
+            placeholder="Filter by name, caption, variety..."
+            className="h-7 text-xs border rounded px-2 w-36"
+          />
+          <select
+            value={sortOrder}
+            onChange={e => setSortOrder(e.target.value as any)}
+            className="h-7 text-xs border rounded px-1"
+          >
+            <option value="default">Default</option>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+          </select>
+          <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
             <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} className="rounded" />
-            Show deleted
+            Hidden
           </label>
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
+          <ThumbSizeToggle value={thumbSize} onChange={setThumbSize} />
+          <div className="w-px h-6 bg-border mx-1" />
           <Button variant={viewMode === 'grid' ? 'default' : 'outline'} size="icon" className="h-8 w-8"
             onClick={() => { setViewMode('grid'); clearSelection(); }} title="Grid view">
             <LayoutGrid className="size-4" />
@@ -689,13 +914,18 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             onClick={() => { setViewMode('similarity'); clearSelection(); }} title="Group by similarity">
             <Copy className="size-4" />
           </Button>
+          {isAdmin && (
+            <Button variant="outline" size="sm" className="h-8 ml-2" onClick={() => setShowUploadDialog(true)}>
+              <Upload className="size-4 mr-1" /> Add Images
+            </Button>
+          )}
         </div>
       </div>
 
       {viewMode === 'grid' ? (
         <>
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-            {images.map((img, idx) => renderImageThumbnail(img, idx))}
+          <div className={GALLERY_GRID_CLASSES[thumbSize]}>
+            {displayImages.map((img, idx) => renderImageThumbnail(img, idx))}
           </div>
 
           {/* Pagination */}
@@ -729,12 +959,24 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   {isAdmin && (
                     <div className="flex gap-4 mt-1">
                       <div className="flex-1">
-                        <GroupPlantReassigner
-                          currentPlantId={plantId}
-                          imageIds={groupIds}
-                          onReassigned={(ids) => {
-                            setImages((prev) => prev.filter((i) => !ids.includes(i.Id)));
-                            setTotalRows((prev) => prev - ids.length);
+                        <PlantAutocomplete
+                          label="Move to:"
+                          labelClassName="text-[10px] font-medium shrink-0 text-muted-foreground"
+                          placeholder="Plant name..."
+                          inputClassName="h-6 text-xs"
+                          whiteBackground
+                          dropdownLeftClass="left-0"
+                          excludePlantId={plantId}
+                          showCategory
+                          confirmMessage={(p) => `Move ${groupIds.length} images to ${p.Canonical_Name}?`}
+                          confirmLabel="Move all"
+                          createMessage={(name) => `Create "${name}" and move ${groupIds.length} images?`}
+                          createLabel="Create & Move"
+                          onSelect={async (plant) => {
+                            await handleBulkReassign(groupIds, plant.Id1);
+                          }}
+                          onCreateAndSelect={async (_name, slug) => {
+                            await handleBulkReassign(groupIds, slug);
                           }}
                         />
                       </div>
@@ -742,13 +984,13 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                         <GroupVarietyPicker
                           plantId={plantId}
                           imageIds={groupIds}
-                          onSet={(name) => handleBulkVariety(groupIds, name)}
+                          onSet={(variety) => handleBulkVariety(groupIds, variety)}
                         />
                       </div>
                     </div>
                   )}
                 </div>
-                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+                <div className={GALLERY_GRID_CLASSES[thumbSize]}>
                   {groupImgs.map((img) => {
                     const idx = displayImages.indexOf(img);
                     return renderImageThumbnail(img, idx >= 0 ? idx : 0);
@@ -770,11 +1012,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
       {/* Lightbox */}
       <Dialog open={lightboxIndex !== null} onOpenChange={(open) => { if (!open) closeLightbox(); }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-2 flex flex-col overflow-hidden" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-4xl p-2 flex flex-col" style={{ maxHeight: '90dvh' }} onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogTitle className="sr-only">{lightboxImage?.Caption ?? 'Image preview'}</DialogTitle>
           {lightboxImage && (
-            <div className="flex flex-col gap-2 min-h-0">
-              <div className="relative flex-1 min-h-0">
+            <div className="flex flex-col min-h-0 flex-1">
+              {/* Image area — shrinks to fit available space */}
+              <div className="relative flex-1 min-h-0 flex items-center justify-center">
                 {/* Left arrow */}
                 {lightboxIndex !== null && lightboxIndex > 0 && (
                   <button onClick={(e) => { e.stopPropagation(); goPrev(); }}
@@ -788,37 +1031,43 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   >&#8250;</button>
                 )}
 
-                <div className="relative flex items-center justify-center overflow-hidden" style={{ height: '55vh' }}>
-                  <img
-                    ref={lightboxImgRef}
-                    src={`/images/${stripParsedPrefix(lightboxImage.File_Path)}`}
-                    alt={lightboxImage.Caption ?? ''}
-                    className="object-contain rounded"
-                    style={{
-                      maxWidth: '100%',
-                      maxHeight: '55vh',
-                      ...rotationStyle((lightboxImage as any).Rotation),
-                      // For 90/270 rotation, constrain by swapping max dimensions
-                      ...(((((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 90 ||
-                           (((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 270)
-                        ? { maxWidth: '55vh', maxHeight: '100%' }
-                        : {}),
-                    }}
-                    onLoad={handleImageLoad}
-                  />
-                  {isHero(lightboxImage) && <GoldStar />}
-                </div>
+                <img
+                  ref={lightboxImgRef}
+                  src={`${buildImageUrl(lightboxImage.File_Path)}`}
+                  alt={lightboxImage.Caption ?? ''}
+                  className="object-contain rounded"
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    ...rotationStyle((lightboxImage as any).Rotation),
+                    // For 90/270 rotation, constrain by swapping max dimensions
+                    ...(((((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 90 ||
+                         (((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 270)
+                      ? { maxWidth: '100%', maxHeight: '100%' }
+                      : {}),
+                  }}
+                  onLoad={handleImageLoad}
+                />
+                {isHero(lightboxImage) && <GoldStar />}
               </div>
 
-              {/* Info section — stacked rows */}
-              <div className="space-y-2 px-1">
+              {/* Info section — fixed at bottom, scrollable if needed */}
+              <div className="flex-shrink-0 space-y-2 px-1 pt-2 max-h-[40dvh] overflow-y-auto">
                 {/* Row 1: file info */}
                 <div>
-                  {lightboxImage.Caption && (
-                    <p className="text-sm font-medium">{lightboxImage.Caption}</p>
+                  {isAdmin ? (
+                    <EditableCaption
+                      imageId={lightboxImage.Id}
+                      caption={lightboxImage.Caption ?? ''}
+                      onSaved={(newCaption) => {
+                        setImages(prev => prev.map(i => i.Id === lightboxImage.Id ? { ...i, Caption: newCaption } as any : i));
+                      }}
+                    />
+                  ) : (
+                    lightboxImage.Caption && <p className="text-sm font-medium">{lightboxImage.Caption}</p>
                   )}
                   <p className="text-xs text-muted-foreground font-mono break-all">
-                    {stripParsedPrefix(lightboxImage.File_Path)}
+                    {toRelativeImagePath(lightboxImage.File_Path)}
                   </p>
                   <div className="flex items-center gap-2 flex-wrap mt-0.5">
                     {imageDimensions && (
@@ -842,32 +1091,77 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                       </span>
                     )}
                   </div>
+                  {/* Attribution & License */}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {(lightboxImage as any).Attribution && (
+                      <span>© {(lightboxImage as any).Attribution}</span>
+                    )}
+                    {(lightboxImage as any).License && (
+                      <span>({(lightboxImage as any).License})</span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Row 2: plant reassign + variety picker */}
                 {isAdmin && lightboxImage && (
                   <div className="space-y-1">
-                    <PlantReassigner
-                      currentPlantId={plantId}
-                      imageId={lightboxImage.Id}
+                    <PlantAutocomplete
+                      label="Plant:"
+                      placeholder="Reassign to another plant... (p)"
+                      excludePlantId={plantId}
+                      resetKey={lightboxImage.Id}
                       externalInputRef={plantInputRef}
-                      onReassigned={() => {
-                        // Remove from current gallery and advance
-                        setImages((prev) => {
-                          const next = prev.filter((i) => i.Id !== lightboxImage.Id);
-                          if (next.length === 0 || (lightboxIndex !== null && lightboxIndex >= next.length)) {
-                            closeLightbox();
+                      showCategory
+                      confirmMessage={(p) => `Move this image to ${p.Canonical_Name}?`}
+                      confirmLabel="Move"
+                      createMessage={(name) => `Plant "${name}" doesn't exist. Create it and move this image?`}
+                      createLabel="Create & Move"
+                      onSelect={async (plant) => {
+                        try {
+                          const res = await fetch(`/api/browse/reassign-image/${lightboxImage.Id}`, {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ plant_id: plant.Id1 }),
+                          });
+                          if (res.ok) {
+                            setImages((prev) => {
+                              const next = prev.filter((i) => i.Id !== lightboxImage.Id);
+                              if (next.length === 0 || (lightboxIndex !== null && lightboxIndex >= next.length)) {
+                                closeLightbox();
+                              }
+                              return next;
+                            });
+                            setTotalRows((prev) => prev - 1);
                           }
-                          return next;
-                        });
-                        setTotalRows((prev) => prev - 1);
+                        } catch {}
+                      }}
+                      onCreateAndSelect={async (_name, slug) => {
+                        try {
+                          const res = await fetch(`/api/browse/reassign-image/${lightboxImage.Id}`, {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ plant_id: slug }),
+                          });
+                          if (res.ok) {
+                            setImages((prev) => {
+                              const next = prev.filter((i) => i.Id !== lightboxImage.Id);
+                              if (next.length === 0 || (lightboxIndex !== null && lightboxIndex >= next.length)) {
+                                closeLightbox();
+                              }
+                              return next;
+                            });
+                            setTotalRows((prev) => prev - 1);
+                          }
+                        } catch {}
                       }}
                     />
                     <VarietyPicker
                       plantId={plantId}
                       externalInputRef={varietyInputRef}
                       currentVariety={(lightboxImage as any).Variety_Name ?? null}
-                      onSelect={(name) => setImageVariety(lightboxImage, name)}
+                      onSelect={(variety) => setImageVariety(lightboxImage, variety)}
                     />
                   </div>
                 )}
@@ -902,25 +1196,35 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     >
                       {isHero(lightboxImage) ? '★ Hero' : 'Hero (h)'}
                     </Button>
-                    {(lightboxImage as any).Excluded ? (
+                    {(lightboxImage as any).Status === 'hidden' || (lightboxImage as any).Status === 'unassigned' ? (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => restoreImage(lightboxImage)}
-                        title="Restore image"
+                        title="Restore to assigned"
                         className="text-green-600 border-green-600 hover:bg-green-50"
                       >
                         Restore
                       </Button>
                     ) : (
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => deleteImage(lightboxImage)}
-                        title="Delete image (x)"
-                      >
-                        Delete (x)
-                      </Button>
+                      <>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => deleteImage(lightboxImage)}
+                          title="Hide image (x)"
+                        >
+                          Hide (x)
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => unassignImage(lightboxImage)}
+                          title="Mark as unassigned (u)"
+                        >
+                          Unassign (u)
+                        </Button>
+                      </>
                     )}
                     <Button
                       variant="outline"
@@ -930,6 +1234,38 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     >
                       Attach (a)
                     </Button>
+                    <label className="cursor-pointer">
+                      <Button variant="outline" size="sm" asChild>
+                        <span>Replace</span>
+                      </Button>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file || !lightboxImage) return;
+                          e.target.value = '';
+                          const formData = new FormData();
+                          formData.append('image', file);
+                          try {
+                            const res = await fetch(`/api/browse/replace-image/${lightboxImage.Id}`, {
+                              method: 'POST',
+                              credentials: 'include',
+                              body: formData,
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              // Replace old image with new in local state
+                              setImages(prev => prev.map(i =>
+                                i.Id === lightboxImage.Id ? data.newImage : i
+                              ));
+                              setImageDimensions(null);
+                            }
+                          } catch { /* error */ }
+                        }}
+                      />
+                    </label>
                   </div>
                 )}
               </div>
@@ -937,749 +1273,101 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           )}
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
 
-// ── Variety Picker (autocomplete with create-new) ────────────────────────────
-
-interface VarietyPickerProps {
-  plantId: string;
-  currentVariety: string | null;
-  externalInputRef?: React.RefObject<HTMLInputElement | null>;
-  onSelect: (name: string | null) => void;
-}
-
-function VarietyPicker({ plantId, currentVariety, externalInputRef, onSelect }: VarietyPickerProps) {
-  const [query, setQuery] = useState(currentVariety ?? '');
-  const [suggestions, setSuggestions] = useState<BrowseVariety[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(-1);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-
-  // Sync when lightbox image changes
-  useEffect(() => {
-    setQuery(currentVariety ?? '');
-    setShowDropdown(false);
-    setShowConfirm(false);
-    setHighlightIndex(-1);
-  }, [currentVariety]);
-
-  // Focus confirm button when it appears
-  useEffect(() => {
-    if (showConfirm) confirmRef.current?.focus();
-  }, [showConfirm]);
-
-  const fetchVarieties = useCallback(async (search: string) => {
-    try {
-      const res = await fetch(`/api/browse/${plantId}/varieties-search?q=${encodeURIComponent(search)}`, {
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setSuggestions(data);
-        setShowDropdown(data.length > 0);
-        setHighlightIndex(-1);
-      }
-    } catch {
-      // ignore
-    }
-  }, [plantId]);
-
-  const handleChange = (value: string) => {
-    setQuery(value);
-    setShowConfirm(false);
-    setHighlightIndex(-1);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (value.trim().length >= 1) {
-      debounceRef.current = setTimeout(() => fetchVarieties(value.trim()), 200);
-    } else {
-      setSuggestions([]);
-      setShowDropdown(false);
-    }
-  };
-
-  const handleSelectExisting = (variety: BrowseVariety) => {
-    setQuery(variety.Variety_Name);
-    setShowDropdown(false);
-    setHighlightIndex(-1);
-    onSelect(variety.Variety_Name);
-    inputRef.current?.blur();
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Arrow keys for autocomplete navigation — works if suggestions exist
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      if (suggestions.length > 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        // Ensure dropdown is visible
-        if (!showDropdown) setShowDropdown(true);
-        if (e.key === 'ArrowUp') {
-          setHighlightIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
-        } else {
-          setHighlightIndex((prev) => (prev >= suggestions.length - 1 ? 0 : prev + 1));
-        }
-      }
-      return;
-    }
-
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // If a dropdown item is highlighted, select it
-      if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
-        handleSelectExisting(suggestions[highlightIndex]);
-        return;
-      }
-
-      const trimmed = query.trim();
-      if (!trimmed) {
-        onSelect(null);
-        return;
-      }
-      // Check if it matches an existing suggestion
-      const match = suggestions.find(
-        (s) => s.Variety_Name.toLowerCase() === trimmed.toLowerCase()
-      );
-      if (match) {
-        handleSelectExisting(match);
-      } else {
-        setShowDropdown(false);
-        setShowConfirm(true);
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      setShowDropdown(false);
-      setShowConfirm(false);
-      setHighlightIndex(-1);
-      setQuery(currentVariety ?? '');
-      inputRef.current?.blur();
-    }
-  };
-
-  const handleCreateAndAssign = async () => {
-    const trimmed = query.trim();
-    try {
-      // Create new variety
-      const res = await fetch(`/api/browse/${plantId}/varieties`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ Variety_Name: trimmed }),
-      });
-      if (res.ok) {
-        onSelect(trimmed);
-        setShowConfirm(false);
-      }
-    } catch {
-      // error
-    }
-  };
-
-  const handleClear = () => {
-    setQuery('');
-    onSelect(null);
-    setShowDropdown(false);
-    setShowConfirm(false);
-  };
-
-  return (
-    <div className="relative">
-      <div className="flex items-center gap-2">
-        <label className="text-xs font-medium shrink-0">Variety:</label>
-        <div className="relative flex-1">
-          <Input
-            ref={(el) => {
-              (inputRef as any).current = el;
-              if (externalInputRef) (externalInputRef as any).current = el;
+      {/* Upload dialog */}
+      <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(null); } }}>
+        <DialogContent className="max-w-md"
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; }}
+          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDrop={(e) => {
+            e.preventDefault(); e.stopPropagation();
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 0) setUploadFiles(prev => [...prev, ...files]);
+          }}
+        >
+          <DialogTitle>Add Images to {plantId}</DialogTitle>
+          <div
+            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+              uploadFiles.length > 0 ? 'border-blue-400 bg-blue-50' : 'border-muted-foreground/30 hover:border-muted-foreground/50'
+            }`}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; }}
+            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onDrop={(e) => {
+              e.preventDefault(); e.stopPropagation();
+              const files = Array.from(e.dataTransfer.files).filter(f => /\.(jpe?g|png|gif|webp|bmp|tiff?)$/i.test(f.name));
+              if (files.length === 0) {
+                // If filter removed all files, try without filter (user might be dragging non-standard extensions)
+                const allFiles = Array.from(e.dataTransfer.files);
+                if (allFiles.length > 0) setUploadFiles(prev => [...prev, ...allFiles]);
+              } else {
+                setUploadFiles(prev => [...prev, ...files]);
+              }
             }}
-            value={query}
-            onChange={(e) => handleChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => { if (query.trim().length >= 1) fetchVarieties(query.trim()); }}
-            onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-            placeholder="Type to search or create... (v)"
-            className="h-7 text-xs"
-          />
-          {query && (
-            <button
-              className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs px-1"
-              onClick={handleClear}
-              title="Clear variety"
-            >
-              &times;
-            </button>
+          >
+            <Upload className="size-8 mx-auto mb-2 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground mb-2">Drag and drop images here, or</p>
+            <label className="cursor-pointer">
+              <span className="text-sm font-medium text-blue-600 hover:text-blue-800 underline">browse files</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files ?? []);
+                  setUploadFiles(prev => [...prev, ...files]);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+
+          {uploadFiles.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-sm font-medium">{uploadFiles.length} file{uploadFiles.length !== 1 ? 's' : ''} selected:</div>
+              <div className="max-h-32 overflow-y-auto space-y-1">
+                {uploadFiles.map((f, i) => (
+                  <div key={i} className="flex items-center justify-between text-xs bg-muted/50 rounded px-2 py-1">
+                    <span className="truncate mr-2">{f.name}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
+                      <button className="text-destructive hover:text-destructive/80" onClick={() => setUploadFiles(prev => prev.filter((_, j) => j !== i))}>
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
-        </div>
-      </div>
 
-      {/* Autocomplete dropdown — opens upward to avoid clipping */}
-      {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 bottom-full mb-1 left-16 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
-          {suggestions.map((v, i) => (
-            <button
-              key={v.Id}
-              className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
-              }`}
-              onMouseDown={(e) => { e.preventDefault(); handleSelectExisting(v); }}
-              onMouseEnter={() => setHighlightIndex(i)}
-            >
-              <span className="font-medium">{v.Variety_Name}</span>
-              {v.Characteristics && (
-                <span className="text-muted-foreground ml-2">{v.Characteristics.slice(0, 50)}</span>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+          {/* Variety selector */}
+          <div className="flex items-center gap-2">
+            <GroupVarietyPicker
+              plantId={plantId}
+              imageIds={[]}
+              onSet={(variety) => setUploadVariety(variety)}
+            />
+            {uploadVariety && (
+              <Badge variant="secondary" className="text-xs shrink-0">
+                {uploadVariety.name}
+                <button className="ml-1 text-muted-foreground hover:text-foreground" onClick={() => setUploadVariety(null)}>&times;</button>
+              </Badge>
+            )}
+          </div>
 
-      {/* Create confirmation — opens upward, Enter confirms, Esc cancels */}
-      {showConfirm && (
-        <div
-          className="absolute z-50 bottom-full mb-1 left-16 right-0 bg-popover border rounded shadow-lg p-3"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateAndAssign(); }
-            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowConfirm(false); inputRef.current?.focus(); }
-          }}
-        >
-          <p className="text-xs mb-2">
-            Create new variety <strong>&ldquo;{query.trim()}&rdquo;</strong>?
-          </p>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => { setShowConfirm(false); inputRef.current?.focus(); }}>
-              Cancel (Esc)
+          {uploadProgress && <p className="text-sm text-muted-foreground">{uploadProgress}</p>}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(null); }}>
+              Cancel
             </Button>
-            <Button ref={confirmRef} size="sm" className="h-6 text-xs" onClick={handleCreateAndAssign}>
-              Create &amp; Assign (Enter)
+            <Button onClick={handleUpload} disabled={isUploading || uploadFiles.length === 0}>
+              {isUploading ? 'Uploading...' : `Upload ${uploadFiles.length} image${uploadFiles.length !== 1 ? 's' : ''}`}
             </Button>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Plant Reassigner (autocomplete to move image to another plant) ────────────
-
-interface PlantReassignerProps {
-  currentPlantId: string;
-  imageId: number;
-  externalInputRef?: React.RefObject<HTMLInputElement | null>;
-  onReassigned: () => void;
-}
-
-function PlantReassigner({ currentPlantId, imageId, externalInputRef, onReassigned }: PlantReassignerProps) {
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<Array<{ Id: number; Id1: string; Canonical_Name: string; Category: string }>>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(-1);
-  const [showConfirm, setShowConfirm] = useState<{ id: string; name: string } | null>(null);
-  const [showCreateConfirm, setShowCreateConfirm] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const createRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    setQuery('');
-    setShowDropdown(false);
-    setShowConfirm(null);
-    setShowCreateConfirm(false);
-    setHighlightIndex(-1);
-  }, [imageId]);
-
-  useEffect(() => {
-    if (showConfirm) confirmRef.current?.focus();
-    if (showCreateConfirm) createRef.current?.focus();
-  }, [showConfirm, showCreateConfirm]);
-
-  const fetchPlants = useCallback(async (search: string) => {
-    try {
-      const res = await fetch(`/api/browse/plants-search?q=${encodeURIComponent(search)}`, {
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        // Exclude current plant
-        const filtered = data.filter((p: any) => p.Id1 !== currentPlantId);
-        setSuggestions(filtered);
-        setShowDropdown(filtered.length > 0);
-        setHighlightIndex(-1);
-      }
-    } catch {}
-  }, [currentPlantId]);
-
-  const handleChange = (value: string) => {
-    setQuery(value);
-    setShowConfirm(null);
-    setHighlightIndex(-1);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (value.trim().length >= 1) {
-      debounceRef.current = setTimeout(() => fetchPlants(value.trim()), 200);
-    } else {
-      setSuggestions([]);
-      setShowDropdown(false);
-    }
-  };
-
-  const selectPlant = (plant: { Id1: string; Canonical_Name: string }) => {
-    setQuery(plant.Canonical_Name);
-    setShowDropdown(false);
-    setHighlightIndex(-1);
-    setShowConfirm({ id: plant.Id1, name: plant.Canonical_Name });
-  };
-
-  const handleReassign = async () => {
-    if (!showConfirm) return;
-    try {
-      const res = await fetch(`/api/browse/reassign-image/${imageId}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plant_id: showConfirm.id }),
-      });
-      if (res.ok) {
-        setShowConfirm(null);
-        setQuery('');
-        onReassigned();
-      }
-    } catch {}
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      if (suggestions.length > 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!showDropdown) setShowDropdown(true);
-        if (e.key === 'ArrowUp') {
-          setHighlightIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
-        } else {
-          setHighlightIndex((prev) => (prev >= suggestions.length - 1 ? 0 : prev + 1));
-        }
-      }
-      return;
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      e.stopPropagation();
-      if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
-        selectPlant(suggestions[highlightIndex]);
-      } else {
-        const trimmed = query.trim();
-        if (!trimmed) return;
-        // Check exact match
-        const match = suggestions.find(
-          (s) => s.Canonical_Name.toLowerCase() === trimmed.toLowerCase()
-        );
-        if (match) {
-          selectPlant(match);
-        } else {
-          // No match — offer to create
-          setShowDropdown(false);
-          setShowCreateConfirm(true);
-        }
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      setShowDropdown(false);
-      setShowConfirm(null);
-      setShowCreateConfirm(false);
-      setQuery('');
-      inputRef.current?.blur();
-    }
-  };
-
-  const handleCreateAndReassign = async () => {
-    const trimmed = query.trim();
-    const newSlug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    try {
-      const res = await fetch('/api/browse/create-plant', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ Canonical_Name: trimmed, Id1: newSlug, Category: 'fruit' }),
-      });
-      if (res.ok) {
-        // Now reassign the image
-        const reassignRes = await fetch(`/api/browse/reassign-image/${imageId}`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ plant_id: newSlug }),
-        });
-        if (reassignRes.ok) {
-          setShowCreateConfirm(false);
-          setQuery('');
-          onReassigned();
-        }
-      }
-    } catch {}
-  };
-
-  return (
-    <div className="relative">
-      <div className="flex items-center gap-2">
-        <label className="text-xs font-medium shrink-0">Plant:</label>
-        <div className="relative flex-1">
-          <Input
-            ref={(el) => {
-              (inputRef as any).current = el;
-              if (externalInputRef) (externalInputRef as any).current = el;
-            }}
-            value={query}
-            onChange={(e) => handleChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => { if (query.trim().length >= 1) fetchPlants(query.trim()); }}
-            onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-            placeholder="Reassign to another plant... (p)"
-            className="h-7 text-xs"
-          />
-        </div>
-      </div>
-
-      {/* Autocomplete dropdown — opens upward */}
-      {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 bottom-full mb-1 left-12 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
-          {suggestions.map((p, i) => (
-            <button
-              key={p.Id}
-              className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
-              }`}
-              onMouseDown={(e) => { e.preventDefault(); selectPlant(p); }}
-              onMouseEnter={() => setHighlightIndex(i)}
-            >
-              <span className="font-medium">{p.Canonical_Name}</span>
-              <span className="text-muted-foreground ml-2">{p.Category}</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Reassign confirmation — opens upward */}
-      {showConfirm && (
-        <div
-          className="absolute z-50 bottom-full mb-1 left-12 right-0 bg-popover border rounded shadow-lg p-3"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleReassign(); }
-            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowConfirm(null); inputRef.current?.focus(); }
-          }}
-        >
-          <p className="text-xs mb-2">
-            Move this image to <strong>{showConfirm.name}</strong>?
-          </p>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => { setShowConfirm(null); inputRef.current?.focus(); }}>
-              Cancel (Esc)
-            </Button>
-            <Button ref={confirmRef} size="sm" className="h-6 text-xs" onClick={handleReassign}>
-              Move (Enter)
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Create new plant confirmation — opens upward */}
-      {showCreateConfirm && (
-        <div
-          className="absolute z-50 bottom-full mb-1 left-12 right-0 bg-popover border rounded shadow-lg p-3"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateAndReassign(); }
-            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowCreateConfirm(false); inputRef.current?.focus(); }
-          }}
-        >
-          <p className="text-xs mb-2">
-            Plant <strong>&ldquo;{query.trim()}&rdquo;</strong> doesn&apos;t exist. Create it and move this image?
-          </p>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => { setShowCreateConfirm(false); inputRef.current?.focus(); }}>
-              Cancel (Esc)
-            </Button>
-            <Button ref={createRef} size="sm" className="h-6 text-xs" onClick={handleCreateAndReassign}>
-              Create &amp; Move (Enter)
-            </Button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Group Plant Reassigner (bulk move group to another plant) ─────────────────
-
-interface GroupPlantReassignerProps {
-  currentPlantId: string;
-  imageIds: number[];
-  onReassigned: (ids: number[]) => void;
-}
-
-function GroupPlantReassigner({ currentPlantId, imageIds, onReassigned }: GroupPlantReassignerProps) {
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<Array<{ Id: number; Id1: string; Canonical_Name: string; Category: string }>>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(-1);
-  const [showConfirm, setShowConfirm] = useState<{ id: string; name: string } | null>(null);
-  const [showCreateConfirm, setShowCreateConfirm] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const createRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (showConfirm) confirmRef.current?.focus();
-    if (showCreateConfirm) createRef.current?.focus();
-  }, [showConfirm, showCreateConfirm]);
-
-  const fetchPlants = useCallback(async (search: string) => {
-    try {
-      const res = await fetch(`/api/browse/plants-search?q=${encodeURIComponent(search)}`, { credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setSuggestions(data.filter((p: any) => p.Id1 !== currentPlantId));
-        setShowDropdown(true);
-        setHighlightIndex(-1);
-      }
-    } catch {}
-  }, [currentPlantId]);
-
-  const handleChange = (value: string) => {
-    setQuery(value);
-    setShowConfirm(null);
-    setShowCreateConfirm(false);
-    setHighlightIndex(-1);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (value.trim().length >= 1) {
-      debounceRef.current = setTimeout(() => fetchPlants(value.trim()), 200);
-    } else {
-      setSuggestions([]);
-      setShowDropdown(false);
-    }
-  };
-
-  const selectPlant = (plant: { Id1: string; Canonical_Name: string }) => {
-    setQuery(plant.Canonical_Name);
-    setShowDropdown(false);
-    setShowConfirm({ id: plant.Id1, name: plant.Canonical_Name });
-  };
-
-  const handleReassign = async () => {
-    if (!showConfirm) return;
-    try {
-      const res = await fetch('/api/browse/bulk-reassign-images', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_ids: imageIds, plant_id: showConfirm.id }),
-      });
-      if (res.ok) {
-        setShowConfirm(null);
-        setQuery('');
-        onReassigned(imageIds);
-      }
-    } catch {}
-  };
-
-  const handleCreateAndReassign = async () => {
-    const trimmed = query.trim();
-    const newSlug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    try {
-      const createRes = await fetch('/api/browse/create-plant', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ Canonical_Name: trimmed, Id1: newSlug, Category: 'fruit' }),
-      });
-      if (createRes.ok) {
-        const bulkRes = await fetch('/api/browse/bulk-reassign-images', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_ids: imageIds, plant_id: newSlug }),
-        });
-        if (bulkRes.ok) {
-          setShowCreateConfirm(false);
-          setQuery('');
-          onReassigned(imageIds);
-        }
-      }
-    } catch {}
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      if (suggestions.length > 0) {
-        e.preventDefault(); e.stopPropagation();
-        if (!showDropdown) setShowDropdown(true);
-        setHighlightIndex((prev) => e.key === 'ArrowUp'
-          ? (prev <= 0 ? suggestions.length - 1 : prev - 1)
-          : (prev >= suggestions.length - 1 ? 0 : prev + 1));
-      }
-      return;
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault(); e.stopPropagation();
-      if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
-        selectPlant(suggestions[highlightIndex]);
-      } else {
-        const trimmed = query.trim();
-        if (!trimmed) return;
-        const match = suggestions.find(s => s.Canonical_Name.toLowerCase() === trimmed.toLowerCase());
-        if (match) {
-          selectPlant(match);
-        } else {
-          setShowDropdown(false);
-          setShowCreateConfirm(true);
-        }
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault(); e.stopPropagation();
-      setShowDropdown(false); setShowConfirm(null); setShowCreateConfirm(false); setQuery('');
-    }
-  };
-
-  return (
-    <div className="relative">
-      <div className="flex items-center gap-1">
-        <label className="text-[10px] font-medium shrink-0 text-inherit">Move to:</label>
-        <Input ref={inputRef} value={query} onChange={(e) => handleChange(e.target.value)}
-          onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-          placeholder="Plant name..." className="h-6 text-xs flex-1 bg-white text-black" />
-      </div>
-      {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 bottom-full mb-1 left-0 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
-          {suggestions.map((p, i) => (
-            <button key={p.Id}
-              className={`w-full text-left px-2 py-1 text-xs transition-colors ${i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
-              onMouseDown={(e) => { e.preventDefault(); selectPlant(p); }}
-              onMouseEnter={() => setHighlightIndex(i)}
-            >{p.Canonical_Name} <span className="text-muted-foreground">{p.Category}</span></button>
-          ))}
-        </div>
-      )}
-      {showConfirm && (
-        <div className="absolute z-50 bottom-full mb-1 left-0 right-0 bg-popover border rounded shadow-lg p-2"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleReassign(); }
-            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowConfirm(null); inputRef.current?.focus(); }
-          }}
-        >
-          <p className="text-xs mb-1 text-foreground">Move {imageIds.length} images to <strong>{showConfirm.name}</strong>?</p>
-          <div className="flex gap-1 justify-end">
-            <Button variant="outline" size="sm" className="h-5 text-[10px]" onClick={() => setShowConfirm(null)}>Cancel</Button>
-            <Button ref={confirmRef} size="sm" className="h-5 text-[10px]" onClick={handleReassign}>Move all</Button>
-          </div>
-        </div>
-      )}
-      {showCreateConfirm && (
-        <div className="absolute z-50 bottom-full mb-1 left-0 right-0 bg-popover border rounded shadow-lg p-2"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateAndReassign(); }
-            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setShowCreateConfirm(false); inputRef.current?.focus(); }
-          }}
-        >
-          <p className="text-xs mb-1 text-foreground">Create <strong>&ldquo;{query.trim()}&rdquo;</strong> and move {imageIds.length} images?</p>
-          <div className="flex gap-1 justify-end">
-            <Button variant="outline" size="sm" className="h-5 text-[10px]" onClick={() => { setShowCreateConfirm(false); inputRef.current?.focus(); }}>Cancel</Button>
-            <Button ref={createRef} size="sm" className="h-5 text-[10px]" onClick={handleCreateAndReassign}>Create &amp; Move</Button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Group Variety Picker (bulk set variety on group) ──────────────────────────
-
-interface GroupVarietyPickerProps {
-  plantId: string;
-  imageIds: number[];
-  onSet: (name: string | null) => void;
-}
-
-function GroupVarietyPicker({ plantId, imageIds, onSet }: GroupVarietyPickerProps) {
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<BrowseVariety[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(-1);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
-
-  const fetchVarieties = useCallback(async (search: string) => {
-    try {
-      const res = await fetch(`/api/browse/${plantId}/varieties-search?q=${encodeURIComponent(search)}`, { credentials: 'include' });
-      if (res.ok) {
-        setSuggestions(await res.json());
-        setShowDropdown(true);
-        setHighlightIndex(-1);
-      }
-    } catch {}
-  }, [plantId]);
-
-  const handleChange = (value: string) => {
-    setQuery(value);
-    setHighlightIndex(-1);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (value.trim().length >= 1) {
-      debounceRef.current = setTimeout(() => fetchVarieties(value.trim()), 200);
-    } else {
-      setSuggestions([]);
-      setShowDropdown(false);
-    }
-  };
-
-  const selectVariety = (v: BrowseVariety) => {
-    setQuery('');
-    setShowDropdown(false);
-    onSet(v.Variety_Name);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      if (suggestions.length > 0) {
-        e.preventDefault(); e.stopPropagation();
-        if (!showDropdown) setShowDropdown(true);
-        setHighlightIndex((prev) => e.key === 'ArrowUp'
-          ? (prev <= 0 ? suggestions.length - 1 : prev - 1)
-          : (prev >= suggestions.length - 1 ? 0 : prev + 1));
-      }
-      return;
-    }
-    if (e.key === 'Enter') {
-      e.preventDefault(); e.stopPropagation();
-      if (highlightIndex >= 0 && highlightIndex < suggestions.length) selectVariety(suggestions[highlightIndex]);
-    } else if (e.key === 'Escape') {
-      e.preventDefault(); e.stopPropagation();
-      setShowDropdown(false); setQuery('');
-    }
-  };
-
-  return (
-    <div className="relative">
-      <div className="flex items-center gap-1">
-        <label className="text-[10px] font-medium shrink-0 text-muted-foreground">Set variety:</label>
-        <Input value={query} onChange={(e) => handleChange(e.target.value)}
-          onKeyDown={handleKeyDown} onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-          placeholder="Variety name..." className="h-6 text-xs flex-1" />
-      </div>
-      {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 mt-1 left-0 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
-          {suggestions.map((v, i) => (
-            <button key={v.Id}
-              className={`w-full text-left px-2 py-1 text-xs transition-colors ${i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'}`}
-              onMouseDown={(e) => { e.preventDefault(); selectVariety(v); }}
-              onMouseEnter={() => setHighlightIndex(i)}
-            >{v.Variety_Name}</button>
-          ))}
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

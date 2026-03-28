@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { rotationStyle, buildImageUrl } from '@/lib/gallery-utils';
 import type { BrowsePlant } from '@/types/browse';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -29,8 +30,10 @@ function parseAliases(raw: string | null): string[] {
 
 interface OverviewTabProps {
   plant: BrowsePlant;
+  imageCount: number;
   varietyCount: number;
   documentCount: number;
+  attachmentCount: number;
   recipeCount: number;
   editMode: boolean;
   onPlantUpdated: (plant: BrowsePlant) => void;
@@ -38,18 +41,19 @@ interface OverviewTabProps {
   saveRef?: MutableRefObject<(() => Promise<void>) | null>;
 }
 
-export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, editMode, onPlantUpdated, onSlugChanged, saveRef }: OverviewTabProps) {
+export function OverviewTab({ plant, imageCount, varietyCount, documentCount, attachmentCount, recipeCount, editMode, onPlantUpdated, onSlugChanged, saveRef }: OverviewTabProps) {
   const harvestMonths = parseHarvestMonths(plant.Harvest_Months);
   const aliases = parseAliases(plant.Aliases);
   const plantSlug = (plant as any).Id1 || plant.Id;
   const heroSrc = (plant as any).hero_image
-    ? `/images/${(plant as any).hero_image}`
-    : plant.Image_Count > 0 ? `/images/plants/${plantSlug}/images/` : '';
+    ? buildImageUrl((plant as any).hero_image)
+    : '';
 
   // Edit state
   const [editName, setEditName] = useState(plant.Canonical_Name);
   const [editBotanical, setEditBotanical] = useState(plant.Botanical_Name ?? '');
   const [editDescription, setEditDescription] = useState(plant.Description ?? '');
+  const [editTastingNotes, setEditTastingNotes] = useState(plant.Tasting_Notes ?? '');
   const [editAltNames, setEditAltNames] = useState((plant as any).Alternative_Names ?? '');
   const [editOrigin, setEditOrigin] = useState((plant as any).Origin ?? '');
   const [editFlowerColors, setEditFlowerColors] = useState((plant as any).Flower_Colors ?? '');
@@ -74,6 +78,7 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           Canonical_Name: editName,
           Botanical_Name: editBotanical || null,
           Description: editDescription || null,
+          Tasting_Notes: editTastingNotes || null,
           Alternative_Names: editAltNames || null,
           Origin: editOrigin || null,
           Flower_Colors: editFlowerColors || null,
@@ -119,6 +124,7 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
     setEditName(plant.Canonical_Name);
     setEditBotanical(plant.Botanical_Name ?? '');
     setEditDescription(plant.Description ?? '');
+    setEditTastingNotes(plant.Tasting_Notes ?? '');
     setEditAltNames((plant as any).Alternative_Names ?? '');
     setEditOrigin((plant as any).Origin ?? '');
     setEditFlowerColors((plant as any).Flower_Colors ?? '');
@@ -135,21 +141,10 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
 
   return (
     <div className="space-y-6">
-      {/* Hero image — scaled to fit viewport */}
-      <div className="bg-muted rounded-lg overflow-hidden max-h-[60vh] flex items-center justify-center relative">
-        {plant.Image_Count > 0 && heroSrc ? (
-          <img
-            src={heroSrc}
-            alt={plant.Canonical_Name}
-            className="max-w-full max-h-[60vh] object-contain"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-48 flex items-center justify-center text-muted-foreground text-5xl">
-            <span aria-hidden="true">&#x1F331;</span>
-          </div>
-        )}
-      </div>
+      {/* Two-column layout: text left (2/3), hero right (1/3) */}
+      <div className="flex gap-6 items-start">
+        {/* Left column — text fields */}
+        <div className="flex-1 min-w-0 space-y-4">
 
       {/* Name and details */}
       {editMode ? (
@@ -165,6 +160,10 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
           <div>
             <label className="text-sm font-medium">Description</label>
             <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={4} />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Tasting Notes</label>
+            <Textarea value={editTastingNotes} onChange={(e) => setEditTastingNotes(e.target.value)} rows={2} placeholder="e.g. Sweet, tart, creamy texture..." />
           </div>
           <div>
             <label className="text-sm font-medium">Alternative Names</label>
@@ -269,6 +268,14 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
         </div>
       )}
 
+      {/* Tasting Notes */}
+      {!editMode && plant.Tasting_Notes && (
+        <div>
+          <h3 className="text-sm font-medium mb-1">Tasting Notes</h3>
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap select-text">{plant.Tasting_Notes}</p>
+        </div>
+      )}
+
       {/* Extended details */}
       {!editMode && (
         <div className="space-y-2">
@@ -311,11 +318,34 @@ export function OverviewTab({ plant, varietyCount, documentCount, recipeCount, e
         </div>
       )}
 
+        </div>{/* end left column */}
+
+        {/* Right column — hero image (1/3 width) */}
+        <div className="w-1/3 shrink-0">
+          <div className="bg-muted rounded-lg overflow-hidden flex items-start justify-center sticky top-4">
+            {heroSrc ? (
+              <img
+                src={heroSrc}
+                alt={plant.Canonical_Name}
+                className="w-full object-contain max-h-[70vh]"
+                style={rotationStyle((plant as any).hero_rotation ?? 0)}
+                loading="lazy"
+              />
+            ) : (
+              <div className="w-full h-48 flex items-center justify-center text-muted-foreground text-5xl">
+                <span aria-hidden="true">&#x1F331;</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>{/* end two-column layout */}
+
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatBox label="Images" value={plant.Image_Count} />
+      <div className="grid grid-cols-5 gap-3">
+        <StatBox label="Images" value={imageCount} />
         <StatBox label="Varieties" value={varietyCount} />
         <StatBox label="Documents" value={documentCount} />
+        <StatBox label="Attachments" value={attachmentCount} />
         <StatBox label="Recipes" value={recipeCount} />
       </div>
     </div>

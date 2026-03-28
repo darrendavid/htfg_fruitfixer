@@ -1,87 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
+import { SimplePlantReassignField } from '@/components/browse/PlantAutocomplete';
 import type { BrowseAttachment } from '@/types/browse';
-
-function PlantReassignField({ itemId, onReassigned }: {
-  itemId: number;
-  onReassigned: (plantId: string) => void;
-}) {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Array<{ Id1: string; Canonical_Name: string }>>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [selectedIdx, setSelectedIdx] = useState(-1);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
-
-  useEffect(() => {
-    if (!query || query.length < 2) { setResults([]); setShowDropdown(false); return; }
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/browse/plants-search?q=${encodeURIComponent(query)}`, { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          setResults(data);
-          setShowDropdown(data.length > 0);
-          setSelectedIdx(-1);
-        }
-      } catch {}
-    }, 250);
-    return () => clearTimeout(debounceRef.current);
-  }, [query]);
-
-  const handleSelect = async (plant: { Id1: string; Canonical_Name: string }) => {
-    try {
-      const res = await fetch(`/api/browse/reassign-attachment/${itemId}`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plant_id: plant.Id1 }),
-      });
-      if (res.ok) {
-        onReassigned(plant.Id1);
-        setQuery('');
-        setShowDropdown(false);
-      }
-    } catch {}
-  };
-
-  return (
-    <div className="relative">
-      <Input
-        placeholder="Move to plant..."
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx((i) => Math.min(i + 1, results.length - 1)); }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx((i) => Math.max(i - 1, 0)); }
-          else if (e.key === 'Enter' && selectedIdx >= 0 && results[selectedIdx]) { e.preventDefault(); handleSelect(results[selectedIdx]); }
-          else if (e.key === 'Escape') { setShowDropdown(false); setQuery(''); }
-        }}
-        onFocus={() => { if (results.length > 0) setShowDropdown(true); }}
-        onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-        className="h-7 text-xs"
-      />
-      {showDropdown && (
-        <div className="absolute bottom-full left-0 right-0 z-50 bg-popover border rounded-md shadow-lg mb-1 max-h-40 overflow-y-auto">
-          {results.map((p, i) => (
-            <div
-              key={p.Id1}
-              className={`px-2 py-1 text-xs cursor-pointer hover:bg-accent ${i === selectedIdx ? 'bg-accent' : ''}`}
-              onMouseDown={() => handleSelect(p)}
-            >
-              {p.Canonical_Name}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 interface AttachmentsTabProps {
   plantId: string;
@@ -123,6 +46,10 @@ export function AttachmentsTab({ plantId, attachments: initialAttachments, editM
   const [editDescription, setEditDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadDescription, setUploadDescription] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   const [newAttachment, setNewAttachment] = useState({
     Title: '',
     File_Path: '',
@@ -226,16 +153,77 @@ export function AttachmentsTab({ plantId, attachments: initialAttachments, editM
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{attachments.length} attachment{attachments.length !== 1 ? 's' : ''}</p>
-        {isAdmin && editMode && (
+        {isAdmin && (
           <Button variant="outline" size="sm" onClick={() => setShowAddForm(!showAddForm)}>
-            {showAddForm ? 'Cancel' : '+ Add Attachment'}
+            {showAddForm ? 'Cancel' : '+ Upload Attachment'}
           </Button>
         )}
       </div>
 
-      <p className="text-xs text-muted-foreground italic">
-        File uploads will be available after migration to final deployment.
-      </p>
+      {/* Upload form */}
+      {showAddForm && isAdmin && (
+        <div className="border-2 border-dashed rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <label className="cursor-pointer shrink-0">
+              <Button variant="outline" size="sm" asChild>
+                <span>{uploadFile ? 'Change File' : 'Choose File'}</span>
+              </Button>
+              <input type="file" className="sr-only" onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setUploadFile(f);
+                  if (!uploadTitle) setUploadTitle(f.name.replace(/\.\w+$/, '').replace(/[_-]/g, ' '));
+                }
+                e.target.value = '';
+              }} />
+            </label>
+            {uploadFile && <span className="text-xs text-muted-foreground truncate">{uploadFile.name} ({(uploadFile.size / 1024).toFixed(0)} KB)</span>}
+          </div>
+          <input
+            type="text"
+            value={uploadTitle}
+            onChange={e => setUploadTitle(e.target.value)}
+            placeholder="Title"
+            className="w-full border rounded px-2 py-1 text-sm bg-background"
+          />
+          <input
+            type="text"
+            value={uploadDescription}
+            onChange={e => setUploadDescription(e.target.value)}
+            placeholder="Description (optional)"
+            className="w-full border rounded px-2 py-1 text-sm bg-background"
+          />
+          <div className="flex gap-2">
+            <Button size="sm" disabled={!uploadFile || isUploading} onClick={async () => {
+              if (!uploadFile) return;
+              setIsUploading(true);
+              try {
+                const formData = new FormData();
+                formData.append('file', uploadFile);
+                formData.append('title', uploadTitle);
+                formData.append('description', uploadDescription);
+                const res = await fetch(`/api/browse/upload-attachment/${plantId}`, {
+                  method: 'POST', credentials: 'include', body: formData,
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  setAttachments(prev => [...prev, data]);
+                  setUploadFile(null);
+                  setUploadTitle('');
+                  setUploadDescription('');
+                  setShowAddForm(false);
+                }
+              } catch { /* error */ }
+              finally { setIsUploading(false); }
+            }}>
+              {isUploading ? 'Uploading...' : 'Upload'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => { setShowAddForm(false); setUploadFile(null); setUploadTitle(''); setUploadDescription(''); }}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Add form */}
       {showAddForm && isAdmin && (
@@ -382,8 +370,10 @@ export function AttachmentsTab({ plantId, attachments: initialAttachments, editM
               </div>
               {isAdmin && editMode && (
                 <div className="mt-2 pt-2 border-t">
-                  <PlantReassignField
+                  <SimplePlantReassignField
                     itemId={att.Id}
+                    endpoint="reassign-attachment"
+                    inputClassName="h-7 text-xs"
                     onReassigned={() => {
                       setAttachments((prev) => prev.filter((a) => a.Id !== att.Id));
                     }}

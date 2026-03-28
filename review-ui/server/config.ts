@@ -31,4 +31,5 @@ export const config = {
   CONTENT_ROOT: process.env.CONTENT_ROOT || '',
   NOCODB_URL: process.env.NOCODB_URL || 'https://nocodb.djjd.us',
   NOCODB_API_KEY: requireEnv('NOCODB_API_KEY'),
+  IMAGES_AUTO_ATTRIBUTION: process.env.IMAGES_AUTO_ATTRIBUTION || '',
 };

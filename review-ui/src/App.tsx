@@ -12,6 +12,7 @@ import { AdminDashboardPage } from '@/pages/AdminDashboardPage'
 import { OcrReviewPage } from '@/pages/OcrReviewPage'
 import { PlantGridPage } from '@/pages/PlantGridPage'
 import { PlantDetailPage } from '@/pages/PlantDetailPage'
+import { MatchReviewPage } from '@/pages/MatchReviewPage'
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/plants" element={<PlantGridPage />} />
           <Route path="/plants/:id" element={<PlantDetailPage />} />
+          <Route path="/matches" element={<MatchReviewPage />} />
           <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="/" element={<Navigate to="/swipe" replace />} />
           <Route path="*" element={<Navigate to="/swipe" replace />} />
