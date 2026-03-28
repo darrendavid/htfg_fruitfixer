@@ -100,7 +100,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
-  const [uploadVariety, setUploadVariety] = useState('');
+  const [uploadVariety, setUploadVariety] = useState<{ id: number; name: string } | null>(null);
   const [thumbSize, setThumbSize] = useThumbSize();
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const lightboxImgRef = useRef<HTMLImageElement>(null);
@@ -311,17 +311,17 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     }
   }, []);
 
-  const setImageVariety = useCallback(async (img: BrowseImage, varietyName: string | null) => {
+  const setImageVariety = useCallback(async (img: BrowseImage, variety: { id: number; name: string } | null) => {
     try {
       const res = await fetch(`/api/browse/set-image-variety/${img.Id}`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variety_name: varietyName }),
+        body: JSON.stringify({ variety_id: variety?.id ?? null }),
       });
       if (res.ok) {
         setImages((prev) =>
-          prev.map((i) => (i.Id === img.Id ? { ...i, Variety_Name: varietyName } as any : i))
+          prev.map((i) => (i.Id === img.Id ? { ...i, Variety_Id: variety?.id ?? null, Variety_Name: variety?.name ?? null } as any : i))
         );
       }
     } catch {
@@ -602,17 +602,17 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     } catch {}
   }, []);
 
-  const handleBulkVariety = useCallback(async (imageIds: number[], varietyName: string | null) => {
+  const handleBulkVariety = useCallback(async (imageIds: number[], variety: { id: number; name: string } | null) => {
     try {
       const res = await fetch('/api/browse/bulk-set-variety', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_ids: imageIds, variety_name: varietyName }),
+        body: JSON.stringify({ image_ids: imageIds, variety_id: variety?.id ?? null }),
       });
       if (res.ok) {
         setImages((prev) =>
-          prev.map((i) => imageIds.includes(i.Id) ? { ...i, Variety_Name: varietyName } as any : i)
+          prev.map((i) => imageIds.includes(i.Id) ? { ...i, Variety_Id: variety?.id ?? null, Variety_Name: variety?.name ?? null } as any : i)
         );
       }
     } catch {}
@@ -647,7 +647,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     try {
       const formData = new FormData();
       uploadFiles.forEach(f => formData.append('images', f));
-      if (uploadVariety) formData.append('variety_name', uploadVariety);
+      if (uploadVariety) formData.append('variety_id', String(uploadVariety.id));
       const res = await fetch(`/api/browse/upload-images/${plantId}`, {
         method: 'POST',
         credentials: 'include',
@@ -694,7 +694,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           </Button>
         )}
         {/* Upload dialog needed here too */}
-        <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(''); } }}>
+        <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(null); } }}>
           <DialogContent className="max-w-md">
             <DialogTitle>Add Images to {plantId}</DialogTitle>
             <div
@@ -857,8 +857,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   imageIds={[...selectedIds]}
                   whiteBackground
                   inputId="multiselect-variety-input"
-                  onSet={async (name) => {
-                    await handleBulkVariety([...selectedIds], name);
+                  onSet={async (variety) => {
+                    await handleBulkVariety([...selectedIds], variety);
                     clearSelection();
                   }}
                 />
@@ -984,7 +984,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                         <GroupVarietyPicker
                           plantId={plantId}
                           imageIds={groupIds}
-                          onSet={(name) => handleBulkVariety(groupIds, name)}
+                          onSet={(variety) => handleBulkVariety(groupIds, variety)}
                         />
                       </div>
                     </div>
@@ -1161,7 +1161,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                       plantId={plantId}
                       externalInputRef={varietyInputRef}
                       currentVariety={(lightboxImage as any).Variety_Name ?? null}
-                      onSelect={(name) => setImageVariety(lightboxImage, name)}
+                      onSelect={(variety) => setImageVariety(lightboxImage, variety)}
                     />
                   </div>
                 )}
@@ -1275,7 +1275,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       </Dialog>
 
       {/* Upload dialog */}
-      <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(''); } }}>
+      <Dialog open={showUploadDialog} onOpenChange={(open) => { if (!open) { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(null); } }}>
         <DialogContent className="max-w-md"
           onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; }}
           onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); }}
@@ -1346,12 +1346,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             <GroupVarietyPicker
               plantId={plantId}
               imageIds={[]}
-              onSet={(name) => setUploadVariety(name ?? '')}
+              onSet={(variety) => setUploadVariety(variety)}
             />
             {uploadVariety && (
               <Badge variant="secondary" className="text-xs shrink-0">
-                {uploadVariety}
-                <button className="ml-1 text-muted-foreground hover:text-foreground" onClick={() => setUploadVariety('')}>&times;</button>
+                {uploadVariety.name}
+                <button className="ml-1 text-muted-foreground hover:text-foreground" onClick={() => setUploadVariety(null)}>&times;</button>
               </Badge>
             )}
           </div>
@@ -1359,7 +1359,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           {uploadProgress && <p className="text-sm text-muted-foreground">{uploadProgress}</p>}
 
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(''); }}>
+            <Button variant="outline" onClick={() => { setShowUploadDialog(false); setUploadFiles([]); setUploadProgress(''); setUploadVariety(null); }}>
               Cancel
             </Button>
             <Button onClick={handleUpload} disabled={isUploading || uploadFiles.length === 0}>

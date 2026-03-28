@@ -29,6 +29,26 @@ function extractPlantIds(list: Record<string, any>[], field: string): string[] {
   return [...ids];
 }
 
+// ── Helper: enrich images with Variety_Name from Varieties table via Variety_Id
+async function enrichImagesWithVarietyName(images: any[]): Promise<any[]> {
+  const varietyIds = [...new Set(images.map(i => i.Variety_Id).filter(Boolean))];
+  if (varietyIds.length === 0) return images;
+
+  // Fetch all referenced varieties in one batch
+  const varietyMap = new Map<number, string>();
+  for (let i = 0; i < varietyIds.length; i += 100) {
+    const batch = varietyIds.slice(i, i + 100);
+    const where = batch.map(id => `(Id,eq,${id})`).join('~or');
+    const result = await nocodb.list('Varieties', { where, limit: 100, fields: ['Id', 'Variety_Name'] });
+    for (const v of result.list) varietyMap.set(v.Id, v.Variety_Name);
+  }
+
+  return images.map(img => ({
+    ...img,
+    Variety_Name: img.Variety_Id ? (varietyMap.get(img.Variety_Id) ?? null) : null,
+  }));
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLANT ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -196,13 +216,15 @@ router.get('/:plantId/images', asyncHandler(async (req, res) => {
       if (result.pageInfo.isLastPage) break;
       offset += 200;
     }
-    res.json({ list: allImages, pageInfo: { totalRows: allImages.length } });
+    const enriched = await enrichImagesWithVarietyName(allImages);
+    res.json({ list: enriched, pageInfo: { totalRows: enriched.length } });
   } else {
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const offset = (page - 1) * limit;
     const result = await nocodb.list('Images', { where, limit, offset });
-    res.json({ list: result.list, pageInfo: result.pageInfo });
+    const enriched = await enrichImagesWithVarietyName(result.list);
+    res.json({ list: enriched, pageInfo: result.pageInfo });
   }
 }));
 
@@ -410,11 +432,13 @@ router.get('/:id', asyncHandler(async (req, res) => {
     }
   }
 
+  const enrichedImages = await enrichImagesWithVarietyName((images as any).list);
+
   res.json({
     plant,
     varieties: varieties.list,
     nutritional: nutritional.list,
-    images: { list: (images as any).list, pageInfo: (images as any).pageInfo },
+    images: { list: enrichedImages, pageInfo: (images as any).pageInfo },
     documents: documents.list,
     attachments: attachments.list,
     recipes: recipes.list,
@@ -648,21 +672,7 @@ router.post('/:plantId/varieties', requireAdmin, asyncHandler(async (req, res) =
 // ── PATCH /varieties/:id — Update variety (admin) ────────────────────────────
 router.patch('/varieties/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  // If renaming, cascade to Images.Variety_Name
-  if (req.body.Variety_Name) {
-    const old = await nocodb.get('Varieties', id);
-    if (old && old.Variety_Name !== req.body.Variety_Name) {
-      const images = await nocodb.list('Images', {
-        where: `(Variety_Name,eq,${old.Variety_Name})`,
-        limit: 1000,
-        fields: ['Id'],
-      });
-      if (images.list.length > 0) {
-        const updates = images.list.map((img: any) => ({ Id: img.Id, Variety_Name: req.body.Variety_Name }));
-        await nocodb.bulkUpdate('Images', updates);
-      }
-    }
-  }
+  // With Variety_Id on Images, renaming a variety requires no cascade — the ID stays the same
   await nocodb.update('Varieties', id, req.body);
   const updated = await nocodb.get('Varieties', id);
   res.json(updated);
@@ -682,27 +692,19 @@ router.post('/varieties/merge', requireAdmin, asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'primary_id and merge_ids[] required' });
   }
 
-  // Get the primary variety name
+  // Verify primary variety exists
   const primary = await nocodb.get('Varieties', primary_id);
   if (!primary) return res.status(404).json({ error: 'Primary variety not found' });
-  const primaryName = primary.Variety_Name;
 
-  // Get names of varieties being merged
-  const mergeNames: string[] = [];
-  for (const id of merge_ids) {
-    const v = await nocodb.get('Varieties', id);
-    if (v) mergeNames.push(v.Variety_Name);
-  }
-
-  // Reassign images: update Variety_Name on images that reference any merged variety
-  for (const oldName of mergeNames) {
+  // Reassign images: update Variety_Id on images that reference any merged variety
+  for (const mergedId of merge_ids) {
     const images = await nocodb.list('Images', {
-      where: `(Variety_Name,eq,${oldName})`,
+      where: `(Variety_Id,eq,${mergedId})`,
       limit: 1000,
       fields: ['Id'],
     });
     if (images.list.length > 0) {
-      const updates = images.list.map((img: any) => ({ Id: img.Id, Variety_Name: primaryName }));
+      const updates = images.list.map((img: any) => ({ Id: img.Id, Variety_Id: primary_id }));
       await nocodb.bulkUpdate('Images', updates);
     }
   }
@@ -712,7 +714,7 @@ router.post('/varieties/merge', requireAdmin, asyncHandler(async (req, res) => {
     await nocodb.delete('Varieties', id);
   }
 
-  res.json({ success: true, primary: primaryName, merged_count: merge_ids.length, images_reassigned: mergeNames });
+  res.json({ success: true, primary: primary.Variety_Name, merged_count: merge_ids.length });
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -806,9 +808,9 @@ router.post('/bulk-reassign-images', requireAdmin, asyncHandler(async (req, res)
 
 // ── POST /bulk-set-variety — Set variety on multiple images (admin) ───────────
 router.post('/bulk-set-variety', requireAdmin, asyncHandler(async (req, res) => {
-  const { image_ids, variety_name } = req.body ?? {};
+  const { image_ids, variety_id } = req.body ?? {};
   if (!image_ids?.length) { res.status(400).json({ error: 'image_ids[] required' }); return; }
-  const updates = image_ids.map((id: number) => ({ Id: id, Variety_Name: variety_name || null }));
+  const updates = image_ids.map((id: number) => ({ Id: id, Variety_Id: variety_id || null }));
   for (let i = 0; i < updates.length; i += 100) {
     await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
   }
@@ -818,9 +820,9 @@ router.post('/bulk-set-variety', requireAdmin, asyncHandler(async (req, res) => 
 // ── POST /set-image-variety/:id — Assign a variety to an image (admin) ────────
 router.post('/set-image-variety/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { variety_name } = req.body ?? {};
-  await nocodb.update('Images', id, { Variety_Name: variety_name || null });
-  res.json({ success: true, variety_name: variety_name || null });
+  const { variety_id } = req.body ?? {};
+  await nocodb.update('Images', id, { Variety_Id: variety_id || null });
+  res.json({ success: true, variety_id: variety_id || null });
 }));
 
 // ── POST /update-image-caption/:id — Update image caption (admin) ────────────
@@ -872,7 +874,7 @@ router.post('/replace-image/:id', requireAdmin, replaceUpload.single('image'), a
     File_Path: filePath,
     Plant_Id: plantId,
     Caption: oldImage.Caption || baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' '),
-    Variety_Name: oldImage.Variety_Name || null,
+    Variety_Id: oldImage.Variety_Id || null,
     Attribution: oldImage.Attribution || config.IMAGES_AUTO_ATTRIBUTION || null,
     License: oldImage.License || null,
     Source_Directory: path.relative(contentRoot, plantDir).split(path.sep).join('/'),
@@ -1004,12 +1006,12 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
     const relFromContent = path.relative(contentRoot, destPath).split(path.sep).join('/');
     const filePath = `content/${relFromContent}`;
     const relDir = path.relative(contentRoot, plantDir).split(path.sep).join('/');
-    const varietyName = req.body?.variety_name || null;
+    const varietyId = req.body?.variety_id ? parseInt(req.body.variety_id, 10) : null;
     const record = await nocodb.create('Images', {
       File_Path: filePath,
       Plant_Id: plantId,
       Caption: baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' '),
-      Variety_Name: varietyName,
+      Variety_Id: varietyId,
       Attribution: config.IMAGES_AUTO_ATTRIBUTION || null,
       Source_Directory: relDir,
       Size_Bytes: file.size,

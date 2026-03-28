@@ -231,7 +231,7 @@ describe('Browse API', () => {
       const res = await request(app)
         .post('/api/browse/bulk-set-variety')
         .set('Cookie', cookie)
-        .send({ image_ids: [1, 2], variety_name: 'Haden' });
+        .send({ image_ids: [1, 2], variety_id: 10 });
       expect(res.status).toBe(403);
     });
 
@@ -240,7 +240,7 @@ describe('Browse API', () => {
       const res = await request(app)
         .post('/api/browse/set-image-variety/1')
         .set('Cookie', cookie)
-        .send({ variety_name: 'Haden' });
+        .send({ variety_id: 10 });
       expect(res.status).toBe(403);
     });
   });
@@ -1112,31 +1112,31 @@ describe('Browse API', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('POST /api/browse/set-image-variety/:id', () => {
-    it('sets variety name on image', async () => {
+    it('sets variety_id on image', async () => {
       const cookie = await getAdminCookie();
       mockNocodb.update.mockResolvedValue(undefined);
 
       const res = await request(app)
         .post('/api/browse/set-image-variety/42')
         .set('Cookie', cookie)
-        .send({ variety_name: 'Haden' });
+        .send({ variety_id: 10 });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.variety_name).toBe('Haden');
-      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', { Variety_Name: 'Haden' });
+      expect(res.body.variety_id).toBe(10);
+      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', { Variety_Id: 10 });
     });
 
-    it('clears variety name when variety_name is empty', async () => {
+    it('clears variety_id when variety_id is falsy', async () => {
       const cookie = await getAdminCookie();
       mockNocodb.update.mockResolvedValue(undefined);
 
       const res = await request(app)
         .post('/api/browse/set-image-variety/42')
         .set('Cookie', cookie)
-        .send({ variety_name: '' });
+        .send({ variety_id: 0 });
       expect(res.status).toBe(200);
-      expect(res.body.variety_name).toBeNull();
-      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', { Variety_Name: null });
+      expect(res.body.variety_id).toBeNull();
+      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', { Variety_Id: null });
     });
   });
 
@@ -1234,35 +1234,35 @@ describe('Browse API', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('POST /api/browse/bulk-set-variety', () => {
-    it('sets variety on multiple images', async () => {
+    it('sets variety_id on multiple images', async () => {
       const cookie = await getAdminCookie();
       mockNocodb.bulkUpdate.mockResolvedValue(undefined);
 
       const res = await request(app)
         .post('/api/browse/bulk-set-variety')
         .set('Cookie', cookie)
-        .send({ image_ids: [1, 2, 3], variety_name: 'Haden' });
+        .send({ image_ids: [1, 2, 3], variety_id: 10 });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.count).toBe(3);
       expect(mockNocodb.bulkUpdate).toHaveBeenCalledWith('Images', [
-        { Id: 1, Variety_Name: 'Haden' },
-        { Id: 2, Variety_Name: 'Haden' },
-        { Id: 3, Variety_Name: 'Haden' },
+        { Id: 1, Variety_Id: 10 },
+        { Id: 2, Variety_Id: 10 },
+        { Id: 3, Variety_Id: 10 },
       ]);
     });
 
-    it('clears variety when variety_name is empty', async () => {
+    it('clears variety_id when variety_id is falsy', async () => {
       const cookie = await getAdminCookie();
       mockNocodb.bulkUpdate.mockResolvedValue(undefined);
 
       const res = await request(app)
         .post('/api/browse/bulk-set-variety')
         .set('Cookie', cookie)
-        .send({ image_ids: [1], variety_name: '' });
+        .send({ image_ids: [1], variety_id: 0 });
       expect(res.status).toBe(200);
       expect(mockNocodb.bulkUpdate).toHaveBeenCalledWith('Images', [
-        { Id: 1, Variety_Name: null },
+        { Id: 1, Variety_Id: null },
       ]);
     });
 
@@ -1271,7 +1271,7 @@ describe('Browse API', () => {
       const res = await request(app)
         .post('/api/browse/bulk-set-variety')
         .set('Cookie', cookie)
-        .send({ image_ids: [], variety_name: 'Haden' });
+        .send({ image_ids: [], variety_id: 10 });
       expect(res.status).toBe(400);
     });
   });
@@ -1953,6 +1953,115 @@ describe('Browse API', () => {
       // The where clause should NOT include the Excluded filter
       const whereArg = mockNocodb.list.mock.calls[0][1]?.where;
       expect(whereArg).toBe('(Plant_Id,eq,fig)');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VARIETY_ID REFERENCE INTEGRITY
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('Variety_Id reference integrity', () => {
+    it('images endpoint enriches Variety_Name from Variety_Id', async () => {
+      const cookie = await getAdminCookie();
+      const images = [
+        { Id: 1, File_Path: 'plants/mango/images/1.jpg', Plant_Id: 'mango', Variety_Id: 10, Status: 'assigned' },
+        { Id: 2, File_Path: 'plants/mango/images/2.jpg', Plant_Id: 'mango', Variety_Id: 20, Status: 'assigned' },
+        { Id: 3, File_Path: 'plants/mango/images/3.jpg', Plant_Id: 'mango', Variety_Id: null, Status: 'assigned' },
+      ];
+      const varieties = [
+        { Id: 10, Variety_Name: 'Haden' },
+        { Id: 20, Variety_Name: 'Kent' },
+      ];
+
+      mockNocodb.list.mockImplementation(async (table: string) => {
+        if (table === 'Images') return defaultListResult(images, 3);
+        if (table === 'Varieties') return defaultListResult(varieties, 2);
+        return defaultListResult([], 0);
+      });
+
+      const res = await request(app)
+        .get('/api/browse/mango/images?all=true')
+        .set('Cookie', cookie);
+      expect(res.status).toBe(200);
+      expect(res.body.list[0].Variety_Name).toBe('Haden');
+      expect(res.body.list[1].Variety_Name).toBe('Kent');
+      expect(res.body.list[2].Variety_Name).toBeNull();
+    });
+
+    it('renaming a variety does NOT update Images (FK-based)', async () => {
+      const cookie = await getAdminCookie();
+      const updated = { Id: 1, Variety_Name: 'Haden Supreme' };
+      mockNocodb.update.mockResolvedValue(undefined);
+      mockNocodb.get.mockResolvedValue(updated);
+
+      const res = await request(app)
+        .patch('/api/browse/varieties/1')
+        .set('Cookie', cookie)
+        .send({ Variety_Name: 'Haden Supreme' });
+      expect(res.status).toBe(200);
+      // update called once for Varieties, NOT for Images
+      expect(mockNocodb.update).toHaveBeenCalledTimes(1);
+      expect(mockNocodb.update).toHaveBeenCalledWith('Varieties', '1', { Variety_Name: 'Haden Supreme' });
+      // bulkUpdate should NOT be called (no image cascade)
+      expect(mockNocodb.bulkUpdate).not.toHaveBeenCalled();
+    });
+
+    it('merging varieties updates Variety_Id on images', async () => {
+      const cookie = await getAdminCookie();
+      const primary = { Id: 1, Variety_Name: 'Haden' };
+      const imagesOfMerged = [{ Id: 100 }, { Id: 101 }];
+
+      mockNocodb.get.mockResolvedValue(primary);
+      mockNocodb.list.mockImplementation(async (table: string, opts: any) => {
+        if (table === 'Images' && opts?.where?.includes('Variety_Id,eq,2')) {
+          return defaultListResult(imagesOfMerged, 2);
+        }
+        return defaultListResult([], 0);
+      });
+      mockNocodb.bulkUpdate.mockResolvedValue(undefined);
+      mockNocodb.delete.mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post('/api/browse/varieties/merge')
+        .set('Cookie', cookie)
+        .send({ primary_id: 1, merge_ids: [2] });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      // Images should be updated with Variety_Id of primary
+      expect(mockNocodb.bulkUpdate).toHaveBeenCalledWith('Images', [
+        { Id: 100, Variety_Id: 1 },
+        { Id: 101, Variety_Id: 1 },
+      ]);
+      // Merged variety should be deleted
+      expect(mockNocodb.delete).toHaveBeenCalledWith('Varieties', 2);
+    });
+
+    it('set-image-variety with variety_id updates Variety_Id field', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.update.mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post('/api/browse/set-image-variety/42')
+        .set('Cookie', cookie)
+        .send({ variety_id: 15 });
+      expect(res.status).toBe(200);
+      expect(res.body.variety_id).toBe(15);
+      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', { Variety_Id: 15 });
+    });
+
+    it('bulk-set-variety with variety_id updates Variety_Id on all images', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.bulkUpdate.mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post('/api/browse/bulk-set-variety')
+        .set('Cookie', cookie)
+        .send({ image_ids: [1, 2], variety_id: 5 });
+      expect(res.status).toBe(200);
+      expect(mockNocodb.bulkUpdate).toHaveBeenCalledWith('Images', [
+        { Id: 1, Variety_Id: 5 },
+        { Id: 2, Variety_Id: 5 },
+      ]);
     });
   });
 });

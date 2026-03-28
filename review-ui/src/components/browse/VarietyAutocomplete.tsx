@@ -5,11 +5,17 @@ import type { BrowseVariety } from '@/types/browse';
 
 // ── Variety Picker (autocomplete with create-new) ────────────────────────────
 
+/** Callback payload when a variety is selected or cleared */
+export interface VarietySelection {
+  id: number;
+  name: string;
+}
+
 interface VarietyPickerProps {
   plantId: string;
   currentVariety: string | null;
   externalInputRef?: React.RefObject<HTMLInputElement | null>;
-  onSelect: (name: string | null) => void;
+  onSelect: (variety: VarietySelection | null) => void;
 }
 
 export function VarietyPicker({ plantId, currentVariety, externalInputRef, onSelect }: VarietyPickerProps) {
@@ -68,7 +74,7 @@ export function VarietyPicker({ plantId, currentVariety, externalInputRef, onSel
     setQuery(variety.Variety_Name);
     setShowDropdown(false);
     setHighlightIndex(-1);
-    onSelect(variety.Variety_Name);
+    onSelect({ id: variety.Id, name: variety.Variety_Name });
     inputRef.current?.blur();
   };
 
@@ -128,7 +134,7 @@ export function VarietyPicker({ plantId, currentVariety, externalInputRef, onSel
   const handleCreateAndAssign = async () => {
     const trimmed = query.trim();
     try {
-      // Create new variety
+      // Create new variety — returns full record with Id
       const res = await fetch(`/api/browse/${plantId}/varieties`, {
         method: 'POST',
         credentials: 'include',
@@ -136,7 +142,8 @@ export function VarietyPicker({ plantId, currentVariety, externalInputRef, onSel
         body: JSON.stringify({ Variety_Name: trimmed }),
       });
       if (res.ok) {
-        onSelect(trimmed);
+        const created = await res.json();
+        onSelect({ id: created.Id, name: trimmed });
         setShowConfirm(false);
       }
     } catch {
@@ -233,7 +240,7 @@ export function VarietyPicker({ plantId, currentVariety, externalInputRef, onSel
 interface GroupVarietyPickerProps {
   plantId: string;
   imageIds: number[];
-  onSet: (name: string | null) => void;
+  onSet: (variety: VarietySelection | null) => void;
   /** Use white background for dark parent containers */
   whiteBackground?: boolean;
   /** HTML id for the input element */
@@ -275,7 +282,7 @@ export function GroupVarietyPicker({ plantId, imageIds, onSet, whiteBackground, 
   const selectVariety = (v: BrowseVariety) => {
     setQuery('');
     setShowDropdown(false);
-    onSet(v.Variety_Name);
+    onSet({ id: v.Id, name: v.Variety_Name });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -317,7 +324,8 @@ export function GroupVarietyPicker({ plantId, imageIds, onSet, whiteBackground, 
         credentials: 'include',
       });
       if (res.ok) {
-        onSet(name);
+        const created = await res.json();
+        onSet({ id: created.Id, name });
       }
     } catch {}
     setShowCreateConfirm(false);
