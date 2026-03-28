@@ -22,5 +22,8 @@
     "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@playwright/cli": "^0.1.1"
   }
 }
