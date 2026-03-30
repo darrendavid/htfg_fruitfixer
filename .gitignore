@@ -160,3 +160,5 @@ cookies.txt
 docs/notes.txt
 .playwright-cli/
 package-lock.json
+docs/notes.md
+TODO.md
