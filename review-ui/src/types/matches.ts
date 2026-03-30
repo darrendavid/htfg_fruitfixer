@@ -5,15 +5,14 @@ export interface MatchItem {
   filename: string;
   parent_dir: string;
   grandparent_dir: string;
-  plant_id: string;
-  plant_name: string;
+  plant_id: string | null;
+  plant_name: string | null;
   variety_id: number | null;
   variety_name: string | null;
-  confidence: 'high' | 'medium' | 'low';
-  match_type: string;
+  confidence: 'high' | 'medium' | 'low' | null;
+  match_type: string | null;
   signals: string[];
   file_size: number;
-  exists?: boolean;
 }
 
 export interface MatchGroup {

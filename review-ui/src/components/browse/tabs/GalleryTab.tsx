@@ -1012,7 +1012,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
       {/* Lightbox */}
       <Dialog open={lightboxIndex !== null} onOpenChange={(open) => { if (!open) closeLightbox(); }}>
-        <DialogContent className="max-w-4xl p-2 flex flex-col" style={{ maxHeight: '90dvh' }} onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-4xl p-2 flex flex-col" style={{ maxHeight: '90dvh' }} onPointerDownOutside={(e) => e.preventDefault()} onOpenAutoFocus={(e) => e.preventDefault()}>
           <DialogTitle className="sr-only">{lightboxImage?.Caption ?? 'Image preview'}</DialogTitle>
           {lightboxImage && (
             <div className="flex flex-col min-h-0 flex-1">
@@ -1040,10 +1040,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     maxWidth: '100%',
                     maxHeight: '100%',
                     ...rotationStyle((lightboxImage as any).Rotation),
-                    // For 90/270 rotation, constrain by swapping max dimensions
+                    // For 90/270 rotation, scale down so the rotated image fits the container
                     ...(((((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 90 ||
                          (((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 270)
-                      ? { maxWidth: '100%', maxHeight: '100%' }
+                      ? { maxWidth: '60vh', maxHeight: '80vw' }
                       : {}),
                   }}
                   onLoad={handleImageLoad}

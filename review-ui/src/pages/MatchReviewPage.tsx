@@ -139,7 +139,7 @@ export function MatchReviewPage() {
       if (e.ctrlKey && e.key === 'z') { e.preventDefault(); handleUndo(); return; }
 
       const item = visibleItems[activeIndex];
-      if (e.key === 'a' && item) { handleApprove(item, { Id: 0, Id1: item.plant_id, Canonical_Name: item.plant_name }, item.variety_id != null && item.variety_name ? { id: item.variety_id, name: item.variety_name } : null); return; }
+      if (e.key === 'a' && item && item.plant_id && item.plant_name) { handleApprove(item, { Id: 0, Id1: item.plant_id, Canonical_Name: item.plant_name }, item.variety_id != null && item.variety_name ? { id: item.variety_id, name: item.variety_name } : null); return; }
       if (e.key === 'r' && item) { handleReview(item); return; }
       if (e.key === 'i' && item) { handleIgnore(item); return; }
       if ((e.key === 'ArrowDown' || e.key === 'j') && activeIndex < visibleItems.length - 1) { e.preventDefault(); setActiveIndex((i) => i + 1); }

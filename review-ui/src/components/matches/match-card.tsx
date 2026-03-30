@@ -20,7 +20,7 @@ function formatSize(bytes: number): string {
   return `${Math.round(bytes / 1024)} KB`;
 }
 
-const CONFIDENCE_CLASSES: Record<MatchItem['confidence'], string> = {
+const CONFIDENCE_CLASSES: Record<string, string> = {
   high: 'bg-green-100 text-green-800 border-green-300',
   medium: 'bg-yellow-100 text-yellow-800 border-yellow-300',
   low: 'bg-orange-100 text-orange-800 border-orange-300',
@@ -37,12 +37,12 @@ interface MatchCardProps {
 }
 
 export function MatchCard({ item, isActive, cardRef, onApprove, onReview, onIgnore, onClick }: MatchCardProps) {
-  // Pre-fill plant from inference
-  const [selectedPlant, setSelectedPlant] = useState<PlantSuggestion | null>({
-    Id: 0,
-    Id1: item.plant_id,
-    Canonical_Name: item.plant_name,
-  });
+  // Pre-fill plant from inference (null if no inference)
+  const [selectedPlant, setSelectedPlant] = useState<PlantSuggestion | null>(
+    item.plant_id && item.plant_name
+      ? { Id: 0, Id1: item.plant_id, Canonical_Name: item.plant_name }
+      : null
+  );
   const [selectedVariety, setSelectedVariety] = useState<VarietySelection | null>(
     item.variety_id != null && item.variety_name
       ? { id: item.variety_id, name: item.variety_name }
@@ -101,17 +101,21 @@ export function MatchCard({ item, isActive, cardRef, onApprove, onReview, onIgno
             <p className="text-sm font-medium truncate">{item.filename}</p>
             <p className="text-xs text-muted-foreground">{dims ? `${dims.w}×${dims.h}` : '...'} · {item.parent_dir}</p>
           </div>
-          <Badge className={`text-xs shrink-0 ${CONFIDENCE_CLASSES[item.confidence]}`}>
-            {item.confidence}
-          </Badge>
+          {item.confidence && (
+            <Badge className={`text-xs shrink-0 ${CONFIDENCE_CLASSES[item.confidence] ?? 'bg-gray-100 text-gray-600'}`}>
+              {item.confidence}
+            </Badge>
+          )}
         </div>
 
-        <p className="text-xs text-muted-foreground">
-          <span className="font-medium">Match:</span> {item.match_type}
-          {item.signals.length > 0 && (
-            <span className="ml-2 italic">{item.signals.slice(0, 3).join(', ')}</span>
-          )}
-        </p>
+        {item.match_type && (
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium">Match:</span> {item.match_type}
+            {item.signals.length > 0 && (
+              <span className="ml-2 italic">{item.signals.slice(0, 3).join(', ')}</span>
+            )}
+          </p>
+        )}
 
         {/* Plant + Variety selectors */}
         <div className="flex items-center gap-2 mt-1 flex-wrap">

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import path from 'path';
-import { existsSync, mkdirSync, copyFileSync, unlinkSync, renameSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, copyFileSync, unlinkSync, renameSync, readFileSync, readdirSync, statSync } from 'fs';
 import { requireAdmin } from '../middleware/auth.js';
 import { nocodb } from '../lib/nocodb.js';
 import { config } from '../config.js';
@@ -10,11 +10,17 @@ const router = Router();
 // Project root — used to resolve relative file_path values from the JSON
 const PROJECT_ROOT = path.resolve('d:/Sandbox/htfg_fruitfixer');
 
-// Path to the phase 4C inferences JSON
+// Path to the phase 4C inferences JSON (optional — enriches results with plant/variety suggestions)
 const INFERENCES_JSON = path.resolve(PROJECT_ROOT, 'content/parsed/phase4c_inferences.json');
 
 // pass_01 base (sibling of assigned/)
 const PASS01_BASE = path.resolve(config.IMAGE_MOUNT_PATH, '..');
+
+// Unassigned root — scanned directly for all images
+const UNASSIGNED_ROOT = path.join(PASS01_BASE, 'unassigned', 'unclassified');
+
+// Image extensions to include
+const IMG_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif']);
 
 // ── Helper: async route wrapper ──────────────────────────────────────────────
 function asyncHandler(fn: (req: Request, res: Response) => Promise<void>) {
@@ -47,44 +53,94 @@ function resolveDestFilename(dir: string, filename: string): string {
   return candidate;
 }
 
+// ── Helper: recursively walk directory for image files ───────────────────────
+function walkImages(dir: string, results: Array<{ abs: string; rel: string }>, baseDir: string): void {
+  try {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walkImages(full, results, baseDir);
+      } else if (IMG_EXTS.has(path.extname(entry.name).toLowerCase())) {
+        results.push({ abs: full, rel: path.relative(baseDir, full) });
+      }
+    }
+  } catch { /* skip unreadable dirs */ }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
-// GET /api/matches — Load phase4c inferences grouped by parent_dir
+// GET /api/matches — Scan unassigned folder, enrich with inference data
 // ══════════════════════════════════════════════════════════════════════════════
 router.get('/', asyncHandler(async (_req, res) => {
-  if (!existsSync(INFERENCES_JSON)) {
+  if (!existsSync(UNASSIGNED_ROOT)) {
     res.json({ total: 0, matched: 0, unmatched: 0, groups: [] });
     return;
   }
 
-  const parsed = JSON.parse(readFileSync(INFERENCES_JSON, 'utf-8'));
-  const raw: any[] = parsed.matches || [];
+  // 1. Walk the unassigned/unclassified folder for all images
+  const files: Array<{ abs: string; rel: string }> = [];
+  walkImages(UNASSIGNED_ROOT, files, UNASSIGNED_ROOT);
 
-  // Group by parent_dir
-  const groupMap = new Map<string, any[]>();
-  for (const match of raw) {
-    const folder = match.parent_dir || path.dirname(match.file_path);
-    if (!groupMap.has(folder)) groupMap.set(folder, []);
-    groupMap.get(folder)!.push(match);
+  // 2. Load inference data if available (keyed by file_path for fast lookup)
+  const inferenceMap = new Map<string, any>();
+  if (existsSync(INFERENCES_JSON)) {
+    try {
+      const parsed = JSON.parse(readFileSync(INFERENCES_JSON, 'utf-8'));
+      const matches: any[] = parsed.matches || [];
+      for (const m of matches) {
+        // Key by filename for matching (inference file_path may differ from current location)
+        inferenceMap.set(m.filename, m);
+      }
+    } catch { /* ignore corrupt JSON */ }
   }
 
-  // Build response groups, annotating each match with current file existence
-  const groups: Array<{ folder: string; count: number; matches: any[] }> = [];
+  // 3. Build match items grouped by parent directory
+  const groupMap = new Map<string, any[]>();
   let matched = 0;
   let unmatched = 0;
 
-  for (const [folder, matches] of groupMap) {
-    const pending = matches.filter(m => {
-      const abs = path.resolve(PROJECT_ROOT, m.file_path);
-      return existsSync(abs);
-    });
-    if (pending.length > 0) {
-      groups.push({ folder, count: pending.length, matches: pending });
-      matched += pending.length;
-    }
-    unmatched += matches.length - pending.length;
+  for (const { abs, rel } of files) {
+    const filename = path.basename(rel);
+    const parentDir = path.dirname(rel).split(path.sep).pop() || 'root';
+    const grandparentDir = path.dirname(path.dirname(rel)).split(path.sep).pop() || '';
+    const filePath = path.relative(PROJECT_ROOT, abs).replace(/\\/g, '/');
+    const st = statSync(abs);
+
+    // Look up inference data by filename
+    const inference = inferenceMap.get(filename);
+
+    const item: Record<string, any> = {
+      file_path: filePath,
+      filename,
+      parent_dir: parentDir,
+      grandparent_dir: grandparentDir,
+      file_size: st.size,
+      // Inference fields (null if no match)
+      plant_id: inference?.plant_id ?? null,
+      plant_name: inference?.plant_name ?? null,
+      variety_id: inference?.variety_id ?? null,
+      variety_name: inference?.variety_name ?? null,
+      confidence: inference?.confidence ?? null,
+      match_type: inference?.match_type ?? null,
+      signals: inference?.signals ?? [],
+    };
+
+    if (inference) matched++;
+    else unmatched++;
+
+    if (!groupMap.has(parentDir)) groupMap.set(parentDir, []);
+    groupMap.get(parentDir)!.push(item);
   }
 
-  res.json({ total: raw.length, matched, unmatched, groups });
+  // Sort groups alphabetically, items within groups by filename
+  const groups = [...groupMap.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([folder, matches]) => ({
+      folder,
+      count: matches.length,
+      matches: matches.sort((a: any, b: any) => a.filename.localeCompare(b.filename)),
+    }));
+
+  res.json({ total: files.length, matched, unmatched, groups });
 }));
 
 // ══════════════════════════════════════════════════════════════════════════════
