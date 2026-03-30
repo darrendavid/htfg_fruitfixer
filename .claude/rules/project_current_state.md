@@ -63,9 +63,19 @@ unassigned/
 - `phase6-ocr-extract.mjs` — Claude API structured extraction, 531 successful
 - `generate-ignored-report.mjs` — HTML report comparing ignored vs assigned with MD5 checksums and thumbnails
 
+## CRITICAL: Unfinished Migration (see docs/pending-migration-tasks.md)
+- **1,904 files in content/parsed/ NOT in pass_01/** — same filenames, different sizes (different photos). Must recover before deleting parsed/.
+  - 127 plant-associated (parsed/plants/) → copy to pass_01/assigned/{plant}/images/
+  - 1,777 unclassified (parsed/unclassified/) → copy to pass_01/unassigned/unclassified/
+  - Verify with: `node scripts/verify-parsed-migration.mjs`
+- **Metadata reorganization**: Move content/parsed/*.json to data/ directory (nocodb_table_ids.json, pipeline history, active runtime files). Update all import paths.
+- **matches.ts hardcoded path**: `PROJECT_ROOT` on line ~11 is hardcoded to `d:/Sandbox/htfg_fruitfixer` — must update on new machine
+
 ## Pending/Future Work
-- **hidden/ folder review**: Contains potentially valuable images that were auto-classified, not all human-reviewed
-- **ignored/unassigned/ review**: 3,953 files from original triage + 4,194 duplicates — could surface in /matches UI for review
+- **hidden/ folder review** (1,855 images): Mix of manual triage + auto-classified, NOT fully human-reviewed
+- **ignored/ folder review** (4,194 in unassigned/ignored + 3,548 in pass_01/ignored): report at `content/pass_01/unassigned/ignored-vs-assigned-report.html`
+- **Re-run Phase 4C**: After recovering 1,777 unclassified images, run inference again
+- **Source-to-pass01 audit**: Compare source/ (22,994) against pass_01/ to account for every file
 - **Empty NocoDB tables**: Geographies, Growing_Notes, Pests, Diseases, FAQ
 - **Docker deployment**: Config exists, not yet deployed to production
 - **Public-facing website**: Not started
