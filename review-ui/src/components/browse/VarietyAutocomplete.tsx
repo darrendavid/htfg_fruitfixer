@@ -190,20 +190,17 @@ export function VarietyPicker({ plantId, currentVariety, externalInputRef, onSel
 
       {/* Autocomplete dropdown -- opens upward to avoid clipping */}
       {showDropdown && suggestions.length > 0 && (
-        <div className="absolute z-50 bottom-full mb-1 left-16 right-0 bg-popover border rounded shadow-lg max-h-40 overflow-y-auto">
+        <div className="absolute z-50 bottom-full mb-1 left-16 min-w-[300px] bg-popover text-popover-foreground border rounded shadow-lg max-h-40 overflow-y-auto">
           {suggestions.map((v, i) => (
             <button
               key={v.Id}
               className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'
+                i === highlightIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted text-foreground'
               }`}
               onMouseDown={(e) => { e.preventDefault(); handleSelectExisting(v); }}
               onMouseEnter={() => setHighlightIndex(i)}
             >
               <span className="font-medium">{v.Variety_Name}</span>
-              {v.Characteristics && (
-                <span className="text-muted-foreground ml-2">{v.Characteristics.slice(0, 50)}</span>
-              )}
             </button>
           ))}
         </div>

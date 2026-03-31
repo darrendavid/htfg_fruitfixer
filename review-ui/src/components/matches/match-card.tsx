@@ -5,18 +5,19 @@ import { PlantAutocomplete, type PlantSuggestion } from '@/components/browse/Pla
 import { VarietyPicker, type VarietySelection } from '@/components/browse/VarietyAutocomplete';
 import type { MatchItem, UndoToken } from '@/types/matches';
 
-// Derive thumbnail URL from file_path
-// file_path: "content/pass_01/unassigned/unclassified/images/Foo/bar.jpg"
-// URL:        "/unassigned-images/unclassified/images/Foo/bar.jpg"
+// Derive thumbnail URL from file_path (images only)
 function thumbUrl(item: MatchItem): string {
   const prefix = 'content/pass_01/unassigned/';
   const stripped = item.file_path.startsWith(prefix)
     ? item.file_path.slice(prefix.length)
     : item.file_path;
-  return `/unassigned-images/${stripped}`;
+  // Encode each path segment to handle # and other special chars in directory names
+  const encoded = stripped.split('/').map((seg) => encodeURIComponent(seg)).join('/');
+  return `/unassigned-images/${encoded}`;
 }
 
 function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${Math.round(bytes / 1024)} KB`;
 }
 
@@ -26,18 +27,34 @@ const CONFIDENCE_CLASSES: Record<string, string> = {
   low: 'bg-orange-100 text-orange-800 border-orange-300',
 };
 
+const EXT_COLORS: Record<string, string> = {
+  pdf: 'bg-red-100 text-red-700',
+  doc: 'bg-blue-100 text-blue-700',
+  docx: 'bg-blue-100 text-blue-700',
+  ppt: 'bg-orange-100 text-orange-700',
+  pptx: 'bg-orange-100 text-orange-700',
+  xls: 'bg-green-100 text-green-700',
+  xlsx: 'bg-green-100 text-green-700',
+  txt: 'bg-gray-100 text-gray-700',
+};
+
+function fileExt(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase() ?? '';
+}
+
 interface MatchCardProps {
   item: MatchItem;
   isActive: boolean;
+  isSelected?: boolean;
   cardRef?: React.RefObject<HTMLDivElement | null>;
   onApprove: (item: MatchItem, plant: PlantSuggestion, variety: VarietySelection | null) => Promise<UndoToken | null>;
+  onAttach: (item: MatchItem, plant: PlantSuggestion) => Promise<UndoToken | null>;
   onReview: (item: MatchItem) => Promise<UndoToken | null>;
   onIgnore: (item: MatchItem) => Promise<UndoToken | null>;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
 }
 
-export function MatchCard({ item, isActive, cardRef, onApprove, onReview, onIgnore, onClick }: MatchCardProps) {
-  // Pre-fill plant from inference (null if no inference)
+export function MatchCard({ item, isActive, isSelected, cardRef, onApprove, onAttach, onReview, onIgnore, onClick }: MatchCardProps) {
   const [selectedPlant, setSelectedPlant] = useState<PlantSuggestion | null>(
     item.plant_id && item.plant_name
       ? { Id: 0, Id1: item.plant_id, Canonical_Name: item.plant_name }
@@ -52,10 +69,20 @@ export function MatchCard({ item, isActive, cardRef, onApprove, onReview, onIgno
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
+  const isDoc = item.file_type === 'document';
+  const ext = fileExt(item.filename);
+
   const handleApprove = async () => {
     if (!selectedPlant || busy) return;
     setBusy(true);
     await onApprove(item, selectedPlant, selectedVariety);
+    setBusy(false);
+  };
+
+  const handleAttach = async () => {
+    if (!selectedPlant || busy) return;
+    setBusy(true);
+    await onAttach(item, selectedPlant);
     setBusy(false);
   };
 
@@ -77,21 +104,40 @@ export function MatchCard({ item, isActive, cardRef, onApprove, onReview, onIgno
     <div
       ref={cardRef}
       onClick={onClick}
-      className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-        isActive ? 'border-blue-500 bg-blue-50' : 'border-border hover:bg-muted/50'
+      className={`flex gap-3 p-3 rounded-lg border cursor-pointer transition-colors relative ${
+        isSelected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-400 ring-offset-1' :
+        isActive ? 'border-blue-400 bg-blue-50/60' : 'border-border hover:bg-muted/50'
       }`}
     >
-      {/* Thumbnail */}
+      {/* Selection checkmark */}
+      {isSelected && (
+        <div className="absolute top-2 left-2 z-10 bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold pointer-events-none">
+          ✓
+        </div>
+      )}
+
+      {/* Thumbnail / File icon */}
       <div className="shrink-0 w-[150px] h-[110px] bg-muted rounded overflow-hidden flex items-center justify-center">
-        <img
-          ref={imgRef}
-          src={thumbUrl(item)}
-          alt={item.filename}
-          loading="lazy"
-          className="w-full h-full object-cover"
-          onLoad={(e) => { const t = e.currentTarget; setDims({ w: t.naturalWidth, h: t.naturalHeight }); }}
-          onError={() => { if (imgRef.current) imgRef.current.style.display = 'none'; }}
-        />
+        {isDoc ? (
+          <div className="flex flex-col items-center gap-1">
+            <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${EXT_COLORS[ext] ?? 'bg-gray-100 text-gray-600'}`}>
+              {ext || 'file'}
+            </span>
+            <span className="text-xs text-muted-foreground text-center px-2 leading-tight max-h-16 overflow-hidden">
+              {formatSize(item.file_size)}
+            </span>
+          </div>
+        ) : (
+          <img
+            ref={imgRef}
+            src={thumbUrl(item)}
+            alt={item.filename}
+            loading="lazy"
+            className="w-full h-full object-cover"
+            onLoad={(e) => { const t = e.currentTarget; setDims({ w: t.naturalWidth, h: t.naturalHeight }); }}
+            onError={() => { if (imgRef.current) imgRef.current.style.display = 'none'; }}
+          />
+        )}
       </div>
 
       {/* Details */}
@@ -99,14 +145,31 @@ export function MatchCard({ item, isActive, cardRef, onApprove, onReview, onIgno
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-sm font-medium truncate">{item.filename}</p>
-            <p className="text-xs text-muted-foreground">{dims ? `${dims.w}×${dims.h}` : '...'} · {item.parent_dir}</p>
+            <p className="text-xs text-muted-foreground">
+              {isDoc ? formatSize(item.file_size) : (dims ? `${dims.w}×${dims.h}` : '...')}
+              {' · '}{item.parent_dir}
+            </p>
           </div>
-          {item.confidence && (
-            <Badge className={`text-xs shrink-0 ${CONFIDENCE_CLASSES[item.confidence] ?? 'bg-gray-100 text-gray-600'}`}>
-              {item.confidence}
-            </Badge>
-          )}
+          <div className="flex items-center gap-1 shrink-0">
+            {isDoc && (
+              <Badge variant="outline" className="text-xs text-purple-700 border-purple-300">
+                attachment
+              </Badge>
+            )}
+            {item.confidence && (
+              <Badge className={`text-xs ${CONFIDENCE_CLASSES[item.confidence] ?? 'bg-gray-100 text-gray-600'}`}>
+                {item.confidence}
+              </Badge>
+            )}
+          </div>
         </div>
+
+        {/* TXT preview */}
+        {item.txt_preview && (
+          <p className="text-xs text-muted-foreground bg-muted/50 rounded p-1.5 leading-relaxed max-h-16 overflow-hidden whitespace-pre-wrap">
+            {item.txt_preview}
+          </p>
+        )}
 
         {item.match_type && (
           <p className="text-xs text-muted-foreground">
@@ -139,25 +202,51 @@ export function MatchCard({ item, isActive, cardRef, onApprove, onReview, onIgno
             <span className="text-xs text-purple-600 font-medium">· {selectedVariety.name}</span>
           )}
         </div>
-        {selectedPlant && (
-          <VarietyPicker
-            plantId={selectedPlant.Id1}
-            currentVariety={selectedVariety?.name ?? null}
-            onSelect={(v) => setSelectedVariety(v)}
-          />
+        {!isDoc && (
+          <div className={selectedPlant ? undefined : 'opacity-40 pointer-events-none'}>
+            <VarietyPicker
+              plantId={selectedPlant?.Id1 ?? ''}
+              currentVariety={selectedVariety?.name ?? null}
+              onSelect={(v) => setSelectedVariety(v)}
+            />
+          </div>
         )}
 
         {/* Action buttons */}
-        <div className="flex gap-2 mt-1">
-          <Button
-            size="sm"
-            className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
-            onClick={(e) => { e.stopPropagation(); handleApprove(); }}
-            disabled={busy || !selectedPlant}
-            title="Approve (a)"
-          >
-            Approve
-          </Button>
+        <div className="flex gap-2 mt-1 flex-wrap">
+          {isDoc ? (
+            <>
+              <a
+                href={`/content-files/${item.file_path.replace(/^content\//, '').split('/').map(s => encodeURIComponent(s)).join('/')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="h-7 text-xs inline-flex items-center px-3 rounded border border-border hover:bg-muted transition-colors"
+                onClick={(e) => e.stopPropagation()}
+                title="Open file in new tab"
+              >
+                Open
+              </a>
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-purple-600 hover:bg-purple-700 text-white"
+                onClick={(e) => { e.stopPropagation(); handleAttach(); }}
+                disabled={busy || !selectedPlant}
+                title="Attach to plant (a)"
+              >
+                Attach
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
+              onClick={(e) => { e.stopPropagation(); handleApprove(); }}
+              disabled={busy || !selectedPlant}
+              title="Approve (a)"
+            >
+              Approve
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"

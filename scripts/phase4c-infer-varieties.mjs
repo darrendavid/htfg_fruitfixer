@@ -13,15 +13,20 @@
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'fs';
 import { join, extname, basename, relative } from 'path';
-import dotenv from 'dotenv';
 
 const ROOT = join(import.meta.dirname, '..');
 const PARSED = join(ROOT, 'content', 'parsed');
-const UNCLASSIFIED_ROOT = join(ROOT, 'content', 'pass_01', 'unassigned', 'unclassified', 'images');
+const UNCLASSIFIED_ROOT = join(ROOT, 'content', 'pass_01', 'unassigned', 'unclassified');
 const OUTPUT_FILE = join(PARSED, 'phase4c_inferences.json');
 
-// Load env from review-ui/.env
-dotenv.config({ path: join(ROOT, 'review-ui', '.env') });
+// Load env from review-ui/.env (no dotenv dependency)
+try {
+  const envText = readFileSync(join(ROOT, 'review-ui', '.env'), 'utf-8');
+  for (const line of envText.split('\n')) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
+  }
+} catch { /* .env not found */ }
 
 const NOCODB_API_KEY = process.env.NOCODB_API_KEY;
 if (!NOCODB_API_KEY) {
@@ -64,7 +69,7 @@ function normalize(name) {
   n = n.replace(/[-_\.]/g, ' ');
   n = n.replace(/\s+/g, ' ').trim();
   n = n.replace(/\b(files|pix|copy|folder|photos?|pics?|images?|thumbnails?)\b/g, '').trim();
-  n = n.replace(/\s*\d+$/, '').trim();
+  n = n.replace(/\b\d+\b/g, '').replace(/\s+/g, ' ').trim(); // strip all standalone numbers (dates, IDs)
   n = n.replace(/^(new|more)\s+/i, '').trim();
   n = n.replace(/\s+/g, ' ').trim();
   return n;
@@ -79,6 +84,7 @@ function normalizeLookup(name) {
   n = n.replace(/[-_\.]/g, ' ');
   n = n.replace(/\s+/g, ' ').trim();
   n = n.replace(/\b(files|pix|copy|folder|photos?|pics?|images?|thumbnails?)\b/g, '').trim();
+  n = n.replace(/\b\d+\b/g, '').replace(/\s+/g, ' ').trim(); // strip standalone numbers
   n = n.replace(/^(new|more)\s+/i, '').trim();
   n = n.replace(/\s+/g, ' ').trim();
   return n;
@@ -156,6 +162,8 @@ const stopWords = new Set([
   'dome', 'roundbl', 'roundbr', 'roundtl', 'roundtr', 'spacer', 'bgtile',
   // Fruit shoot / 12 trees project generic terms
   'fruit', 'shoot', 'fruitshoot', 'trees', '12trees',
+  // Plural fruit names used as folder labels (not variety names)
+  'bananas', 'mangoes', 'papayas', 'guavas', 'avocados', 'figs', 'oranges', 'limes', 'lemons',
   // Common person names that match short variety names
   'james', 'hall', 'carter', 'baker', 'blair', 'blake', 'brooks',
   'butler', 'campbell', 'carmen', 'cecil', 'chance', 'chase',
@@ -174,6 +182,10 @@ const DIR_OVERRIDES = new Map([
   ['surinam',   { plant_id: 'surinam-cherry', note: 'Surinam cherry (Eugenia uniflora)' }],
   ['zakuo',     { plant_id: 'pomegranate', note: 'Zakuro = pomegranate (Japanese)' }],
   ['zakuro',    { plant_id: 'pomegranate', note: 'Zakuro = pomegranate (Japanese)' }],
+  ['banangar',   { plant_id: 'banana',     note: 'banangar = banana subgroup directory' }],
+  ['ume',        { plant_id: 'ume',        note: 'Ume (Japanese apricot/plum) — short name bypasses length guard' }],
+  ['ohelo',      { plant_id: 'ohelo',      note: 'Ohelo — matched via override due to potential lookup gap' }],
+  ['watermelon', { plant_id: 'watermelon', note: 'Watermelon' }],
 ]);
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -294,16 +306,26 @@ async function main() {
     let bestMatch = null;
     let bestLen = 0;
     for (const name of allPlantNames) {
-      if (name.length < 5 || name.length <= bestLen) continue;
+      if (name.length < 5) continue;
       if (stopWords.has(name)) continue;
+
+      // Case A: plant name is a substring of the directory text
       const idx = text.indexOf(name);
-      if (idx !== -1) {
+      if (idx !== -1 && name.length > bestLen) {
         const before = idx > 0 ? text[idx - 1] : ' ';
         const after = idx + name.length < text.length ? text[idx + name.length] : ' ';
         if ((/[\s\-_.,]/.test(before) || idx === 0) && (/[\s\-_.,]/.test(after) || idx + name.length === text.length)) {
           bestLen = name.length;
           bestMatch = { ...plantLookup.get(name), matched_name: name };
+          continue;
         }
+      }
+
+      // Case B: directory text is a prefix of the plant name
+      // e.g. dir="surinam" → plant="surinam cherry"
+      if (text.length >= 5 && text.length > bestLen && name.startsWith(text)) {
+        bestLen = text.length;
+        bestMatch = { ...plantLookup.get(name), matched_name: name };
       }
     }
     return bestMatch;
@@ -334,16 +356,26 @@ async function main() {
     let bestMatch = null;
     let bestLen = 0;
     for (const name of allVarietyNames) {
-      if (name.length < 5 || name.length <= bestLen) continue;
+      if (name.length < 5) continue;
       if (stopWords.has(name)) continue;
+
+      // Case A: variety name is a substring of the directory text
       const idx = text.indexOf(name);
-      if (idx !== -1) {
+      if (idx !== -1 && name.length > bestLen) {
         const before = idx > 0 ? text[idx - 1] : ' ';
         const after = idx + name.length < text.length ? text[idx + name.length] : ' ';
         if ((/[\s\-_.,]/.test(before) || idx === 0) && (/[\s\-_.,]/.test(after) || idx + name.length === text.length)) {
           bestLen = name.length;
           bestMatch = { ...varietyLookup.get(name), matched_name: name };
+          continue;
         }
+      }
+
+      // Case B: directory text is a prefix of the variety name
+      // e.g. dir="maoli hai" → variety="maoli haikea"
+      if (text.length >= 5 && text.length > bestLen && name.startsWith(text)) {
+        bestLen = text.length;
+        bestMatch = { ...varietyLookup.get(name), matched_name: name };
       }
     }
     return bestMatch;
@@ -552,11 +584,20 @@ async function main() {
       }
     }
 
-    // ── Priority 10: Plant fuzzy match on directory ─────────────────────────
+    // ── Priority 10: Plant fuzzy match on directory (whole string, then words) ─
     if (!inference) {
       for (const dir of candidateDirs) {
         if (dir.normalized.length < 4) continue;
-        const pm = findPlantFuzzy(dir.normalized, 2);
+        // Try whole string first
+        let pm = findPlantFuzzy(dir.normalized, 2);
+        if (!pm) {
+          // Try each word in the directory name (catches "papya leaf & rain" → papya ≈ papaya)
+          const words = dir.normalized.split(/[\s&+,]+/).filter(w => w.length >= 4 && !stopWords.has(w));
+          for (const word of words) {
+            pm = findPlantFuzzy(word, 2);
+            if (pm) break;
+          }
+        }
         if (pm) {
           inference = {
             plant_id: pm.plant_id,

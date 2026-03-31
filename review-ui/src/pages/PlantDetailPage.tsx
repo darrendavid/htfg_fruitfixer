@@ -26,9 +26,15 @@ export function PlantDetailPage() {
   const [detail, setDetail] = useState<PlantDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
   const overviewSaveRef = useRef<(() => Promise<void>) | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Scroll to top on mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [id]);
 
   const handleDeletePlant = useCallback(async () => {
     if (!id) return;
@@ -75,6 +81,11 @@ export function PlantDetailPage() {
     fetchDetail();
   }, [fetchDetail]);
 
+  // Turn off edit mode when switching away from overview
+  useEffect(() => {
+    if (activeTab !== 'overview' && editMode) setEditMode(false);
+  }, [activeTab, editMode]);
+
   const handlePlantUpdated = (plant: BrowsePlant) => {
     if (detail) setDetail({ ...detail, plant });
   };
@@ -98,6 +109,9 @@ export function PlantDetailPage() {
       <AppShell
         title={detail?.plant.Canonical_Name ?? 'Plant Detail'}
         subtitle={detail?.plant.Botanical_Name ?? undefined}
+        backTo="/plants"
+        backLabel="Back to Plants"
+        titleClassName="text-xl"
       >
         {isLoading && (
           <div className="p-4 space-y-4">
@@ -109,42 +123,10 @@ export function PlantDetailPage() {
         )}
 
         {!isLoading && detail && (
-          <div className="p-4 space-y-4">
-            {/* Header with edit toggle */}
-            <div className="flex items-center justify-between">
-              <Button variant="ghost" size="sm" onClick={() => navigate('/plants')}>
-                &larr; Back
-              </Button>
-              {isAdmin && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant={editMode ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={async () => {
-                      if (editMode && overviewSaveRef.current) {
-                        await overviewSaveRef.current();
-                      }
-                      setEditMode(!editMode);
-                    }}
-                  >
-                    {editMode ? 'Save' : 'Edit'}
-                  </Button>
-                  {editMode && (
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setShowDeleteConfirm(true)}
-                    >
-                      Delete Plant
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Tabbed content */}
-            <Tabs defaultValue="overview">
-              <TabsList className="w-full overflow-x-auto flex-nowrap">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col">
+            {/* Sticky tabs bar */}
+            <div className="sticky top-14 z-30 bg-background border-b">
+              <TabsList className="w-full overflow-x-auto flex-nowrap px-4">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="gallery">Gallery</TabsTrigger>
                 <TabsTrigger value="varieties">Varieties</TabsTrigger>
@@ -155,8 +137,36 @@ export function PlantDetailPage() {
                 <TabsTrigger value="ocr">OCR</TabsTrigger>
                 <TabsTrigger value="notes">Notes</TabsTrigger>
               </TabsList>
+            </div>
 
-              <TabsContent value="overview">
+            <div className="p-4">
+              <TabsContent value="overview" className="mt-0">
+                {/* Edit/Save/Delete — only on Overview, below tabs */}
+                {isAdmin && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <Button
+                      variant={editMode ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={async () => {
+                        if (editMode && overviewSaveRef.current) {
+                          await overviewSaveRef.current();
+                        }
+                        setEditMode(!editMode);
+                      }}
+                    >
+                      {editMode ? 'Save' : 'Edit'}
+                    </Button>
+                    {editMode && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => setShowDeleteConfirm(true)}
+                      >
+                        Delete Plant
+                      </Button>
+                    )}
+                  </div>
+                )}
                 <OverviewTab
                   plant={detail.plant}
                   imageCount={detail.images?.pageInfo?.totalRows ?? detail.images?.list?.length ?? 0}
@@ -171,7 +181,7 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="gallery">
+              <TabsContent value="gallery" className="mt-0">
                 <GalleryTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   currentHeroPath={(detail.plant as any).hero_image ?? undefined}
@@ -184,7 +194,7 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="varieties">
+              <TabsContent value="varieties" className="mt-0">
                 <VarietiesTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   varieties={detail.varieties}
@@ -193,7 +203,7 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="nutrition">
+              <TabsContent value="nutrition" className="mt-0">
                 <NutritionTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   nutritional={detail.nutritional}
@@ -202,11 +212,11 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="documents">
+              <TabsContent value="documents" className="mt-0">
                 <DocumentsTab documents={detail.documents} />
               </TabsContent>
 
-              <TabsContent value="attachments">
+              <TabsContent value="attachments" className="mt-0">
                 <AttachmentsTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   attachments={detail.attachments ?? []}
@@ -214,7 +224,7 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="recipes">
+              <TabsContent value="recipes" className="mt-0">
                 <RecipesTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   recipes={detail.recipes}
@@ -222,11 +232,11 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="ocr">
+              <TabsContent value="ocr" className="mt-0">
                 <OcrTab ocrExtractions={detail.ocr} plantId={(detail.plant as any).Id1 || detail.plant.Id} />
               </TabsContent>
 
-              <TabsContent value="notes">
+              <TabsContent value="notes" className="mt-0">
                 <NotesTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   notes={detail.notes}
@@ -234,8 +244,8 @@ export function PlantDetailPage() {
                   onNotesChanged={handleNotesChanged}
                 />
               </TabsContent>
-            </Tabs>
-          </div>
+            </div>
+          </Tabs>
         )}
 
         {!isLoading && !detail && (

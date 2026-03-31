@@ -39,6 +39,42 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
   const [newName, setNewName] = useState('');
   const [isAdding, setIsAdding] = useState(false);
 
+  // Filter state
+  const [filterText, setFilterText] = useState('');
+
+  // Sort state
+  type SortCol = 'Variety_Name' | 'Genome_Group' | 'Characteristics' | 'Tasting_Notes' | 'Source';
+  const [sortCol, setSortCol] = useState<SortCol>('Variety_Name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const handleSort = (col: SortCol) => {
+    if (col === sortCol) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
+
+  const filteredVarieties = filterText
+    ? varieties.filter(v => {
+        const q = filterText.toLowerCase();
+        return (v.Variety_Name ?? '').toLowerCase().includes(q)
+          || (v.Genome_Group ?? '').toLowerCase().includes(q)
+          || (v.Characteristics ?? '').toLowerCase().includes(q)
+          || (v.Tasting_Notes ?? '').toLowerCase().includes(q)
+          || (v.Source ?? '').toLowerCase().includes(q);
+      })
+    : varieties;
+
+  const sortedVarieties = [...filteredVarieties].sort((a, b) => {
+    const av = ((a as any)[sortCol] ?? '') as string;
+    const bv = ((b as any)[sortCol] ?? '') as string;
+    const cmp = av.localeCompare(bv, undefined, { sensitivity: 'base' });
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const SortIcon = ({ col }: { col: SortCol }) => {
+    if (col !== sortCol) return <span className="ml-1 text-muted-foreground/40">↕</span>;
+    return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+  };
+
   // Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
@@ -193,24 +229,43 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
 
   return (
     <div className="space-y-4">
-      {/* Action bar */}
-      {isAdmin && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button size="sm" variant="outline" onClick={() => setShowAddForm(!showAddForm)}>
-            + Add Variety
-          </Button>
-          {selectedIds.size >= 2 && (
-            <Button size="sm" variant="default" onClick={openMergeDialog}>
-              Merge {selectedIds.size} Varieties
-            </Button>
-          )}
-          {selectedIds.size > 0 && (
-            <Button size="sm" variant="ghost" onClick={clearSelection}>
-              Clear Selection ({selectedIds.size})
-            </Button>
+      {/* Action bar — sticky below tabs */}
+      <div className={`sticky top-[6.25rem] z-20 bg-background py-2 -mt-4 -mx-4 px-4 border-b flex items-center gap-2 flex-wrap`}>
+        <div className="relative">
+          <Input
+            value={filterText}
+            onChange={e => setFilterText(e.target.value)}
+            placeholder="Filter varieties..."
+            className="h-7 text-xs w-48"
+          />
+          {filterText && (
+            <button
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
+              onClick={() => setFilterText('')}
+            >&times;</button>
           )}
         </div>
-      )}
+        {filterText && (
+          <span className="text-xs text-muted-foreground">{sortedVarieties.length} of {varieties.length}</span>
+        )}
+        {isAdmin && (
+          <>
+            <Button size="sm" variant="outline" onClick={() => setShowAddForm(!showAddForm)}>
+              + Add Variety
+            </Button>
+            {selectedIds.size >= 2 && (
+              <Button size="sm" variant="default" onClick={openMergeDialog}>
+                Merge {selectedIds.size} Varieties
+              </Button>
+            )}
+            {selectedIds.size > 0 && (
+              <Button size="sm" variant="ghost" onClick={clearSelection}>
+                Clear Selection ({selectedIds.size})
+              </Button>
+            )}
+          </>
+        )}
+      </div>
 
       {/* Add form */}
       {showAddForm && isAdmin && (
@@ -248,16 +303,21 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
           <TableHeader>
             <TableRow>
               {isAdmin && <TableHead className="w-10"></TableHead>}
-              <TableHead>Name</TableHead>
-              <TableHead>Genome Group</TableHead>
-              <TableHead>Characteristics</TableHead>
-              <TableHead>Tasting Notes</TableHead>
-              <TableHead>Source</TableHead>
+              {(['Variety_Name', 'Genome_Group', 'Characteristics', 'Tasting_Notes', 'Source'] as SortCol[]).map((col) => (
+                <TableHead
+                  key={col}
+                  className="cursor-pointer select-none hover:bg-muted/50 whitespace-nowrap"
+                  onClick={() => handleSort(col)}
+                >
+                  {{ Variety_Name: 'Name', Genome_Group: 'Genome Group', Characteristics: 'Characteristics', Tasting_Notes: 'Tasting Notes', Source: 'Source' }[col]}
+                  <SortIcon col={col} />
+                </TableHead>
+              ))}
               {isAdmin && <TableHead className="w-28"></TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {varieties.map(v => (
+            {sortedVarieties.map(v => (
               <TableRow key={v.Id} className={selectedIds.has(v.Id) ? 'bg-blue-50 dark:bg-blue-950/30' : ''}>
                 {/* Select checkbox */}
                 {isAdmin && (
