@@ -17,6 +17,10 @@ import {
 } from '@/components/ui/table';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { VarietyDetailDialog } from '@/components/browse/VarietyDetailDialog';
+import { VarietyCard } from '@/components/browse/VarietyCard';
+import { ViewToggle, type ViewMode } from '@/components/ui/view-toggle';
+import { useEffect } from 'react';
 import type { BrowseVariety } from '@/types/browse';
 
 interface VarietiesTabProps {
@@ -26,7 +30,7 @@ interface VarietiesTabProps {
   onVarietiesChanged: (varieties: BrowseVariety[]) => void;
 }
 
-export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged }: VarietiesTabProps) {
+export function VarietiesTab({ plantId, varieties, editMode: _editMode, onVarietiesChanged }: VarietiesTabProps) {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
@@ -42,8 +46,30 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
   // Filter state
   const [filterText, setFilterText] = useState('');
 
+  // View mode (list default for Varieties)
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try { return (localStorage.getItem('htfg_varieties_view') as ViewMode) || 'list'; } catch { return 'list'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('htfg_varieties_view', viewMode); } catch {}
+  }, [viewMode]);
+
+  // Detail dialog state
+  const [detailVariety, setDetailVariety] = useState<BrowseVariety | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  const openDetail = useCallback((v: BrowseVariety) => {
+    setDetailVariety(v);
+    setDetailOpen(true);
+  }, []);
+
+  const handleVarietyUpdated = useCallback((updated: BrowseVariety) => {
+    onVarietiesChanged(varieties.map(v => v.Id === updated.Id ? { ...v, ...updated } : v));
+    setDetailVariety(prev => prev ? { ...prev, ...updated } : prev);
+  }, [varieties, onVarietiesChanged]);
+
   // Sort state
-  type SortCol = 'Variety_Name' | 'Genome_Group' | 'Characteristics' | 'Tasting_Notes' | 'Source';
+  type SortCol = 'Variety_Name' | 'Alternative_Names' | 'Description' | 'Genome_Group' | 'Characteristics' | 'Tasting_Notes' | 'Source';
   const [sortCol, setSortCol] = useState<SortCol>('Variety_Name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -56,6 +82,8 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
     ? varieties.filter(v => {
         const q = filterText.toLowerCase();
         return (v.Variety_Name ?? '').toLowerCase().includes(q)
+          || (v.Alternative_Names ?? '').toLowerCase().includes(q)
+          || (v.Description ?? '').toLowerCase().includes(q)
           || (v.Genome_Group ?? '').toLowerCase().includes(q)
           || (v.Characteristics ?? '').toLowerCase().includes(q)
           || (v.Tasting_Notes ?? '').toLowerCase().includes(q)
@@ -230,7 +258,7 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
   return (
     <div className="space-y-4">
       {/* Action bar — sticky below tabs */}
-      <div className={`sticky top-[6.25rem] z-20 bg-background py-2 -mt-4 -mx-4 px-4 border-b flex items-center gap-2 flex-wrap`}>
+      <div className={`sticky top-[93px] z-20 bg-background py-2 -mt-4 -mx-4 px-4 border-b flex items-center gap-2 flex-wrap`}>
         <div className="relative">
           <Input
             value={filterText}
@@ -248,6 +276,7 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
         {filterText && (
           <span className="text-xs text-muted-foreground">{sortedVarieties.length} of {varieties.length}</span>
         )}
+        <ViewToggle value={viewMode} onChange={setViewMode} className="ml-auto" />
         {isAdmin && (
           <>
             <Button size="sm" variant="outline" onClick={() => setShowAddForm(!showAddForm)}>
@@ -297,19 +326,28 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
         </div>
       )}
 
-      {/* Table */}
-      {varieties.length > 0 && (
+      {/* Card view */}
+      {varieties.length > 0 && viewMode === 'card' && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3" data-testid="variety-card-grid">
+          {sortedVarieties.map(v => (
+            <VarietyCard key={v.Id} variety={v} onClick={openDetail} />
+          ))}
+        </div>
+      )}
+
+      {/* Table (list view) */}
+      {varieties.length > 0 && viewMode === 'list' && (
         <Table>
           <TableHeader>
             <TableRow>
               {isAdmin && <TableHead className="w-10"></TableHead>}
-              {(['Variety_Name', 'Genome_Group', 'Characteristics', 'Tasting_Notes', 'Source'] as SortCol[]).map((col) => (
+              {(['Variety_Name', 'Alternative_Names', 'Description', 'Genome_Group', 'Characteristics', 'Tasting_Notes', 'Source'] as SortCol[]).map((col) => (
                 <TableHead
                   key={col}
                   className="cursor-pointer select-none hover:bg-muted/50 whitespace-nowrap"
                   onClick={() => handleSort(col)}
                 >
-                  {{ Variety_Name: 'Name', Genome_Group: 'Genome Group', Characteristics: 'Characteristics', Tasting_Notes: 'Tasting Notes', Source: 'Source' }[col]}
+                  {{ Variety_Name: 'Name', Alternative_Names: 'Alt. Names', Description: 'Description', Genome_Group: 'Genome Group', Characteristics: 'Characteristics', Tasting_Notes: 'Tasting Notes', Source: 'Source' }[col]}
                   <SortIcon col={col} />
                 </TableHead>
               ))}
@@ -347,7 +385,13 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
                     </div>
                   ) : (
                     <div className="flex items-center gap-1">
-                      <span className="select-text">{v.Variety_Name}</span>
+                      <button
+                        type="button"
+                        className="select-text text-left hover:underline text-blue-700 dark:text-blue-400"
+                        onClick={() => openDetail(v)}
+                        title="View details"
+                        data-testid={`variety-name-link-${v.Id}`}
+                      >{v.Variety_Name}</button>
                       {isAdmin && (
                         <button
                           onClick={() => startRename(v)}
@@ -364,6 +408,8 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
                   )}
                 </TableCell>
 
+                <TableCell className="text-sm">{v.Alternative_Names ?? '-'}</TableCell>
+                <TableCell className="text-sm max-w-xs truncate" title={v.Description ?? ''}>{v.Description ?? '-'}</TableCell>
                 <TableCell className="text-sm">{(v as any).Genome_Group ?? '-'}</TableCell>
                 <TableCell className="text-sm">{v.Characteristics ?? '-'}</TableCell>
                 <TableCell className="text-sm">{v.Tasting_Notes ?? '-'}</TableCell>
@@ -432,6 +478,15 @@ export function VarietiesTab({ plantId, varieties, editMode, onVarietiesChanged 
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Variety Detail Dialog */}
+      <VarietyDetailDialog
+        variety={detailVariety}
+        open={detailOpen}
+        canEdit={isAdmin}
+        onOpenChange={(open) => { setDetailOpen(open); if (!open) setDetailVariety(null); }}
+        onVarietyUpdated={handleVarietyUpdated}
+      />
     </div>
   );
 }

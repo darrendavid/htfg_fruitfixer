@@ -547,6 +547,20 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
 
   await nocodb.update('Plants', rowId, fields);
   const updated = await nocodb.get('Plants', rowId);
+
+  // Enrich with hero_image (same lookup as GET) so client state doesn't lose it
+  const finalSlug = updated.Id1 || oldSlug;
+  try {
+    const heroRow = db.prepare(`SELECT file_path, rotation FROM hero_images WHERE plant_id = ?`).get(finalSlug) as { file_path: string; rotation: number } | undefined;
+    if (heroRow) {
+      updated.hero_image = heroRow.file_path
+        .replace(/^content\/pass_01\/assigned\//, '')
+        .replace(/^content\/parsed\//, '')
+        .replace(/^plants\//, '');
+      updated.hero_rotation = heroRow.rotation;
+    }
+  } catch { /* non-fatal */ }
+
   res.json(updated);
 }));
 
@@ -667,6 +681,17 @@ router.post('/:plantId/varieties', requireAdmin, asyncHandler(async (req, res) =
   // NocoDB create only returns {Id}, fetch full record
   const full = await nocodb.get('Varieties', result.Id);
   res.status(201).json(full);
+}));
+
+// ── GET /varieties/:id/images — List images for a variety ───────────────────
+router.get('/varieties/:id/images', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await nocodb.list('Images', {
+    where: `(Variety_Id,eq,${id})~and(Excluded,neq,true)`,
+    limit: 500,
+    sort: 'Id',
+  });
+  res.json({ images: result.list ?? [] });
 }));
 
 // ── PATCH /varieties/:id — Update variety (admin) ────────────────────────────

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
 import { RotateCcw, RotateCw, LayoutGrid, FolderOpen, Tags, Copy, Trash2, Upload } from 'lucide-react';
 import { LazyImage } from '@/components/images/LazyImage';
 import { Button } from '@/components/ui/button';
@@ -71,6 +71,116 @@ function EditableCaption({ imageId, caption, onSaved }: { imageId: number; capti
   );
 }
 
+const GoldStar = () => (
+  <div className="absolute top-1 left-1 z-10 text-yellow-400 drop-shadow-md" title="Hero image">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-5">
+      <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clipRule="evenodd" />
+    </svg>
+  </div>
+);
+
+/** Memoized thumbnail — avoids re-rendering 1500+ items on unrelated state changes. */
+const GalleryThumbnail = memo(function GalleryThumbnail({
+  img,
+  idx,
+  isSelected,
+  isHero,
+  isAdmin,
+  onClick,
+  onDelete,
+  onRotate,
+}: {
+  img: BrowseImage;
+  idx: number;
+  isSelected: boolean;
+  isHero: boolean;
+  isAdmin: boolean;
+  onClick: (e: React.MouseEvent, imgId: number, idx: number) => void;
+  onDelete: (img: BrowseImage) => void;
+  onRotate: (img: BrowseImage, dir: 'cw' | 'ccw') => void;
+}) {
+  // Local dimension state — avoids triggering a parent re-render on every image load
+  const [dims, setDims] = useState<string | null>(null);
+
+  const imgStatus = (img as any).Status || 'assigned';
+  const statusOverlay = imgStatus === 'hidden' ? { bg: 'bg-red-500/40', label: 'HIDDEN', labelBg: 'bg-red-600/80' }
+    : imgStatus === 'unassigned' ? { bg: 'bg-amber-500/30', label: 'UNASSIGNED', labelBg: 'bg-amber-600/80' }
+    : imgStatus === 'unclassified' ? { bg: 'bg-gray-500/30', label: 'UNCLASSIFIED', labelBg: 'bg-gray-600/80' }
+    : null;
+
+  return (
+    <div className="space-y-1">
+      <div
+        className={`group aspect-square bg-muted rounded overflow-hidden cursor-pointer transition-shadow relative ${
+          isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : 'hover:ring-2 hover:ring-ring'
+        }`}
+        onClick={(e) => onClick(e, img.Id, idx)}
+      >
+        {statusOverlay && (
+          <div className={`absolute inset-0 z-10 ${statusOverlay.bg} flex items-center justify-center`}>
+            <span className={`text-white text-[9px] font-bold ${statusOverlay.labelBg} px-1.5 py-0.5 rounded`}>{statusOverlay.label}</span>
+          </div>
+        )}
+        <div className={`w-full h-full ${rotationClass((img as any).Rotation)} ${isSelected ? 'opacity-75' : ''}`}>
+          <LazyImage
+            src={`${buildImageUrl(img.File_Path)}`}
+            alt={img.Caption ?? ''}
+            className="w-full h-full"
+            onLoad={(e) => {
+              const el = e.currentTarget;
+              if (el.naturalWidth > 0) setDims(`${el.naturalWidth}×${el.naturalHeight}`);
+            }}
+          />
+        </div>
+        {isSelected && (
+          <div className="absolute top-1 right-1 z-10 bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+            ✓
+          </div>
+        )}
+        {(dims || img.Size_Bytes > 0) && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 bg-black/70 text-white text-[9px] px-1 py-0.5 text-center font-mono">
+            {dims ?? ''}{dims && img.Size_Bytes > 0 ? ' · ' : ''}{img.Size_Bytes > 0 ? `${(img.Size_Bytes / 1024).toFixed(0)}KB` : ''}
+          </div>
+        )}
+        {isHero && <GoldStar />}
+        {isAdmin && !isSelected && (
+          <>
+            <button
+              className="absolute top-1 left-1 z-10 bg-red-600 hover:bg-red-700 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Hide image (x)"
+              onClick={(e) => { e.stopPropagation(); onDelete(img); }}
+            >
+              <Trash2 className="size-4" />
+            </button>
+            <button
+              className="absolute bottom-1 left-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Rotate left ([)"
+              onClick={(e) => { e.stopPropagation(); onRotate(img, 'ccw'); }}
+            >
+              <RotateCcw className="size-4" />
+            </button>
+            <button
+              className="absolute bottom-1 right-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Rotate right (])"
+              onClick={(e) => { e.stopPropagation(); onRotate(img, 'cw'); }}
+            >
+              <RotateCw className="size-4" />
+            </button>
+          </>
+        )}
+      </div>
+      {((img as any).Variety_Name || img.Caption) && (
+        <p className="text-[10px] text-muted-foreground line-clamp-1">
+          {(img as any).Variety_Name && (
+            <span className="text-blue-500 font-medium">{(img as any).Variety_Name} </span>
+          )}
+          {img.Caption}
+        </p>
+      )}
+    </div>
+  );
+});
+
 interface GalleryTabProps {
   plantId: string;
   currentHeroPath?: string;
@@ -91,8 +201,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [viewMode, setViewMode] = useState<'grid' | 'grouped' | 'variety' | 'similarity'>('grid');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null);
-  const [dimMap, setDimMap] = useState<Record<number, string>>({});
   const [showDeleted, setShowDeleted] = useState(false);
+  const [hideSingletonSimGroups, setHideSingletonSimGroups] = useState(true);
   const [filenameFilter, setFilenameFilter] = useState('');
   const [sortOrder, setSortOrder] = useState<'default' | 'newest' | 'oldest'>('default');
   const [visibleGroupCount, setVisibleGroupCount] = useState(20);
@@ -352,10 +462,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     return () => window.removeEventListener('keydown', handleKey);
   }, [lightboxIndex, goNext, goPrev, deleteImage, unassignImage, setAsHero, rotateImage, moveToDocuments, isAdmin]);
 
-  const isHero = (img: BrowseImage) => {
+  const isHero = useCallback((img: BrowseImage) => {
     const stripped = stripParsedPrefix(img.File_Path);
     return heroPath === stripped;
-  };
+  }, [heroPath]);
 
   // Grouped view data — must be before any early returns (Rules of Hooks)
   // Filter and sort images
@@ -441,6 +551,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
         const result: Array<[string, BrowseImage[]]> = [];
         for (const imgs of Object.values(clusters)) {
+          if (hideSingletonSimGroups && imgs.length < 2) continue;
           const label = imgs[0].Caption || imgs[0].File_Path.split('/').pop()?.replace(/\.\w+$/, '') || 'similar';
           result.push([label + (imgs.length >= 2 ? ` (${imgs.length})` : ''), imgs]);
         }
@@ -465,6 +576,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       }
       const result: Array<[string, BrowseImage[]]> = [];
       for (const [key, imgs] of Object.entries(groups)) {
+        if (hideSingletonSimGroups && imgs.length < 2) continue;
         result.push([key + (imgs.length >= 2 ? ` (${imgs.length})` : ''), imgs]);
       }
       // Sort by first image's position for visual stability
@@ -477,13 +589,20 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     }
 
     return [];
-  }, [filteredImages, viewMode]);
+  }, [filteredImages, viewMode, hideSingletonSimGroups]);
 
   // Display order: in grouped modes, flatten groupedImages to get visual order
   const displayImages = useMemo(() => {
     if (viewMode === 'grid') return filteredImages;
     return groupedImages.flatMap(([, imgs]) => imgs);
   }, [viewMode, filteredImages, groupedImages]);
+
+  // O(1) id → index map — avoids O(n²) indexOf/findIndex when rendering grouped view
+  const displayIndexById = useMemo(() => {
+    const m = new Map<number, number>();
+    for (let i = 0; i < displayImages.length; i++) m.set(displayImages[i].Id, i);
+    return m;
+  }, [displayImages]);
 
   // Keep refs in sync for callbacks that can't access the memo directly
   displayImagesLenRef.current = displayImages.length;
@@ -632,13 +751,6 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     } catch {}
   }, []);
 
-  const GoldStar = () => (
-    <div className="absolute top-1 left-1 z-10 text-yellow-400 drop-shadow-md" title="Hero image">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-5">
-        <path fillRule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.006 5.404.434c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.434 2.082-5.005Z" clipRule="evenodd" />
-      </svg>
-    </div>
-  );
 
   const handleUpload = useCallback(async () => {
     if (uploadFiles.length === 0) return;
@@ -732,81 +844,21 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     );
   }
 
-  const renderImageThumbnail = (img: BrowseImage, idx: number) => {
-    const isSelected = selectedIds.has(img.Id);
-    const imgStatus = (img as any).Status || 'assigned';
-    const statusOverlay = imgStatus === 'hidden' ? { bg: 'bg-red-500/40', label: 'HIDDEN', labelBg: 'bg-red-600/80' }
-      : imgStatus === 'unassigned' ? { bg: 'bg-amber-500/30', label: 'UNASSIGNED', labelBg: 'bg-amber-600/80' }
-      : imgStatus === 'unclassified' ? { bg: 'bg-gray-500/30', label: 'UNCLASSIFIED', labelBg: 'bg-gray-600/80' }
-      : null;
-    return (
-    <div key={img.Id} className="space-y-1">
-      <div
-        className={`group aspect-square bg-muted rounded overflow-hidden cursor-pointer transition-shadow relative ${
-          isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : 'hover:ring-2 hover:ring-ring'
-        }`}
-        onClick={(e) => handleImageClick(e, img.Id, idx)}
-      >
-        {statusOverlay && (
-          <div className={`absolute inset-0 z-10 ${statusOverlay.bg} flex items-center justify-center`}>
-            <span className={`text-white text-[9px] font-bold ${statusOverlay.labelBg} px-1.5 py-0.5 rounded`}>{statusOverlay.label}</span>
-          </div>
-        )}
-        <div className={`w-full h-full ${rotationClass((img as any).Rotation)} ${isSelected ? 'opacity-75' : ''}`}>
-          <LazyImage
-            src={`${buildImageUrl(img.File_Path)}`}
-            alt={img.Caption ?? ''}
-            className="w-full h-full"
-            onLoad={(e) => {
-              const el = e.currentTarget;
-              if (el.naturalWidth > 0) {
-                setDimMap((prev) => ({ ...prev, [img.Id]: `${el.naturalWidth}×${el.naturalHeight}` }));
-              }
-            }}
-          />
-        </div>
-        {isSelected && (
-          <div className="absolute top-1 right-1 z-10 bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-            ✓
-          </div>
-        )}
-        {/* Resolution overlay */}
-        {(dimMap[img.Id] || img.Size_Bytes > 0) && (
-          <div className="absolute bottom-0 left-0 right-0 z-10 bg-black/70 text-white text-[9px] px-1 py-0.5 text-center font-mono">
-            {dimMap[img.Id] ?? ''}{dimMap[img.Id] && img.Size_Bytes > 0 ? ' · ' : ''}{img.Size_Bytes > 0 ? `${(img.Size_Bytes / 1024).toFixed(0)}KB` : ''}
-          </div>
-        )}
-        {isHero(img) && <GoldStar />}
-        {isAdmin && !isSelected && (
-          <>
-            <button
-              className="absolute bottom-1 left-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Rotate left ([)"
-              onClick={(e) => { e.stopPropagation(); rotateImage(img, 'ccw'); }}
-            >
-              <RotateCcw className="size-4" />
-            </button>
-            <button
-              className="absolute bottom-1 right-1 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-7 h-7 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Rotate right (])"
-              onClick={(e) => { e.stopPropagation(); rotateImage(img, 'cw'); }}
-            >
-              <RotateCw className="size-4" />
-            </button>
-          </>
-        )}
-      </div>
-      {((img as any).Variety_Name || img.Caption) && (
-        <p className="text-[10px] text-muted-foreground line-clamp-1">
-          {(img as any).Variety_Name && (
-            <span className="text-blue-500 font-medium">{(img as any).Variety_Name} </span>
-          )}
-          {img.Caption}
-        </p>
-      )}
-    </div>
-    );
-  };
+  // Plain function (not a hook) — can be defined after early returns.
+  // Stability doesn't matter since GalleryThumbnail is React.memo and compares its own props.
+  const renderImageThumbnail = (img: BrowseImage, idx: number) => (
+    <GalleryThumbnail
+      key={img.Id}
+      img={img}
+      idx={idx}
+      isSelected={selectedIds.has(img.Id)}
+      isHero={isHero(img)}
+      isAdmin={isAdmin}
+      onClick={handleImageClick}
+      onDelete={deleteImage}
+      onRotate={rotateImage}
+    />
+  );
 
   return (
     <div className="space-y-4">
@@ -871,7 +923,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-2 flex-wrap">
+      <div className="sticky top-[93px] z-20 bg-background py-0.5 -mt-4 -mx-4 px-4 border-b flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <p className="text-sm text-muted-foreground shrink-0">{filteredImages.length}{filteredImages.length !== totalRows ? ` / ${totalRows}` : ''} images</p>
           <input
@@ -894,6 +946,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} className="rounded" />
             Hidden
           </label>
+          {viewMode === 'similarity' && (
+            <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+              <input type="checkbox" checked={hideSingletonSimGroups} onChange={(e) => setHideSingletonSimGroups(e.target.checked)} className="rounded" />
+              Hide single images
+            </label>
+          )}
         </div>
         <div className="flex gap-1 items-center">
           <ThumbSizeToggle value={thumbSize} onChange={setThumbSize} />
@@ -945,7 +1003,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         <div className="space-y-6">
           {groupedImages.slice(0, visibleGroupCount).map(([dirLabel, groupImgs], groupIdx) => {
             const groupIds = groupImgs.map((i) => i.Id);
-            const globalStartIdx = displayImagesRef.current.findIndex((i) => i.Id === groupImgs[0].Id);
+            const globalStartIdx = displayIndexById.get(groupImgs[0].Id) ?? 0;
             return (
               <div key={`group-${groupIdx}-${groupImgs[0]?.Id ?? dirLabel}`} className="space-y-2">
                 <div className="border-b pb-2">
@@ -992,8 +1050,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                 </div>
                 <div className={GALLERY_GRID_CLASSES[thumbSize]}>
                   {groupImgs.map((img) => {
-                    const idx = displayImages.indexOf(img);
-                    return renderImageThumbnail(img, idx >= 0 ? idx : 0);
+                    const idx = displayIndexById.get(img.Id) ?? 0;
+                    return renderImageThumbnail(img, idx);
                   })}
                 </div>
               </div>
@@ -1012,12 +1070,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
 
       {/* Lightbox */}
       <Dialog open={lightboxIndex !== null} onOpenChange={(open) => { if (!open) closeLightbox(); }}>
-        <DialogContent className="max-w-4xl p-2 flex flex-col" style={{ maxHeight: '90dvh' }} onPointerDownOutside={(e) => e.preventDefault()} onOpenAutoFocus={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-4xl p-2 flex flex-col [&>button[data-slot=dialog-close]]:bg-white [&>button[data-slot=dialog-close]]:text-black [&>button[data-slot=dialog-close]]:rounded-full [&>button[data-slot=dialog-close]]:size-7 [&>button[data-slot=dialog-close]]:flex [&>button[data-slot=dialog-close]]:items-center [&>button[data-slot=dialog-close]]:justify-center [&>button[data-slot=dialog-close]]:opacity-100 [&>button[data-slot=dialog-close]]:shadow-md [&>button[data-slot=dialog-close]]:ring-1 [&>button[data-slot=dialog-close]]:ring-black/20 [&>button[data-slot=dialog-close]]:z-20" style={{ maxHeight: '90dvh' }} onPointerDownOutside={(e) => e.preventDefault()} onOpenAutoFocus={(e) => e.preventDefault()}>
           <DialogTitle className="sr-only">{lightboxImage?.Caption ?? 'Image preview'}</DialogTitle>
           {lightboxImage && (
             <div className="flex flex-col min-h-0 flex-1">
               {/* Image area — shrinks to fit available space */}
-              <div className="relative flex-1 min-h-0 flex items-center justify-center">
+              <div className="relative flex-1 min-h-0 flex items-center justify-center bg-black rounded overflow-hidden">
                 {/* Left arrow */}
                 {lightboxIndex !== null && lightboxIndex > 0 && (
                   <button onClick={(e) => { e.stopPropagation(); goPrev(); }}

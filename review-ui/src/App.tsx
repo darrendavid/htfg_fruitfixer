@@ -5,8 +5,6 @@ import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
 import { AdminLoginPage } from '@/pages/AdminLoginPage'
 import { CheckEmailPage } from '@/pages/CheckEmailPage'
-import { SwipePage } from '@/pages/SwipePage'
-import { ClassifyPage } from '@/pages/ClassifyPage'
 import { LeaderboardPage } from '@/pages/LeaderboardPage'
 import { AdminDashboardPage } from '@/pages/AdminDashboardPage'
 import { OcrReviewPage } from '@/pages/OcrReviewPage'
@@ -23,16 +21,15 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/check-email" element={<CheckEmailPage />} />
           <Route path="/admin/login" element={<AdminLoginPage />} />
-          <Route path="/swipe" element={<SwipePage />} />
-          <Route path="/classify" element={<ClassifyPage />} />
+          <Route path="/classify" element={<MatchReviewPage />} />
+          <Route path="/matches" element={<Navigate to="/classify" replace />} />
           <Route path="/ocr-review" element={<OcrReviewPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/plants" element={<PlantGridPage />} />
           <Route path="/plants/:id" element={<PlantDetailPage />} />
-          <Route path="/matches" element={<MatchReviewPage />} />
           <Route path="/admin" element={<AdminDashboardPage />} />
-          <Route path="/" element={<Navigate to="/swipe" replace />} />
-          <Route path="*" element={<Navigate to="/swipe" replace />} />
+          <Route path="/" element={<Navigate to="/classify" replace />} />
+          <Route path="*" element={<Navigate to="/classify" replace />} />
         </Routes>
         <Toaster position="top-center" />
       </BrowserRouter>

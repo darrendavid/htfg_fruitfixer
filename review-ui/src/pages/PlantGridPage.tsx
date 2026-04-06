@@ -19,6 +19,7 @@ import {
 import { PlantCard } from '@/components/browse/PlantCard';
 import { useThumbSize } from '@/hooks/use-thumb-size';
 import { ThumbSizeToggle } from '@/components/ui/thumb-size-toggle';
+import { ViewToggle, type ViewMode } from '@/components/ui/view-toggle';
 import type { BrowsePlant } from '@/types/browse';
 
 const PLANT_GRID_CLASSES = {
@@ -72,6 +73,12 @@ export function PlantGridPage() {
   const [category, setCategory] = useState(saved.current?.category ?? 'all');
   const [sort, setSort] = useState(saved.current?.sort ?? 'name_asc');
   const [thumbSize, setThumbSize] = useThumbSize();
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try { return (localStorage.getItem('htfg_plants_view') as ViewMode) || 'card'; } catch { return 'card'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('htfg_plants_view', viewMode); } catch {}
+  }, [viewMode]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState(saved.current?.search ?? '');
   const restoredScroll = useRef(false);
@@ -208,9 +215,9 @@ export function PlantGridPage() {
   return (
     <AuthGuard>
       <AppShell title="Plants">
-        <div className="p-4 space-y-4">
-          {/* Search + Category + Sort — single row */}
-          <div className="flex gap-2 items-center">
+        <div className="space-y-4">
+          {/* Search + Category + Sort — sticky row below header */}
+          <div className="sticky top-14 z-30 bg-background border-b px-4 py-3 flex gap-2 items-center">
             <Input
               placeholder="Search plants..."
               value={search}
@@ -237,7 +244,8 @@ export function PlantGridPage() {
                 ))}
               </SelectContent>
             </Select>
-            <ThumbSizeToggle value={thumbSize} onChange={setThumbSize} />
+            <ViewToggle value={viewMode} onChange={setViewMode} />
+            {viewMode === 'card' && <ThumbSizeToggle value={thumbSize} onChange={setThumbSize} />}
             {isAdmin && (
               <Button size="sm" className="shrink-0" onClick={() => setShowNewPlant(true)}>
                 + New Plant
@@ -245,6 +253,7 @@ export function PlantGridPage() {
             )}
           </div>
 
+          <div className="px-4 space-y-4">
           {/* Count */}
           {!isLoading && (
             <p className="text-xs text-muted-foreground">{filteredPlants.length} plants</p>
@@ -275,14 +284,48 @@ export function PlantGridPage() {
             </div>
           )}
 
-          {/* Plant grid — all plants, lazy-loaded images */}
-          {!isLoading && filteredPlants.length > 0 && (
+          {/* Plant grid — card view */}
+          {!isLoading && filteredPlants.length > 0 && viewMode === 'card' && (
             <div className={PLANT_GRID_CLASSES[thumbSize]}>
               {filteredPlants.map((plant) => (
-                <PlantCard key={plant.Id} plant={plant} compact={thumbSize !== 'lg'} />
+                <PlantCard key={plant.Id} plant={plant} size={thumbSize} />
               ))}
             </div>
           )}
+
+          {/* Plant grid — list view */}
+          {!isLoading && filteredPlants.length > 0 && viewMode === 'list' && (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr className="text-left">
+                    <th className="px-3 py-2 font-semibold">Name</th>
+                    <th className="px-3 py-2 font-semibold hidden sm:table-cell">Scientific Name</th>
+                    <th className="px-3 py-2 font-semibold">Category</th>
+                    <th className="px-3 py-2 font-semibold text-right">Images</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredPlants.map((plant) => {
+                    const slug = (plant as any).Id1 || plant.Id;
+                    return (
+                      <tr
+                        key={plant.Id}
+                        className="border-t hover:bg-muted/30 cursor-pointer"
+                        onClick={() => navigate(`/plants/${slug}`)}
+                      >
+                        <td className="px-3 py-2 font-medium">{plant.Canonical_Name}</td>
+                        <td className="px-3 py-2 italic text-muted-foreground hidden sm:table-cell">{plant.Botanical_Name ?? '-'}</td>
+                        <td className="px-3 py-2">{plant.Category}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">{plant.Image_Count}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          </div>
         </div>
 
         {/* New Plant Dialog */}

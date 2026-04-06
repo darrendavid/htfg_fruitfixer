@@ -17,7 +17,7 @@ const INFERENCES_JSON = path.resolve(PROJECT_ROOT, 'content/parsed/phase4c_infer
 const PASS01_BASE = path.resolve(config.IMAGE_MOUNT_PATH, '..');
 
 // Unassigned root — scanned directly for all images
-const UNASSIGNED_ROOT = path.join(PASS01_BASE, 'unassigned', 'unclassified');
+const UNASSIGNED_ROOT = path.join(PASS01_BASE, 'unassigned', '_to_triage');
 
 // Image extensions
 const IMG_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif']);

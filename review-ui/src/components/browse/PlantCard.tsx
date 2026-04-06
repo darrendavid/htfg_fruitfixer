@@ -18,10 +18,15 @@ function parseHarvestMonths(raw: string | null): number[] {
 
 interface PlantCardProps {
   plant: BrowsePlant;
+  /** @deprecated use size instead */
   compact?: boolean;
+  size?: 'sm' | 'md' | 'lg';
 }
 
-export function PlantCard({ plant, compact }: PlantCardProps) {
+export function PlantCard({ plant, compact, size }: PlantCardProps) {
+  // Resolve size — backward compat with `compact`
+  const resolvedSize: 'sm' | 'md' | 'lg' = size ?? (compact ? 'md' : 'lg');
+  const isCompact = resolvedSize !== 'lg';
   const navigate = useNavigate();
   const harvestMonths = parseHarvestMonths(plant.Harvest_Months);
   const plantSlug = (plant as any).Id1 || plant.Id;
@@ -29,13 +34,23 @@ export function PlantCard({ plant, compact }: PlantCardProps) {
     ? buildImageUrl((plant as any).hero_image)
     : '';
 
+  // Font size per card size:
+  //   lg  → text-base (existing)
+  //   md  → text-sm (20% larger than small)
+  //   sm  → text-xs (existing)
+  const nameSizeClass = resolvedSize === 'lg' ? 'text-base' : resolvedSize === 'md' ? 'text-sm' : 'text-xs';
+  // Padding per size:
+  //   lg: slightly more bottom padding so harvest dots clear the card edge
+  //   md/sm: a bit more vertical margin around the name
+  const contentPaddingClass = resolvedSize === 'lg' ? 'px-2 pt-2 pb-3' : resolvedSize === 'md' ? 'px-1.5 py-2' : 'px-1 py-2';
+
   return (
     <Card
-      className={`overflow-hidden cursor-pointer hover:ring-2 hover:ring-ring transition-shadow flex flex-col ${compact ? 'min-h-0' : 'min-h-[280px]'}`}
+      className={`overflow-hidden cursor-pointer hover:ring-2 hover:ring-ring transition-shadow flex flex-col py-0 gap-0 ${isCompact ? 'min-h-0' : 'min-h-[280px]'}`}
       onClick={() => navigate(`/plants/${plantSlug}`)}
     >
-      {/* Hero image */}
-      <div className="aspect-square bg-muted relative">
+      {/* Hero image — flush with top of card */}
+      <div className="aspect-square bg-muted relative -mt-px">
         {heroSrc ? (
           <LazyImage
             src={heroSrc}
@@ -52,16 +67,19 @@ export function PlantCard({ plant, compact }: PlantCardProps) {
       </div>
 
       {/* Content */}
-      <div className={`flex flex-col gap-1 flex-1 ${compact ? 'p-1' : 'p-2'}`}>
-        <p className={`font-bold leading-tight line-clamp-1 ${compact ? 'text-xs' : 'text-sm'}`}>{plant.Canonical_Name}</p>
-        {!compact && plant.Botanical_Name && (
+      <div className={`flex flex-col gap-0.5 flex-1 ${contentPaddingClass}`}>
+        <p
+          className={`font-bold leading-tight line-clamp-1 ${nameSizeClass}`}
+          title={plant.Canonical_Name}
+        >{plant.Canonical_Name}</p>
+        {!isCompact && plant.Botanical_Name && (
           <p className="italic text-xs text-muted-foreground leading-tight line-clamp-1">
             {plant.Botanical_Name}
           </p>
         )}
 
-        {!compact && (
-          <div className="flex items-center gap-1 mt-auto pt-1">
+        {!isCompact && (
+          <div className="flex items-center gap-1 mt-auto pt-0.5">
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
               {plant.Category}
             </Badge>
@@ -77,8 +95,8 @@ export function PlantCard({ plant, compact }: PlantCardProps) {
         )}
 
         {/* Harvest months dots */}
-        {!compact && harvestMonths.length > 0 && (
-          <div className="flex gap-[2px] mt-1">
+        {!isCompact && harvestMonths.length > 0 && (
+          <div className="flex gap-[2px] mt-0.5">
             {MONTH_LABELS.map((label, i) => (
               <div
                 key={i}

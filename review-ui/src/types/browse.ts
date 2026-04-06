@@ -15,6 +15,8 @@ export interface BrowseVariety {
   Id: number;
   Variety_Name: string;
   Plant_Id: string;
+  Description: string | null;
+  Alternative_Names: string | null;
   Characteristics: string | null;
   Tasting_Notes: string | null;
   Genome_Group: string | null;

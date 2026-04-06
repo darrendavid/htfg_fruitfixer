@@ -87,7 +87,10 @@ export function PlantDetailPage() {
   }, [activeTab, editMode]);
 
   const handlePlantUpdated = (plant: BrowsePlant) => {
-    if (detail) setDetail({ ...detail, plant });
+    if (!detail) return;
+    // Merge rather than replace so enriched fields (hero_image, hero_rotation)
+    // aren't lost if the response doesn't include them
+    setDetail({ ...detail, plant: { ...detail.plant, ...plant } });
   };
 
   const handleVarietiesChanged = (varieties: BrowseVariety[]) => {
@@ -123,7 +126,7 @@ export function PlantDetailPage() {
         )}
 
         {!isLoading && detail && (
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col gap-0">
             {/* Sticky tabs bar */}
             <div className="sticky top-14 z-30 bg-background border-b">
               <TabsList className="w-full overflow-x-auto flex-nowrap px-4">

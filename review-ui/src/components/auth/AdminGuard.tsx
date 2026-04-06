@@ -19,7 +19,7 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user.role !== 'admin') {
-    return <Navigate to="/swipe" replace />;
+    return <Navigate to="/classify" replace />;
   }
 
   return <>{children}</>;
