@@ -52,13 +52,49 @@ export interface MatchesResponse {
 
 export interface UndoToken {
   type: string;
-  original_path: string;
-  dest_path: string;
+  original_path?: string;
+  dest_path?: string;
   nocodb_id?: number;
-  filename: string;
+  filename?: string;
+  image_id?: number;
+  variety_id?: number;
 }
 
 export interface ActionResponse {
   success: boolean;
   undo_token: UndoToken;
+}
+
+// ── Variety suggestion types ────────────────────────────────────────────────
+
+export interface VarietyMatchItem {
+  image_id: number;
+  file_path: string;
+  filename: string;
+  plant_id: string;
+  plant_name: string;
+  source_directory: string | null;
+  variety_id: number;
+  variety_name: string;
+  confidence: 'high' | 'medium' | 'low';
+  match_type: string;
+  signals: string[];
+}
+
+export interface VarietyMatchGroup {
+  plant_id: string;
+  plant_name: string;
+  count: number;
+}
+
+export interface VarietyMatchGroupsResponse {
+  total: number;
+  groups: VarietyMatchGroup[];
+}
+
+export interface VarietyMatchItemsResponse {
+  plant_id: string;
+  plant_name: string;
+  total: number;
+  items: VarietyMatchItem[];
 }

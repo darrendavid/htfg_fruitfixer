@@ -68,23 +68,26 @@ export function PlantCard({ plant, compact, size }: PlantCardProps) {
 
       {/* Content */}
       <div className={`flex flex-col gap-0.5 flex-1 ${contentPaddingClass}`}>
-        <p
-          className={`font-bold leading-tight line-clamp-1 ${nameSizeClass}`}
-          title={plant.Canonical_Name}
-        >{plant.Canonical_Name}</p>
-        {!isCompact && plant.Botanical_Name && (
-          <p className="italic text-xs text-muted-foreground leading-tight line-clamp-1">
-            {plant.Botanical_Name}
-          </p>
-        )}
-
-        {!isCompact && (
-          <div className="flex items-center gap-1 mt-auto pt-0.5">
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+        <div className="flex items-center justify-between gap-1">
+          <p
+            className={`font-bold leading-tight line-clamp-1 ${nameSizeClass}`}
+            title={plant.Canonical_Name}
+          >{plant.Canonical_Name}</p>
+          {!isCompact && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 shrink-0">
               {plant.Category}
             </Badge>
-            {plant.Image_Count > 0 && (
-              <span className="text-[10px] text-muted-foreground ml-auto flex items-center gap-0.5">
+          )}
+        </div>
+        {!isCompact && (
+          <div className="flex items-center justify-between gap-1">
+            {plant.Botanical_Name ? (
+              <p className="italic text-xs text-muted-foreground leading-tight line-clamp-1">
+                {plant.Botanical_Name}
+              </p>
+            ) : <span />}
+            {(plant.Image_Count ?? 0) > 0 && (
+              <span className="text-[10px] text-muted-foreground shrink-0 flex items-center gap-0.5">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="size-3">
                   <path fillRule="evenodd" d="M1 5.25A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25v9.5A2.25 2.25 0 0116.75 17H3.25A2.25 2.25 0 011 14.75v-9.5zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 00.75-.75v-2.69l-2.22-2.219a.75.75 0 00-1.06 0l-1.91 1.909-4.97-4.969a.75.75 0 00-1.06 0L2.5 11.06zm6.5-3.81a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" clipRule="evenodd" />
                 </svg>

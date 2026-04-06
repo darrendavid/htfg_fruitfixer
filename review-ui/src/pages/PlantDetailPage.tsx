@@ -143,7 +143,7 @@ export function PlantDetailPage() {
             </div>
 
             <div className="p-4">
-              <TabsContent value="overview" className="mt-0">
+              <TabsContent value="overview" className="mt-0" forceMount>
                 {/* Edit/Save/Delete — only on Overview, below tabs */}
                 {isAdmin && (
                   <div className="flex items-center gap-2 mb-4">
@@ -184,7 +184,7 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="gallery" className="mt-0">
+              <TabsContent value="gallery" className="mt-0" forceMount>
                 <GalleryTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   currentHeroPath={(detail.plant as any).hero_image ?? undefined}
@@ -197,7 +197,7 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="varieties" className="mt-0">
+              <TabsContent value="varieties" className="mt-0" forceMount>
                 <VarietiesTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   varieties={detail.varieties}
@@ -206,7 +206,7 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="nutrition" className="mt-0">
+              <TabsContent value="nutrition" className="mt-0" forceMount>
                 <NutritionTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   nutritional={detail.nutritional}
@@ -215,11 +215,11 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="documents" className="mt-0">
+              <TabsContent value="documents" className="mt-0" forceMount>
                 <DocumentsTab documents={detail.documents} />
               </TabsContent>
 
-              <TabsContent value="attachments" className="mt-0">
+              <TabsContent value="attachments" className="mt-0" forceMount>
                 <AttachmentsTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   attachments={detail.attachments ?? []}
@@ -227,7 +227,7 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="recipes" className="mt-0">
+              <TabsContent value="recipes" className="mt-0" forceMount>
                 <RecipesTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   recipes={detail.recipes}
@@ -235,11 +235,11 @@ export function PlantDetailPage() {
                 />
               </TabsContent>
 
-              <TabsContent value="ocr" className="mt-0">
+              <TabsContent value="ocr" className="mt-0" forceMount>
                 <OcrTab ocrExtractions={detail.ocr} plantId={(detail.plant as any).Id1 || detail.plant.Id} />
               </TabsContent>
 
-              <TabsContent value="notes" className="mt-0">
+              <TabsContent value="notes" className="mt-0" forceMount>
                 <NotesTab
                   plantId={(detail.plant as any).Id1 || detail.plant.Id}
                   notes={detail.notes}

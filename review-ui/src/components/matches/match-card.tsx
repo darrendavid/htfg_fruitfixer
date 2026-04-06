@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react';
+import { RotateCcw, RotateCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PlantAutocomplete, type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
 import { VarietyPicker, type VarietySelection } from '@/components/browse/VarietyAutocomplete';
+import { ImagePreviewDialog } from './ImagePreviewDialog';
 import type { MatchItem, UndoToken } from '@/types/matches';
 
 // Derive thumbnail URL from file_path (images only)
@@ -67,6 +69,8 @@ export function MatchCard({ item, isActive, isSelected, cardRef, onApprove, onAt
   );
   const [busy, setBusy] = useState(false);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
+  const [rotation, setRotation] = useState(0);
+  const [showPreview, setShowPreview] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const isDoc = item.file_type === 'document';
@@ -117,7 +121,7 @@ export function MatchCard({ item, isActive, isSelected, cardRef, onApprove, onAt
       )}
 
       {/* Thumbnail / File icon */}
-      <div className="shrink-0 w-[150px] h-[110px] bg-muted rounded overflow-hidden flex items-center justify-center">
+      <div className="shrink-0 w-[150px] h-[110px] bg-muted rounded overflow-hidden flex items-center justify-center relative group/thumb">
         {isDoc ? (
           <div className="flex flex-col items-center gap-1">
             <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${EXT_COLORS[ext] ?? 'bg-gray-100 text-gray-600'}`}>
@@ -128,17 +132,42 @@ export function MatchCard({ item, isActive, isSelected, cardRef, onApprove, onAt
             </span>
           </div>
         ) : (
-          <img
-            ref={imgRef}
-            src={thumbUrl(item)}
-            alt={item.filename}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onLoad={(e) => { const t = e.currentTarget; setDims({ w: t.naturalWidth, h: t.naturalHeight }); }}
-            onError={() => { if (imgRef.current) imgRef.current.style.display = 'none'; }}
-          />
+          <>
+            <img
+              ref={imgRef}
+              src={thumbUrl(item)}
+              alt={item.filename}
+              loading="lazy"
+              className="w-full h-full object-cover cursor-zoom-in"
+              style={rotation ? { transform: `rotate(${rotation}deg)` } : undefined}
+              onClick={(e) => { e.stopPropagation(); setShowPreview(true); }}
+              onLoad={(e) => { const t = e.currentTarget; setDims({ w: t.naturalWidth, h: t.naturalHeight }); }}
+              onError={() => { if (imgRef.current) imgRef.current.style.display = 'none'; }}
+            />
+            {/* Rotate buttons */}
+            <button
+              className="absolute bottom-0.5 left-0.5 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+              title="Rotate left"
+              onClick={(e) => { e.stopPropagation(); setRotation((r) => (r - 90 + 360) % 360); }}
+            ><RotateCcw className="size-3.5" /></button>
+            <button
+              className="absolute bottom-0.5 right-0.5 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+              title="Rotate right"
+              onClick={(e) => { e.stopPropagation(); setRotation((r) => (r + 90) % 360); }}
+            ><RotateCw className="size-3.5" /></button>
+          </>
         )}
       </div>
+
+      {/* Full-size image preview */}
+      {!isDoc && (
+        <ImagePreviewDialog
+          src={showPreview ? thumbUrl(item) : null}
+          alt={item.filename}
+          open={showPreview}
+          onOpenChange={setShowPreview}
+        />
+      )}
 
       {/* Details */}
       <div className="flex-1 min-w-0 flex flex-col gap-1.5">

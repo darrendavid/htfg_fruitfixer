@@ -4,9 +4,43 @@ import { Button } from '@/components/ui/button';
 import { MatchCard } from '@/components/matches/match-card';
 import { PlantAutocomplete, type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
 import { VarietyPicker, type VarietySelection } from '@/components/browse/VarietyAutocomplete';
+import { VarietyMatchTab } from '@/components/matches/VarietyMatchTab';
 import type { FolderSummary, FoldersResponse, FolderItemsResponse, MatchItem, UndoToken } from '@/types/matches';
 
 export function MatchReviewPage() {
+  const [activeTab, setActiveTab] = useState<'triage' | 'varieties'>('triage');
+
+  return (
+    <div className="flex flex-col h-screen bg-background">
+      {/* Tab bar */}
+      <div className="shrink-0 border-b bg-background flex">
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'triage' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          onClick={() => setActiveTab('triage')}
+        >
+          Triage
+        </button>
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'varieties' ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          onClick={() => setActiveTab('varieties')}
+        >
+          Variety Matches
+        </button>
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'triage' ? <TriageTab /> : <VarietyMatchTab />}
+      </div>
+    </div>
+  );
+}
+
+function TriageTab() {
   const [folders, setFolders] = useState<FolderSummary[]>([]);
   const [folderCounts, setFolderCounts] = useState<Map<string, number>>(new Map());
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -357,7 +391,7 @@ export function MatchReviewPage() {
   const processed = stats.approved + stats.reviewed + stats.ignored;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-full overflow-hidden">
       {/* Left sidebar — folder list */}
       <aside className="w-[250px] shrink-0 border-r flex flex-col overflow-hidden">
         <div className="p-3 border-b">

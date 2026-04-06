@@ -13,6 +13,9 @@ const PROJECT_ROOT = path.resolve(config.CONTENT_ROOT, '..');
 // Path to the phase 4C inferences JSON (optional — enriches results with plant/variety suggestions)
 const INFERENCES_JSON = path.resolve(PROJECT_ROOT, 'content/parsed/phase4c_inferences.json');
 
+// Path to assigned-variety inferences JSON
+const VARIETY_INFERENCES_JSON = path.resolve(PROJECT_ROOT, 'content/parsed/assigned_variety_inferences.json');
+
 // pass_01 base (sibling of assigned/)
 const PASS01_BASE = path.resolve(config.IMAGE_MOUNT_PATH, '..');
 
@@ -551,12 +554,105 @@ router.post('/bulk-ignore', requireAdmin, asyncHandler(async (req, res) => {
 }));
 
 // ══════════════════════════════════════════════════════════════════════════════
+// GET /api/matches/variety-suggestions — Variety inference results for assigned images
+//   No ?plant  → return plant groups only
+//   ?plant=id  → return items for that plant
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/variety-suggestions', asyncHandler(async (req, res) => {
+  if (!existsSync(VARIETY_INFERENCES_JSON)) {
+    res.json({ total: 0, groups: [] });
+    return;
+  }
+
+  let parsed: any;
+  try { parsed = JSON.parse(readFileSync(VARIETY_INFERENCES_JSON, 'utf-8')); } catch {
+    res.json({ total: 0, groups: [] });
+    return;
+  }
+
+  const rawMatches: any[] = parsed.matches || [];
+
+  // Filter out images that already have a Variety_Id set (previously accepted).
+  // Fetch all image IDs that have a variety assigned in one paginated query.
+  const assignedSet = new Set<number>();
+  try {
+    let offset = 0;
+    while (true) {
+      const result = await nocodb.list('Images', {
+        where: '(Variety_Id,notblank)',
+        fields: ['Id'],
+        limit: 200,
+        offset,
+      });
+      for (const r of result.list) assignedSet.add(r.Id);
+      if (result.pageInfo?.isLastPage || result.list.length === 0) break;
+      offset += 200;
+    }
+  } catch { /* continue without filtering if NocoDB fails */ }
+
+  const allMatches = rawMatches.filter((m: any) => !assignedSet.has(m.image_id));
+  const plantParam = req.query.plant as string | undefined;
+
+  if (plantParam !== undefined) {
+    const items = allMatches.filter((m: any) => m.plant_id === plantParam);
+    const confOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    items.sort((a: any, b: any) => (confOrder[a.confidence] ?? 3) - (confOrder[b.confidence] ?? 3) || a.filename.localeCompare(b.filename));
+    res.json({ plant_id: plantParam, plant_name: items[0]?.plant_name ?? plantParam, total: items.length, items });
+    return;
+  }
+
+  // Group by plant
+  const groupMap = new Map<string, { plant_name: string; count: number }>();
+  for (const m of allMatches) {
+    if (!groupMap.has(m.plant_id)) groupMap.set(m.plant_id, { plant_name: m.plant_name, count: 0 });
+    groupMap.get(m.plant_id)!.count++;
+  }
+  const groups = [...groupMap.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([plant_id, { plant_name, count }]) => ({ plant_id, plant_name, count }));
+
+  res.json({ total: allMatches.length, groups });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /api/matches/accept-variety — Accept a variety suggestion (update NocoDB)
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/accept-variety', requireAdmin, asyncHandler(async (req, res) => {
+  const { image_id, variety_id } = req.body as { image_id: number; variety_id: number };
+  if (!image_id || !variety_id) {
+    res.status(400).json({ error: 'image_id and variety_id are required' });
+    return;
+  }
+  await nocodb.update('Images', image_id, { Variety_Id: variety_id });
+  res.json({
+    success: true,
+    undo_token: { type: 'accept-variety', image_id, variety_id, previous_variety_id: null },
+  });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /api/matches/bulk-accept-variety — Accept multiple variety suggestions
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/bulk-accept-variety', requireAdmin, asyncHandler(async (req, res) => {
+  const { items } = req.body as { items: Array<{ image_id: number; variety_id: number }> };
+  if (!Array.isArray(items) || items.length === 0) {
+    res.status(400).json({ error: 'items array is required' });
+    return;
+  }
+  const updates = items.map(i => ({ Id: i.image_id, Variety_Id: i.variety_id }));
+  for (let i = 0; i < updates.length; i += 100) {
+    await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
+  }
+  res.json({ success: true, count: items.length });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
 // POST /api/matches/undo — Reverse last action
 // ══════════════════════════════════════════════════════════════════════════════
 router.post('/undo', requireAdmin, asyncHandler(async (req, res) => {
   const { undo_token } = req.body as {
     undo_token: {
-      type: 'approve' | 'review' | 'ignore';
+      type: 'approve' | 'review' | 'ignore' | 'accept-variety';
       original_path: string;
       dest_path: string;
       nocodb_id?: number | null;
@@ -564,12 +660,28 @@ router.post('/undo', requireAdmin, asyncHandler(async (req, res) => {
     };
   };
 
-  if (!undo_token || !undo_token.type || !undo_token.original_path || !undo_token.dest_path) {
+  if (!undo_token || !undo_token.type) {
     res.status(400).json({ error: 'Invalid undo_token' });
     return;
   }
 
-  const { type, original_path, dest_path, nocodb_id } = undo_token;
+  const { type } = undo_token;
+
+  // Accept-variety undo: just clear the Variety_Id back to null
+  if (type === 'accept-variety') {
+    const { image_id } = undo_token as any;
+    if (!image_id) { res.status(400).json({ error: 'image_id required for accept-variety undo' }); return; }
+    await nocodb.update('Images', image_id, { Variety_Id: null });
+    res.json({ success: true });
+    return;
+  }
+
+  // File-based undo types require paths
+  const { original_path, dest_path, nocodb_id } = undo_token as any;
+  if (!original_path || !dest_path) {
+    res.status(400).json({ error: 'Invalid undo_token: missing paths' });
+    return;
+  }
 
   if (!existsSync(dest_path)) {
     res.status(404).json({ error: 'Destination file no longer exists — cannot undo', dest_path });

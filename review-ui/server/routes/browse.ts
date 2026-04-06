@@ -131,6 +131,15 @@ router.get('/', asyncHandler(async (req, res) => {
     const slug = plant.Id1;
     if (!slug) return plant;
 
+    // Live image count from disk (overrides stale NocoDB Image_Count)
+    try {
+      const plantDir = path.join(config.IMAGE_MOUNT_PATH, slug, 'images');
+      const diskFiles = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
+      plant.Image_Count = diskFiles.length;
+    } catch {
+      plant.Image_Count = plant.Image_Count || 0;
+    }
+
     // Check for user-selected hero
     const heroEntry = heroMap.get(slug);
     if (heroEntry) {
@@ -139,7 +148,7 @@ router.get('/', asyncHandler(async (req, res) => {
       return plant;
     }
 
-    // Fall back to first image on disk (don't rely on Image_Count which may be stale)
+    // Fall back to first image on disk for hero
     try {
       const plantDir = path.join(config.IMAGE_MOUNT_PATH, slug, 'images');
       const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
@@ -396,7 +405,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const imageOffset = Math.max(0, parseInt(req.query.imageOffset as string) || 0);
 
   const [varieties, nutritional, images, documents, attachments, recipes, ocr] = await Promise.all([
-    nocodb.list('Varieties', { where: `(Plant_Id,eq,${plantSlug})`, limit: 200 }).catch(() => ({ list: [] })),
+    nocodb.list('Varieties', { where: `(Plant_Id,eq,${plantSlug})`, limit: 1000 }).catch(() => ({ list: [] })),
     nocodb.list('Nutritional_Info', { where: `(Plant_Id,eq,${plantSlug})`, limit: 200 }).catch(() => ({ list: [] })),
     nocodb.list('Images', { where: `(Plant_Id,eq,${plantSlug})~and(Status,neq,hidden)`, limit: imageLimit, offset: imageOffset }).catch(() => ({ list: [], pageInfo: {} })),
     nocodb.list('Documents', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 100 }).catch(() => ({ list: [] })),
