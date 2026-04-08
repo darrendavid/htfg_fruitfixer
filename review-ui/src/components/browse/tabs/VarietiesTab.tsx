@@ -34,9 +34,6 @@ export function VarietiesTab({ plantId, varieties, editMode: _editMode, onVariet
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
 
-  // Inline rename state
-  const [renamingId, setRenamingId] = useState<number | null>(null);
-  const [renameValue, setRenameValue] = useState('');
 
   // Add variety state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -124,41 +121,6 @@ export function VarietiesTab({ plantId, varieties, editMode: _editMode, onVariet
     setSelectedIds(new Set());
     setPrimaryId(null);
   };
-
-  // ── Inline rename ───────────────────────────────────────────────────────────
-  const startRename = (v: BrowseVariety) => {
-    setRenamingId(v.Id);
-    setRenameValue(v.Variety_Name);
-  };
-
-  const cancelRename = () => {
-    setRenamingId(null);
-    setRenameValue('');
-  };
-
-  const saveRename = useCallback(async () => {
-    if (renamingId === null || !renameValue.trim()) return;
-    try {
-      const res = await fetch(`/api/browse/varieties/${renamingId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ Variety_Name: renameValue.trim() }),
-        credentials: 'include',
-      });
-      if (res.ok) {
-        onVarietiesChanged(varieties.map(v =>
-          v.Id === renamingId ? { ...v, Variety_Name: renameValue.trim() } : v
-        ));
-        toast.success('Variety renamed');
-      } else {
-        toast.error('Failed to rename');
-      }
-    } catch {
-      toast.error('Failed to rename');
-    }
-    setRenamingId(null);
-    setRenameValue('');
-  }, [renamingId, renameValue, varieties, onVarietiesChanged]);
 
   // ── Delete ──────────────────────────────────────────────────────────────────
   const deleteVariety = useCallback(async (id: number) => {
@@ -356,10 +318,15 @@ export function VarietiesTab({ plantId, varieties, editMode: _editMode, onVariet
           </TableHeader>
           <TableBody>
             {sortedVarieties.map(v => (
-              <TableRow key={v.Id} className={selectedIds.has(v.Id) ? 'bg-blue-50 dark:bg-blue-950/30' : ''}>
+              <TableRow
+                key={v.Id}
+                className={`cursor-pointer ${selectedIds.has(v.Id) ? 'bg-blue-50 dark:bg-blue-950/30' : 'hover:bg-muted/50'}`}
+                onClick={() => openDetail(v)}
+                data-testid={`variety-row-${v.Id}`}
+              >
                 {/* Select checkbox */}
                 {isAdmin && (
-                  <TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={selectedIds.has(v.Id)}
@@ -369,44 +336,8 @@ export function VarietiesTab({ plantId, varieties, editMode: _editMode, onVariet
                   </TableCell>
                 )}
 
-                {/* Name — inline editable */}
-                <TableCell className="font-medium">
-                  {renamingId === v.Id ? (
-                    <div className="flex items-center gap-1">
-                      <Input
-                        value={renameValue}
-                        onChange={e => setRenameValue(e.target.value)}
-                        className="h-7 text-sm min-w-[140px]"
-                        autoFocus
-                        onKeyDown={e => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') cancelRename(); }}
-                      />
-                      <Button size="sm" variant="default" className="h-7 px-2 text-xs" onClick={saveRename}>Save</Button>
-                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={cancelRename}>Cancel</Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        className="select-text text-left hover:underline text-blue-700 dark:text-blue-400"
-                        onClick={() => openDetail(v)}
-                        title="View details"
-                        data-testid={`variety-name-link-${v.Id}`}
-                      >{v.Variety_Name}</button>
-                      {isAdmin && (
-                        <button
-                          onClick={() => startRename(v)}
-                          className="text-muted-foreground hover:text-foreground ml-1"
-                          title="Rename variety"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3.5">
-                            <path d="M13.488 2.513a1.75 1.75 0 0 0-2.475 0L6.15 7.375a.75.75 0 0 0-.2.38l-.5 2.25a.75.75 0 0 0 .896.896l2.25-.5a.75.75 0 0 0 .38-.2l4.862-4.862a1.75 1.75 0 0 0 0-2.475Z" />
-                            <path d="M4.75 3.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h6.5c.69 0 1.25-.56 1.25-1.25V9A.75.75 0 0 1 14 9v2.25A2.75 2.75 0 0 1 11.25 14h-6.5A2.75 2.75 0 0 1 2 11.25v-6.5A2.75 2.75 0 0 1 4.75 2H7a.75.75 0 0 1 0 1.5H4.75Z" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </TableCell>
+                {/* Name */}
+                <TableCell className="font-medium">{v.Variety_Name}</TableCell>
 
                 <TableCell className="text-sm">{v.Alternative_Names ?? '-'}</TableCell>
                 <TableCell className="text-sm max-w-xs truncate" title={v.Description ?? ''}>{v.Description ?? '-'}</TableCell>
@@ -417,7 +348,7 @@ export function VarietiesTab({ plantId, varieties, editMode: _editMode, onVariet
 
                 {/* Actions */}
                 {isAdmin && (
-                  <TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
                     <Button
                       variant="ghost"
                       size="sm"

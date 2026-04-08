@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react';
-import { RotateCcw, RotateCw, LayoutGrid, FolderOpen, Tags, Copy, Trash2, Upload } from 'lucide-react';
+import { RotateCcw, RotateCw, LayoutGrid, FolderOpen, Tags, Copy, Trash2, Upload, Search } from 'lucide-react';
+import { ImageSearchDialog } from '@/components/browse/ImageSearchDialog';
 import { LazyImage } from '@/components/images/LazyImage';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -207,6 +208,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const [sortOrder, setSortOrder] = useState<'default' | 'newest' | 'oldest'>('default');
   const [visibleGroupCount, setVisibleGroupCount] = useState(20);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [showSearchDialog, setShowSearchDialog] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
@@ -477,7 +479,8 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         const filename = img.File_Path.split('/').pop()?.toLowerCase() ?? '';
         const caption = (img.Caption ?? '').toLowerCase();
         const variety = ((img as any).Variety_Name ?? '').toLowerCase();
-        return filename.includes(q) || caption.includes(q) || variety.includes(q);
+        const origPath = ((img as any).Original_Filepath ?? '').toLowerCase();
+        return filename.includes(q) || caption.includes(q) || variety.includes(q) || origPath.includes(q);
       });
     }
     if (sortOrder === 'newest') {
@@ -492,11 +495,26 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     if (viewMode === 'grid') return [];
 
     if (viewMode === 'grouped') {
+      // Group by original source directory (from Original_Filepath), fall back to Source_Directory
       const groups: Record<string, BrowseImage[]> = {};
       for (const img of filteredImages) {
-        const path = stripParsedPrefix(img.File_Path);
-        const dir = path.substring(0, path.lastIndexOf('/'));
-        const label = dir.includes('images/') ? dir.substring(dir.indexOf('images/') + 7) : dir;
+        const origPath = (img as any).Original_Filepath || (img as any).Source_Directory || '';
+        let label: string;
+        if (origPath) {
+          // Strip filename to get directory, then strip common prefixes
+          const dir = origPath.substring(0, origPath.lastIndexOf('/')) || origPath;
+          label = dir
+            .replace(/^content\/source\//, '')
+            .replace(/^original\//, '')
+            .replace(/^fruit pix\//, '')
+            || '(root)';
+        } else {
+          // No original path — fall back to current path directory
+          const path = stripParsedPrefix(img.File_Path);
+          const dir = path.substring(0, path.lastIndexOf('/'));
+          label = dir.includes('images/') ? dir.substring(dir.indexOf('images/') + 7) : dir;
+          label = label || '(unknown)';
+        }
         if (!groups[label]) groups[label] = [];
         groups[label].push(img);
       }
@@ -916,6 +934,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                 />
               </div>
             )}
+            {isAdmin && (
+              <Button variant="secondary" size="sm" className="h-6 text-xs px-2" onClick={async () => {
+                await handleBulkVariety([...selectedIds], null);
+                clearSelection();
+              }}>
+                Unset Variety
+              </Button>
+            )}
             <Button variant="ghost" size="sm" className="h-6 text-xs px-2 text-white hover:text-white hover:bg-blue-700 ml-auto" onClick={clearSelection}>
               Clear
             </Button>
@@ -930,7 +956,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             type="text"
             value={filenameFilter}
             onChange={e => setFilenameFilter(e.target.value)}
-            placeholder="Filter by name, caption, variety..."
+            placeholder="Filter by name, caption, variety, source path..."
             className="h-7 text-xs border rounded px-2 w-36"
           />
           <select
@@ -961,7 +987,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             <LayoutGrid className="size-4" />
           </Button>
           <Button variant={viewMode === 'grouped' ? 'default' : 'outline'} size="icon" className="h-8 w-8"
-            onClick={() => { setViewMode('grouped'); clearSelection(); }} title="Group by directory">
+            onClick={() => { setViewMode('grouped'); clearSelection(); }} title="Group by original source folder">
             <FolderOpen className="size-4" />
           </Button>
           <Button variant={viewMode === 'variety' ? 'default' : 'outline'} size="icon" className="h-8 w-8"
@@ -973,9 +999,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
             <Copy className="size-4" />
           </Button>
           {isAdmin && (
-            <Button variant="outline" size="sm" className="h-8 ml-2" onClick={() => setShowUploadDialog(true)}>
-              <Upload className="size-4 mr-1" /> Add Images
-            </Button>
+            <>
+              <Button variant="outline" size="sm" className="h-8 ml-2" onClick={() => setShowSearchDialog(true)}>
+                <Search className="size-4 mr-1" /> Search Files
+              </Button>
+              <Button variant="outline" size="sm" className="h-8" onClick={() => setShowUploadDialog(true)}>
+                <Upload className="size-4 mr-1" /> Add Images
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -1124,8 +1155,13 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   ) : (
                     lightboxImage.Caption && <p className="text-sm font-medium">{lightboxImage.Caption}</p>
                   )}
-                  <p className="text-xs text-muted-foreground font-mono break-all">
-                    {toRelativeImagePath(lightboxImage.File_Path)}
+                  {(lightboxImage as any).Original_Filepath && (
+                    <p className="text-[10px] text-muted-foreground font-mono break-all">
+                      <span className="font-semibold text-muted-foreground/70">Source:</span> {(lightboxImage as any).Original_Filepath.replace(/^content\/source\//, '')}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-muted-foreground font-mono break-all">
+                    <span className="font-semibold text-muted-foreground/70">Current:</span> {toRelativeImagePath(lightboxImage.File_Path)}
                   </p>
                   <div className="flex items-center gap-2 flex-wrap mt-0.5">
                     {imageDimensions && (
@@ -1215,12 +1251,35 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                         } catch {}
                       }}
                     />
-                    <VarietyPicker
-                      plantId={plantId}
-                      externalInputRef={varietyInputRef}
-                      currentVariety={(lightboxImage as any).Variety_Name ?? null}
-                      onSelect={(variety) => setImageVariety(lightboxImage, variety)}
-                    />
+                    <div className="flex items-center gap-1">
+                      <div className="flex-1">
+                        <VarietyPicker
+                          key={`variety-${lightboxImage.Id}`}
+                          plantId={plantId}
+                          externalInputRef={varietyInputRef}
+                          currentVariety={(lightboxImage as any).Variety_Name ?? null}
+                          onSelect={(variety) => setImageVariety(lightboxImage, variety)}
+                        />
+                      </div>
+                      {!(lightboxImage as any).Variety_Name && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs shrink-0"
+                          title="Infer variety from filename/directory"
+                          onClick={async () => {
+                            try {
+                              const r = await fetch(`/api/browse/infer-variety/${lightboxImage.Id}`, { credentials: 'include' });
+                              if (!r.ok) return;
+                              const data = await r.json();
+                              if (data.match) {
+                                await setImageVariety(lightboxImage, { id: data.match.variety_id, name: data.match.variety_name });
+                              }
+                            } catch {}
+                          }}
+                        >Infer</Button>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1426,6 +1485,13 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Search Image Files dialog */}
+      <ImageSearchDialog
+        open={showSearchDialog}
+        onOpenChange={setShowSearchDialog}
+        currentPlantId={plantId}
+      />
     </div>
   );
 }

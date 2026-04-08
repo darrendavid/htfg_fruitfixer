@@ -16,6 +16,12 @@ const INFERENCES_JSON = path.resolve(PROJECT_ROOT, 'content/parsed/phase4c_infer
 // Path to assigned-variety inferences JSON
 const VARIETY_INFERENCES_JSON = path.resolve(PROJECT_ROOT, 'content/parsed/assigned_variety_inferences.json');
 
+// Path to lost image recovery JSON
+const LOST_IMAGES_JSON = path.resolve(PROJECT_ROOT, 'content/parsed/lost_image_recovery.json');
+
+// Path to dedup review JSON
+const DEDUP_REVIEW_JSON = path.resolve(PROJECT_ROOT, 'content/parsed/dedup_review.json');
+
 // pass_01 base (sibling of assigned/)
 const PASS01_BASE = path.resolve(config.IMAGE_MOUNT_PATH, '..');
 
@@ -120,6 +126,168 @@ function buildItem(abs: string, rel: string, fileType: 'image' | 'document', inf
     signals: inference?.signals ?? [],
   };
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/matches/triage — All images flagged for triage (Status='unassigned' with no Plant_Id,
+//   OR files in _to_triage/ folder)
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/triage', asyncHandler(async (req, res) => {
+  const limit = Math.min(200, parseInt(req.query.limit as string) || 100);
+  const qOffset = parseInt(req.query.offset as string) || 0;
+
+  // Query NocoDB for images with Status='unassigned' and no Plant_Id (flagged for triage)
+  const result = await nocodb.list('Images', {
+    where: '(Status,eq,triage)~and(Excluded,neq,true)',
+    limit,
+    offset: qOffset,
+  });
+
+  // Also scan _to_triage/ folder for filesystem-based items
+  const fsItems: any[] = [];
+  if (existsSync(UNASSIGNED_ROOT)) {
+    const files: Array<{ abs: string; rel: string; fileType: 'image' | 'document' }> = [];
+    walkFiles(UNASSIGNED_ROOT, files, UNASSIGNED_ROOT);
+    for (const { abs, rel, fileType } of files) {
+      fsItems.push({
+        source: 'filesystem',
+        file_path: path.relative(PROJECT_ROOT, abs).replace(/\\/g, '/'),
+        filename: path.basename(rel),
+        file_type: fileType,
+        file_size: statSync(abs).size,
+      });
+    }
+  }
+
+  const dbItems = (result.list || []).map((img: any) => ({
+    source: 'database',
+    image_id: img.Id,
+    file_path: img.File_Path,
+    filename: (img.File_Path || '').split('/').pop(),
+    original_filepath: img.Original_Filepath,
+    caption: img.Caption,
+    file_size: img.Size_Bytes || 0,
+    file_type: 'image' as const,
+  }));
+
+  res.json({
+    total_db: result.pageInfo?.totalRows ?? dbItems.length,
+    total_fs: fsItems.length,
+    offset: qOffset,
+    limit,
+    db_items: dbItems,
+    fs_items: qOffset === 0 ? fsItems : [], // Only send filesystem items on first page
+  });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /api/matches/assign-triage-fs — Assign filesystem triage items to a plant
+//   Moves file to assigned/{plant_id}/images/, creates NocoDB record, sets Status=assigned
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/assign-triage-fs', requireAdmin, asyncHandler(async (req, res) => {
+  const { file_paths, plant_id } = req.body as { file_paths: string[]; plant_id: string };
+  if (!file_paths?.length || !plant_id) {
+    res.status(400).json({ error: 'file_paths[] and plant_id required' });
+    return;
+  }
+
+  const results: Array<{ file_path: string; success: boolean; image_id?: number; error?: string }> = [];
+
+  const destDir = path.join(config.IMAGE_MOUNT_PATH, plant_id, 'images');
+  mkdirSync(destDir, { recursive: true });
+
+  for (const fp of file_paths) {
+    // fp is relative to PROJECT_ROOT (e.g. "content/pass_01/unassigned/_to_triage/foo.jpg")
+    const absSource = path.resolve(PROJECT_ROOT, fp);
+    if (!existsSync(absSource)) {
+      results.push({ file_path: fp, success: false, error: 'File not found' });
+      continue;
+    }
+
+    try {
+      const filename = path.basename(fp);
+      const safeFilename = resolveDestFilename(destDir, filename);
+      const absDest = path.join(destDir, safeFilename);
+      moveFile(absSource, absDest);
+
+      // Relative path from content/ root (what NocoDB stores)
+      const relDest = path.relative(path.resolve(PROJECT_ROOT, 'content'), absDest).replace(/\\/g, '/');
+      const filePath = 'content/' + relDest;
+
+      // Create NocoDB record
+      const stat = statSync(absDest);
+      const record = await nocodb.create('Images', {
+        File_Path: filePath,
+        Plant_Id: plant_id,
+        Status: 'assigned',
+        Size_Bytes: stat.size,
+        Caption: path.basename(safeFilename, path.extname(safeFilename)).replace(/[_-]/g, ' '),
+        Source_Directory: path.relative(path.resolve(PROJECT_ROOT, 'content'), path.dirname(absDest)).replace(/\\/g, '/'),
+        Attribution: config.IMAGES_AUTO_ATTRIBUTION || null,
+      });
+
+      const imageId = Array.isArray(record) ? record[0]?.Id : record?.Id;
+      results.push({ file_path: fp, success: true, image_id: imageId });
+    } catch (err: any) {
+      results.push({ file_path: fp, success: false, error: err.message });
+    }
+  }
+
+  const succeeded = results.filter(r => r.success).length;
+  res.json({ success: succeeded > 0, succeeded, total: results.length, results });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /api/matches/hide-triage-fs — Hide filesystem triage items (no plant)
+//   Moves file to unassigned/ignored/, creates NocoDB record with Status=hidden
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/hide-triage-fs', requireAdmin, asyncHandler(async (req, res) => {
+  const { file_paths } = req.body as { file_paths: string[] };
+  if (!file_paths?.length) {
+    res.status(400).json({ error: 'file_paths[] required' });
+    return;
+  }
+
+  const destDir = path.join(PASS01_BASE, 'unassigned', 'ignored');
+  mkdirSync(destDir, { recursive: true });
+
+  const results: Array<{ file_path: string; success: boolean; image_id?: number; error?: string }> = [];
+
+  for (const fp of file_paths) {
+    const absSource = path.resolve(PROJECT_ROOT, fp);
+    if (!existsSync(absSource)) {
+      results.push({ file_path: fp, success: false, error: 'File not found' });
+      continue;
+    }
+    try {
+      const filename = path.basename(fp);
+      const safeFilename = resolveDestFilename(destDir, filename);
+      const absDest = path.join(destDir, safeFilename);
+      moveFile(absSource, absDest);
+
+      const relDest = path.relative(path.resolve(PROJECT_ROOT, 'content'), absDest).replace(/\\/g, '/');
+      const filePath = 'content/' + relDest;
+
+      const stat = statSync(absDest);
+      const record = await nocodb.create('Images', {
+        File_Path: filePath,
+        Plant_Id: null,
+        Status: 'hidden',
+        Size_Bytes: stat.size,
+        Caption: path.basename(safeFilename, path.extname(safeFilename)).replace(/[_-]/g, ' '),
+        Source_Directory: path.relative(path.resolve(PROJECT_ROOT, 'content'), path.dirname(absDest)).replace(/\\/g, '/'),
+        Attribution: config.IMAGES_AUTO_ATTRIBUTION || null,
+      });
+
+      const imageId = Array.isArray(record) ? record[0]?.Id : record?.Id;
+      results.push({ file_path: fp, success: true, image_id: imageId });
+    } catch (err: any) {
+      results.push({ file_path: fp, success: false, error: err.message });
+    }
+  }
+
+  const succeeded = results.filter(r => r.success).length;
+  res.json({ success: succeeded > 0, succeeded, total: results.length, results });
+}));
 
 // ══════════════════════════════════════════════════════════════════════════════
 // GET /api/matches
@@ -572,25 +740,59 @@ router.get('/variety-suggestions', asyncHandler(async (req, res) => {
 
   const rawMatches: any[] = parsed.matches || [];
 
-  // Filter out images that already have a Variety_Id set (previously accepted).
-  // Fetch all image IDs that have a variety assigned in one paginated query.
-  const assignedSet = new Set<number>();
-  try {
-    let offset = 0;
-    while (true) {
+  // Filter out images that have been acted on: Variety_Id set OR Plant_Id changed.
+  // Query the specific image IDs from the inference JSON to get their current NocoDB state.
+  // Build a map: image_id → { variety_id, plant_id } for cross-checking.
+  const currentState = new Map<number, { variety_id: number | null; plant_id: string | null; status: string | null }>();
+  const inferenceIds = rawMatches.map((m: any) => m.image_id as number).filter(Boolean);
+  for (let i = 0; i < inferenceIds.length; i += 100) {
+    const batch = inferenceIds.slice(i, i + 100);
+    try {
       const result = await nocodb.list('Images', {
-        where: '(Variety_Id,notblank)',
-        fields: ['Id'],
-        limit: 200,
-        offset,
+        where: `(Id,in,${batch.join(',')})`,
+        fields: ['Id', 'Variety_Id', 'Plant_Id', 'Status'],
+        limit: 100,
       });
-      for (const r of result.list) assignedSet.add(r.Id);
-      if (result.pageInfo?.isLastPage || result.list.length === 0) break;
-      offset += 200;
+      for (const r of result.list) {
+        currentState.set(r.Id, { variety_id: r.Variety_Id ?? null, plant_id: r.Plant_Id ?? null, status: r.Status ?? null });
+      }
+    } catch (err) {
+      console.error('[variety-suggestions] batch query failed:', err);
     }
-  } catch { /* continue without filtering if NocoDB fails */ }
+  }
 
-  const allMatches = rawMatches.filter((m: any) => !assignedSet.has(m.image_id));
+  // Collect any new plant IDs (from reassignments) that aren't in the inference JSON
+  const knownPlantNames = new Map<string, string>(rawMatches.map((m: any) => [m.plant_id, m.plant_name]));
+  const newPlantIds = new Set<string>();
+  for (const [, state] of currentState) {
+    if (state.plant_id && !knownPlantNames.has(state.plant_id)) newPlantIds.add(state.plant_id);
+  }
+  if (newPlantIds.size > 0) {
+    try {
+      const result = await nocodb.list('Plants', {
+        where: `(Id,in,${[...newPlantIds].join(',')})`,
+        fields: ['Id', 'Canonical_Name'],
+        limit: newPlantIds.size + 10,
+      });
+      for (const p of result.list) knownPlantNames.set(p.Id, p.Canonical_Name ?? p.Id);
+    } catch { /* use slug as fallback */ }
+  }
+
+  // Build corrected matches: use live Plant_Id from NocoDB (handles reassignments),
+  // filter out images that have been fully acted on (variety accepted, hidden, triage).
+  const allMatches: any[] = [];
+  for (const m of rawMatches) {
+    const state = currentState.get(m.image_id);
+    if (!state) { allMatches.push(m); continue; }
+    if (state.variety_id) continue; // Variety accepted — done
+    if (state.status === 'hidden' || state.status === 'triage') continue; // Hidden or sent to triage
+    // If plant was reassigned, update the match to group under the new plant
+    if (state.plant_id && state.plant_id !== m.plant_id) {
+      allMatches.push({ ...m, plant_id: state.plant_id, plant_name: knownPlantNames.get(state.plant_id) ?? state.plant_id });
+    } else {
+      allMatches.push(m);
+    }
+  }
   const plantParam = req.query.plant as string | undefined;
 
   if (plantParam !== undefined) {
@@ -623,11 +825,306 @@ router.post('/accept-variety', requireAdmin, asyncHandler(async (req, res) => {
     res.status(400).json({ error: 'image_id and variety_id are required' });
     return;
   }
-  await nocodb.update('Images', image_id, { Variety_Id: variety_id });
+  // Look up the variety's parent plant — if it differs from the image's Plant_Id, update both
+  const update: Record<string, any> = { Variety_Id: variety_id };
+  try {
+    const variety = await nocodb.get('Varieties', variety_id);
+    if (variety?.Plant_Id) {
+      const image = await nocodb.get('Images', image_id);
+      if (image && image.Plant_Id !== variety.Plant_Id) {
+        update.Plant_Id = variety.Plant_Id;
+        update.Status = 'assigned';
+      }
+    }
+  } catch { /* non-fatal — still set variety */ }
+
+  const updateResult = await nocodb.update('Images', image_id, update);
+  console.log(`[accept-variety] image ${image_id} → variety ${variety_id}, update:`, JSON.stringify(update), 'result:', JSON.stringify(updateResult));
   res.json({
     success: true,
     undo_token: { type: 'accept-variety', image_id, variety_id, previous_variety_id: null },
   });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/matches/unmatched-images — Images with plant but no variety
+//   ?plant=id  → items for that plant
+//   no param   → grouped counts by plant
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/unmatched-images', asyncHandler(async (req, res) => {
+  const plantParam = req.query.plant as string | undefined;
+
+  if (plantParam !== undefined) {
+    const result = await nocodb.list('Images', {
+      where: `(Plant_Id,eq,${plantParam})~and(Variety_Id,blank)~and(Excluded,neq,true)~and(Status,neq,hidden)~and(Status,neq,triage)`,
+      fields: ['Id', 'File_Path', 'Plant_Id', 'Caption', 'Original_Filepath', 'Source_Directory', 'Size_Bytes'],
+      limit: 200,
+    });
+    res.json({ plant_id: plantParam, total: result.list.length, items: result.list });
+    return;
+  }
+
+  // Aggregate counts by plant
+  const counts = new Map<string, number>();
+  let offset = 0;
+  while (true) {
+    const result = await nocodb.list('Images', {
+      where: '(Variety_Id,blank)~and(Plant_Id,isnot,null)~and(Excluded,neq,true)~and(Status,neq,hidden)~and(Status,neq,triage)',
+      fields: ['Plant_Id'],
+      limit: 200,
+      offset,
+    });
+    for (const img of result.list) {
+      if (img.Plant_Id) counts.set(img.Plant_Id, (counts.get(img.Plant_Id) || 0) + 1);
+    }
+    if (result.pageInfo?.isLastPage || result.list.length === 0) break;
+    offset += 200;
+  }
+
+  const groups = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([plant_id, count]) => ({ plant_id, count }));
+  const total = groups.reduce((s, g) => s + g.count, 0);
+  res.json({ total, groups });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/matches/unassigned-images — Images with no plant assignment
+//   ?offset=N&limit=N for pagination
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/unassigned-images-list', asyncHandler(async (req, res) => {
+  const limit = Math.min(200, parseInt(req.query.limit as string) || 50);
+  const qOffset = parseInt(req.query.offset as string) || 0;
+
+  const result = await nocodb.list('Images', {
+    where: '(Plant_Id,blank)~and(Excluded,neq,true)~and(Status,neq,hidden)~and(Status,neq,triage)',
+    fields: ['Id', 'File_Path', 'Caption', 'Original_Filepath', 'Source_Directory', 'Size_Bytes'],
+    limit,
+    offset: qOffset,
+  });
+  res.json({
+    total: result.pageInfo?.totalRows ?? result.list.length,
+    offset: qOffset,
+    limit,
+    items: result.list,
+  });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/matches/hidden-images — All hidden images grouped by plant
+//   No ?plant → return plant groups
+//   ?plant=id → return items for that plant
+//   ?plant=__none__ → return items with no plant
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/hidden-images', asyncHandler(async (req, res) => {
+  const plantParam = req.query.plant as string | undefined;
+
+  if (plantParam !== undefined) {
+    const where = plantParam === '__none__'
+      ? '(Status,eq,hidden)~and(Plant_Id,blank)'
+      : `(Status,eq,hidden)~and(Plant_Id,eq,${plantParam})`;
+    const result = await nocodb.list('Images', {
+      where,
+      fields: ['Id', 'File_Path', 'Plant_Id', 'Caption', 'Original_Filepath', 'Size_Bytes', 'Variety_Id'],
+      limit: 200,
+    });
+    res.json({ plant_id: plantParam, total: result.pageInfo?.totalRows ?? result.list.length, items: result.list });
+    return;
+  }
+
+  // Aggregate by plant
+  const counts = new Map<string, number>();
+  let noPlantCount = 0;
+  let offset = 0;
+  while (true) {
+    const result = await nocodb.list('Images', {
+      where: '(Status,eq,hidden)',
+      fields: ['Plant_Id'],
+      limit: 200,
+      offset,
+    });
+    for (const img of result.list) {
+      if (img.Plant_Id) counts.set(img.Plant_Id, (counts.get(img.Plant_Id) || 0) + 1);
+      else noPlantCount++;
+    }
+    if (result.pageInfo?.isLastPage || result.list.length === 0) break;
+    offset += 200;
+  }
+
+  const groups = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([plant_id, count]) => ({ plant_id, plant_name: plant_id, count }));
+  if (noPlantCount > 0) groups.push({ plant_id: '__none__', plant_name: '(No Fruit)', count: noPlantCount });
+  const total = groups.reduce((s, g) => s + g.count, 0);
+  res.json({ total, groups });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/matches/search-images — Search images by query across all images
+//   ?q=search_term — searches filename, Original_Filepath, Caption, Plant_Id
+//   Returns { assigned: [...grouped by plant], unassigned: [...] }
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/search-images', asyncHandler(async (req, res) => {
+  const q = (req.query.q as string || '').trim();
+  if (q.length < 2) { res.json({ assigned: [], unassigned: [], total: 0 }); return; }
+
+  // Search across multiple fields using OR conditions
+  const searchFields = ['File_Path', 'Original_Filepath', 'Caption', 'Plant_Id'];
+  const conditions = searchFields.map(f => `(${f},like,%${q}%)`).join('~or');
+
+  const allResults: any[] = [];
+  let offset = 0;
+  while (true) {
+    const result = await nocodb.list('Images', {
+      where: `(${conditions})~and(Excluded,neq,true)~and(Status,neq,hidden)~and(Status,neq,triage)`,
+      limit: 200,
+      offset,
+    });
+    allResults.push(...result.list);
+    if (result.pageInfo?.isLastPage || result.list.length === 0 || allResults.length >= 500) break;
+    offset += 200;
+  }
+
+  // Split into assigned (has Plant_Id) and unassigned
+  const assigned: any[] = [];
+  const unassigned: any[] = [];
+  for (const img of allResults) {
+    if (img.Plant_Id) assigned.push(img);
+    else unassigned.push(img);
+  }
+
+  // Group assigned by Plant_Id
+  const groupMap = new Map<string, any[]>();
+  for (const img of assigned) {
+    if (!groupMap.has(img.Plant_Id)) groupMap.set(img.Plant_Id, []);
+    groupMap.get(img.Plant_Id)!.push(img);
+  }
+  const assignedGroups = [...groupMap.entries()]
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([plant_id, images]) => ({ plant_id, images }));
+
+  res.json({ assigned: assignedGroups, unassigned, total: allResults.length });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/matches/dedup-review — Dedup review: deleted vs kept groups
+//   ?offset=N&limit=N for pagination
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/dedup-review', asyncHandler(async (req, res) => {
+  if (!existsSync(DEDUP_REVIEW_JSON)) {
+    res.json({ total: 0, groups: [] });
+    return;
+  }
+  let parsed: any;
+  try { parsed = JSON.parse(readFileSync(DEDUP_REVIEW_JSON, 'utf-8')); } catch {
+    res.json({ total: 0, groups: [] });
+    return;
+  }
+  const allGroups: any[] = parsed.groups || [];
+  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = parseInt(req.query.limit as string) || 50;
+  const page = allGroups.slice(offset, offset + limit);
+  res.json({ total: allGroups.length, offset, limit, groups: page });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /api/matches/dedup-restore — Restore a deleted dedup record
+//   Re-creates the NocoDB record by copying from source and updating DB
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/dedup-restore', requireAdmin, asyncHandler(async (req, res) => {
+  const { deleted_record } = req.body as { deleted_record: any };
+  if (!deleted_record || !deleted_record.id) {
+    res.status(400).json({ error: 'deleted_record with id required' });
+    return;
+  }
+
+  // Find the original file from the dedup review data
+  let origPath: string | null = null;
+  if (existsSync(DEDUP_REVIEW_JSON)) {
+    const parsed = JSON.parse(readFileSync(DEDUP_REVIEW_JSON, 'utf-8'));
+    for (const group of parsed.groups || []) {
+      const found = group.deleted.find((d: any) => d.id === deleted_record.id);
+      if (found) { origPath = group.original_filepath; break; }
+    }
+  }
+
+  if (!origPath) {
+    res.status(404).json({ error: 'Could not find original filepath for this record' });
+    return;
+  }
+
+  const srcAbs = path.resolve(PROJECT_ROOT, origPath);
+  if (!existsSync(srcAbs)) {
+    res.status(404).json({ error: 'Source file not found on disk', path: origPath });
+    return;
+  }
+
+  const plantId = deleted_record.plant_id;
+  if (!plantId) {
+    res.status(400).json({ error: 'No plant_id on deleted record' });
+    return;
+  }
+
+  // Copy source to assigned folder
+  const destDir = path.join(config.IMAGE_MOUNT_PATH, plantId, 'images');
+  mkdirSync(destDir, { recursive: true });
+  const filename = path.basename(origPath);
+  const safeFilename = resolveDestFilename(destDir, filename);
+  const destAbs = path.join(destDir, safeFilename);
+  copyFileSync(srcAbs, destAbs);
+
+  // Create NocoDB record
+  const filePath = `content/pass_01/assigned/${plantId}/images/${safeFilename}`;
+  const { size: sizeBytes } = statSync(destAbs);
+  const record: Record<string, any> = {
+    File_Path: filePath,
+    Plant_Id: plantId,
+    Caption: deleted_record.caption || path.basename(filename, path.extname(filename)),
+    Original_Filepath: origPath,
+    Size_Bytes: sizeBytes,
+    Status: 'assigned',
+    Excluded: false,
+  };
+  if (deleted_record.variety_id) record.Variety_Id = deleted_record.variety_id;
+
+  const created = await nocodb.create('Images', record);
+  res.json({ success: true, new_id: created?.Id, file_path: filePath });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /api/matches/lost-images — Recovered lost images grouped by plant
+//   No ?plant  → return plant groups only
+//   ?plant=id  → return items for that plant
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/lost-images', asyncHandler(async (req, res) => {
+  if (!existsSync(LOST_IMAGES_JSON)) {
+    res.json({ total: 0, groups: [] });
+    return;
+  }
+  let parsed: any;
+  try { parsed = JSON.parse(readFileSync(LOST_IMAGES_JSON, 'utf-8')); } catch {
+    res.json({ total: 0, groups: [] });
+    return;
+  }
+  const allItems: any[] = (parsed.lost_images || []).filter((i: any) => i.status === 'recovered');
+  const plantParam = req.query.plant as string | undefined;
+
+  if (plantParam !== undefined) {
+    const items = allItems.filter((i: any) => i.plant_id === plantParam);
+    res.json({ plant_id: plantParam, plant_name: items[0]?.plant_name ?? plantParam, total: items.length, items });
+    return;
+  }
+
+  const groupMap = new Map<string, { plant_name: string; count: number }>();
+  for (const i of allItems) {
+    if (!groupMap.has(i.plant_id)) groupMap.set(i.plant_id, { plant_name: i.plant_name, count: 0 });
+    groupMap.get(i.plant_id)!.count++;
+  }
+  const groups = [...groupMap.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([plant_id, { plant_name, count }]) => ({ plant_id, plant_name, count }));
+
+  res.json({ total: allItems.length, groups });
 }));
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -639,9 +1136,27 @@ router.post('/bulk-accept-variety', requireAdmin, asyncHandler(async (req, res) 
     res.status(400).json({ error: 'items array is required' });
     return;
   }
-  const updates = items.map(i => ({ Id: i.image_id, Variety_Id: i.variety_id }));
+
+  // Look up each variety's parent plant to fix Plant_Id mismatches
+  const varietyPlantMap = new Map<number, string>();
+  const uniqueVarietyIds = [...new Set(items.map(i => i.variety_id))];
+  for (const vid of uniqueVarietyIds) {
+    try {
+      const v = await nocodb.get('Varieties', vid);
+      if (v?.Plant_Id) varietyPlantMap.set(vid, v.Plant_Id);
+    } catch { /* skip */ }
+  }
+
+  const updates = items.map(i => {
+    const update: Record<string, any> = { Id: i.image_id, Variety_Id: i.variety_id };
+    const correctPlant = varietyPlantMap.get(i.variety_id);
+    if (correctPlant) update.Plant_Id = correctPlant;
+    return update;
+  });
+
   for (let i = 0; i < updates.length; i += 100) {
-    await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
+    const result = await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
+    console.log(`[bulk-accept-variety] batch ${i}-${i + updates.slice(i, i + 100).length} result:`, JSON.stringify(result));
   }
   res.json({ success: true, count: items.length });
 }));

@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppShell } from '@/components/layout/AppShell';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
@@ -30,6 +31,36 @@ export function PlantDetailPage() {
   const overviewSaveRef = useRef<(() => Promise<void>) | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Plant list for navigator (fetched once, cached)
+  const [allPlants, setAllPlants] = useState<Array<{ Id1: string; Canonical_Name: string }>>([]);
+  useEffect(() => {
+    // Fetch all plant slugs + names for the navigator
+    async function fetchPlantList() {
+      const all: Array<{ Id1: string; Canonical_Name: string }> = [];
+      let page = 1;
+      while (true) {
+        const res = await fetch(`/api/browse?page=${page}&limit=200&sort=name_asc`, { credentials: 'include' });
+        if (!res.ok) break;
+        const data = await res.json();
+        for (const p of data.plants) all.push({ Id1: (p as any).Id1 || p.Id, Canonical_Name: p.Canonical_Name });
+        if (data.pageInfo?.isLastPage || data.plants.length === 0) break;
+        page++;
+      }
+      setAllPlants(all);
+    }
+    fetchPlantList();
+  }, []);
+
+  const plantNav = useMemo(() => {
+    if (!id || allPlants.length === 0) return { prev: null, next: null, currentIdx: -1 };
+    const idx = allPlants.findIndex(p => p.Id1 === id);
+    return {
+      prev: idx > 0 ? allPlants[idx - 1] : null,
+      next: idx < allPlants.length - 1 ? allPlants[idx + 1] : null,
+      currentIdx: idx,
+    };
+  }, [id, allPlants]);
 
   // Scroll to top on mount
   useEffect(() => {
@@ -115,6 +146,42 @@ export function PlantDetailPage() {
         backTo="/plants"
         backLabel="Back to Plants"
         titleClassName="text-xl"
+        headerCenter={allPlants.length > 0 ? (
+          <div className="flex items-center gap-2">
+            {plantNav.prev ? (
+              <button
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors truncate max-w-[120px]"
+                onClick={() => navigate(`/plants/${plantNav.prev!.Id1}`)}
+                title={`Previous: ${plantNav.prev.Canonical_Name}`}
+              >
+                &larr; {plantNav.prev.Canonical_Name}
+              </button>
+            ) : <span className="w-[120px]" />}
+
+            <Select value={id} onValueChange={(slug) => navigate(`/plants/${slug}`)}>
+              <SelectTrigger className="h-7 text-xs w-[160px] text-center">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-64">
+                {allPlants.map(p => (
+                  <SelectItem key={p.Id1} value={p.Id1} className="text-xs">
+                    {p.Canonical_Name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {plantNav.next ? (
+              <button
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors truncate max-w-[120px]"
+                onClick={() => navigate(`/plants/${plantNav.next!.Id1}`)}
+                title={`Next: ${plantNav.next.Canonical_Name}`}
+              >
+                {plantNav.next.Canonical_Name} &rarr;
+              </button>
+            ) : <span className="w-[120px]" />}
+          </div>
+        ) : undefined}
       >
         {isLoading && (
           <div className="p-4 space-y-4">

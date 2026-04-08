@@ -41,3 +41,21 @@ type: project
 - **Rotation overflow fix**: 90/270 degree rotated images in lightbox use `maxWidth: 60vh, maxHeight: 80vw` to fit within dialog
 - **hidden/ folder NOT fully human-reviewed**: Contains mix of manually triage'd items + auto-classified. Some potentially valuable images may be there.
 - **ignored/ folder contains two populations**: 3,953 original triage rejects (UI graphics etc.) + 241 confirmed exact duplicates of assigned images (MD5 verified, 0 mismatches)
+
+## 2026-04-03 to 2026-04-07 (Major data integrity + feature session)
+- **Classify page replaces Matches page**: /classify URL with 6 tabs: Triage, Variety Matches, No Variety, No Plant, Recovered, Dedup Review
+- **Swipe page removed** from navigation
+- **Hero images migrated to NocoDB**: Added `Hero_Image_Path` and `Hero_Image_Rotation` columns to Plants table. SQLite hero_images table no longer canonical — NocoDB is the single source of truth for all plant data.
+- **Image_Count NOT stored in DB**: Computed live from NocoDB query with 5-minute server-side cache. Invalidated only on plant create/delete, image reassign, status change, upload.
+- **Aliases field deprecated**: Legacy JSON array field replaced by `Alternative_Names` (text). All UI references updated.
+- **Original_Filepath mapping**: MD5 hash-verified mapping of each assigned image back to content/source/. Must compare actual disk file size (not NocoDB Size_Bytes which may be stale from original import).
+- **Dedup strategy**: Keep record with most metadata (assigned + Plant_Id set) as keeper, NOT lowest Id. Merge Plant_Id, Status, Variety_Id, Caption, Rotation into keeper from deleted records.
+- **Variety name alias matching**: Split variety names on ` / ` delimiter for matching (e.g. "Saba / Dippig / 'Opo'ulu" matches directory "dipping"). Strip apostrophes/okina in normalization.
+- **ForceMount on all plant detail tabs**: Prevents re-fetch when switching tabs (350ms vs 10s for 1500-image galleries)
+- **GalleryThumbnail is React.memo**: Local dim state per thumbnail, O(1) index map — prevents O(n²) renders
+- **Variety merge must merge metadata**: All text fields (Description, Characteristics, Tasting_Notes, etc.) merged from source to target variety. Merged variety name added as Alternative_Name.
+- **Orphan slug remapping**: When plant slugs change, ALL tables must cascade: Varieties.Plant_Id, Images.Plant_Id, Nutritional_Info.Plant_Id, Documents/Recipes/OCR/Attachments.Plant_Ids JSON arrays, SQLite staff_notes.plant_id
+- **Status must match assignment**: Any image with Plant_Id set must have Status='assigned' (not 'unclassified' or 'unassigned')
+- **File_Path must match Plant_Id**: Images in assigned/{plant}/images/ must have matching Plant_Id. Run sync-assigned-folders.mjs after bulk reassignments.
+- **HTML gallery context**: 399 filename→variety mappings extracted from Adobe gallery pages and Phase 3 fruit data, used as Strategy 13 in variety inference
+- **18 variety-plant mismatches remain**: These are data errors (images assigned to wrong plant with banana varieties), need manual review

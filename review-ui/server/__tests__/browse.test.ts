@@ -369,17 +369,12 @@ describe('Browse API', () => {
       expect(plantCall![1].limit).toBe(25); // 0 is falsy, falls through to default 25
     });
 
-    it('enriches plants with hero_image from hero_images table', async () => {
+    it('enriches plants with hero_image from NocoDB Hero_Image_Path', async () => {
       const cookie = await getAdminCookie();
       const plants = [
-        { Id: 1, Id1: 'mango', Canonical_Name: 'Mango', Image_Count: 5 },
+        { Id: 1, Id1: 'mango', Canonical_Name: 'Mango', Image_Count: 5, Hero_Image_Path: 'mango/images/hero.jpg', Hero_Image_Rotation: 0 },
       ];
       mockNocodb.list.mockResolvedValue(defaultListResult(plants, 1));
-
-      // Seed hero_images
-      testDb.prepare(
-        `INSERT INTO hero_images (plant_id, image_id, file_path) VALUES (?, ?, ?)`,
-      ).run('mango', 42, 'content/parsed/plants/mango/images/hero.jpg');
 
       const res = await request(app)
         .get('/api/browse')
@@ -624,15 +619,11 @@ describe('Browse API', () => {
       expect(res.body.notes[0].text).toBe('Great fruit for testing');
     });
 
-    it('includes hero_image from hero_images table', async () => {
+    it('includes hero_image from NocoDB Hero_Image_Path', async () => {
       const cookie = await getAdminCookie();
-      const plant = { Id: 1, Id1: 'mango', Canonical_Name: 'Mango', Image_Count: 5 };
+      const plant = { Id: 1, Id1: 'mango', Canonical_Name: 'Mango', Image_Count: 5, Hero_Image_Path: 'mango/images/best.jpg', Hero_Image_Rotation: 0 };
       mockNocodb.get.mockResolvedValue(plant);
       mockNocodb.list.mockResolvedValue(defaultListResult([], 0));
-
-      testDb.prepare(
-        `INSERT INTO hero_images (plant_id, image_id, file_path) VALUES (?, ?, ?)`,
-      ).run('mango', 42, 'content/parsed/plants/mango/images/best.jpg');
 
       const res = await request(app)
         .get('/api/browse/1')
@@ -746,21 +737,15 @@ describe('Browse API', () => {
 
       // Seed local data with old slug
       testDb.prepare(
-        `INSERT INTO hero_images (plant_id, image_id, file_path) VALUES (?, ?, ?)`,
-      ).run('mango', 1, 'plants/mango/images/hero.jpg');
-      const adminUser = testDb.prepare(`SELECT id FROM users WHERE email = ?`).get('admin@test.com') as any;
-      testDb.prepare(
         `INSERT INTO staff_notes (plant_id, user_id, text) VALUES (?, ?, ?)`,
-      ).run('mango', adminUser.id, 'Test note');
+      ).run('mango', (testDb.prepare(`SELECT id FROM users WHERE email = ?`).get('admin@test.com') as any).id, 'Test note');
 
       await request(app)
         .patch('/api/browse/1')
         .set('Cookie', cookie)
         .send({ Canonical_Name: 'Yellow Mango' });
 
-      // Verify local SQLite updated
-      const hero = testDb.prepare(`SELECT plant_id FROM hero_images WHERE plant_id = ?`).get('yellow-mango') as any;
-      expect(hero).toBeDefined();
+      // Verify local SQLite staff_notes updated (hero is now in NocoDB)
       const note = testDb.prepare(`SELECT plant_id FROM staff_notes WHERE plant_id = ?`).get('yellow-mango') as any;
       expect(note).toBeDefined();
     });
@@ -971,9 +956,10 @@ describe('Browse API', () => {
   // ═══════════════════════════════════════════════════════════════════════════
 
   describe('POST /api/browse/set-hero/:imageId', () => {
-    it('sets hero image in local SQLite', async () => {
+    it('sets hero image in NocoDB Plants table', async () => {
       const cookie = await getAdminCookie();
       mockNocodb.get.mockResolvedValue({ Id: 42, File_Path: 'plants/mango/images/best.jpg' });
+      mockNocodb.list.mockResolvedValue(defaultListResult([{ Id: 1, Id1: 'mango' }], 1));
 
       const res = await request(app)
         .post('/api/browse/set-hero/42')
@@ -983,18 +969,17 @@ describe('Browse API', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.file_path).toBe('plants/mango/images/best.jpg');
 
-      const hero = testDb.prepare(`SELECT * FROM hero_images WHERE plant_id = ?`).get('mango') as any;
-      expect(hero.image_id).toBe(42);
-      expect(hero.file_path).toBe('plants/mango/images/best.jpg');
+      // Hero should be stored in NocoDB via update call
+      const updateCalls = mockNocodb.update.mock.calls.filter((c: any) => c[0] === 'Plants');
+      expect(updateCalls.length).toBeGreaterThan(0);
+      const lastUpdate = updateCalls[updateCalls.length - 1];
+      expect(lastUpdate[2].Hero_Image_Path).toBe('mango/images/best.jpg');
     });
 
     it('replaces existing hero image', async () => {
       const cookie = await getAdminCookie();
-      testDb.prepare(
-        `INSERT INTO hero_images (plant_id, image_id, file_path) VALUES (?, ?, ?)`,
-      ).run('mango', 1, 'old.jpg');
-
       mockNocodb.get.mockResolvedValue({ Id: 42, File_Path: 'new.jpg' });
+      mockNocodb.list.mockResolvedValue(defaultListResult([{ Id: 1, Id1: 'mango' }], 1));
 
       const res = await request(app)
         .post('/api/browse/set-hero/42')
@@ -1002,8 +987,8 @@ describe('Browse API', () => {
         .send({ plant_id: 'mango' });
       expect(res.status).toBe(200);
 
-      const hero = testDb.prepare(`SELECT * FROM hero_images WHERE plant_id = ?`).get('mango') as any;
-      expect(hero.file_path).toBe('new.jpg');
+      const updateCalls = mockNocodb.update.mock.calls.filter((c: any) => c[0] === 'Plants');
+      expect(updateCalls.length).toBeGreaterThan(0);
     });
 
     it('returns 400 when plant_id is missing', async () => {

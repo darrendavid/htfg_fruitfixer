@@ -1,10 +1,14 @@
 # Pending Migration Tasks
 
-Last updated: 2026-03-29, commit 8985414
+Last updated: 2026-03-29, commit 8da46a4
 
 ## Task 1: Recover 1,904 Missing Files from content/parsed/
 
-**Status:** NOT DONE — must complete before deleting content/parsed/
+**Status:** DONE (2026-03-29) — 1,904 files copied via `scripts/recover-parsed-missing.mjs`
+- 127 plant-associated → pass_01/assigned/{slug}/images/ (collision-renamed with _1 suffix where needed)
+- 1,777 unclassified → pass_01/unassigned/unclassified/ (subdirectory structure preserved)
+- Note: verify script shows 127 "still missing" — false negative because collision-renamed files have `_1` suffix, not matched by name+size check. Content is preserved.
+- Safe to delete content/parsed/plants/ and content/parsed/unclassified/ when ready.
 
 The earlier recovery script matched files by `filename+size`, but 1,904 files have identical filenames with different byte sizes (different photos from different camera shoots, e.g., DSCN0001.JPG from multiple sessions).
 
@@ -124,5 +128,5 @@ After `git pull`:
 5. Login at `http://localhost:5173/login` — admin@example.com / htfg-admin-2026
 
 ### Key paths that may need updating:
-- `review-ui/server/routes/matches.ts` line ~11: `PROJECT_ROOT` hardcoded to `d:/Sandbox/htfg_fruitfixer`
+- `review-ui/server/routes/matches.ts` line ~11: `PROJECT_ROOT` — FIXED (now derived from `config.CONTENT_ROOT`)
 - `scripts/phase4c-infer-varieties.mjs` uses `import.meta.dirname` (relative, should be fine)

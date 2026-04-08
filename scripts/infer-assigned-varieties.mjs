@@ -61,6 +61,7 @@ function normalize(name) {
   n = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   n = n.replace(/\.(jpg|jpeg|gif|png|bmp|tiff?|psd)$/i, '');
   n = n.replace(/[-_\.]/g, ' ');
+  n = n.replace(/[''`ʻ]/g, ''); // strip apostrophes/quotes/okina
   n = n.replace(/\s+/g, ' ').trim();
   return n;
 }
@@ -98,13 +99,25 @@ function levenshtein(a, b) {
 
 function buildMatchers(varieties) {
   // Build lookup: normalized name → variety record
+  // Also index alternate names split on " / " delimiters
   const lookup = new Map();
   const allNames = [];
   for (const v of varieties) {
-    const norm = normalize(v.Variety_Name);
-    if (norm.length >= 3) {
-      lookup.set(norm, { variety_id: v.Id, variety_name: v.Variety_Name });
-      allNames.push(norm);
+    const record = { variety_id: v.Id, variety_name: v.Variety_Name };
+    // Split on " / " to get alternate names (e.g. "Saba / Dippig / 'Opo'ulu")
+    const parts = v.Variety_Name.split(/\s*\/\s*/);
+    for (const part of parts) {
+      const norm = normalize(part);
+      if (norm.length >= 3 && !lookup.has(norm)) {
+        lookup.set(norm, record);
+        allNames.push(norm);
+      }
+    }
+    // Also add the full normalized name if not already there
+    const fullNorm = normalize(v.Variety_Name);
+    if (fullNorm.length >= 3 && !lookup.has(fullNorm)) {
+      lookup.set(fullNorm, record);
+      allNames.push(fullNorm);
     }
   }
 
@@ -166,6 +179,14 @@ async function main() {
     '(Variety_Id,blank)~and(Plant_Id,isnot,null)~and(Excluded,neq,true)'
   );
   console.log(`  ${images.length} images without variety assignment`);
+
+  // Load HTML image context (gallery page → variety mappings)
+  let htmlImageContext = {};
+  try {
+    const ctx = JSON.parse(readFileSync(join(PARSED, 'html_image_context.json'), 'utf-8'));
+    htmlImageContext = ctx.entries || {};
+    console.log(`  Loaded HTML image context: ${Object.keys(htmlImageContext).length} filenames`);
+  } catch { console.log('  (no HTML image context available)'); }
 
   console.log('Fetching plants...');
   const plants = await fetchAllRecords('Plants', ['Id', 'Id1', 'Canonical_Name']);
@@ -286,6 +307,26 @@ async function main() {
       if (normCaption.length >= 4) {
         const m = findExact(normCaption) || findSubstring(normCaption);
         if (m) { match = m; matchType = 'caption_match'; signal = `caption:"${normCaption}" → variety:"${m.matched_name || m.variety_name}"`; }
+      }
+    }
+
+    // Strategy 13: HTML gallery page context
+    // If this image's filename appears in an HTML gallery page with a variety hint,
+    // try matching that variety hint against this plant's varieties
+    if (!match) {
+      const filenameLower = filename.toLowerCase();
+      const htmlEntries = htmlImageContext[filenameLower] || [];
+      for (const entry of htmlEntries) {
+        if (!entry.variety_hint) continue;
+        const normHint = normalize(entry.variety_hint);
+        if (normHint.length < 3) continue;
+        const m = findExact(normHint) || findSubstring(normHint) || findFuzzy(normHint);
+        if (m) {
+          match = m;
+          matchType = 'html_gallery';
+          signal = `html page "${entry.source_html}" maps image to "${entry.variety_hint}" → variety:"${m.matched_name || m.variety_name}"`;
+          break;
+        }
       }
     }
 

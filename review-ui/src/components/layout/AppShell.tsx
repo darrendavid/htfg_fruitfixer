@@ -13,9 +13,11 @@ interface AppShellProps {
   backLabel?: string;
   /** Override title font size class (default: "text-base") */
   titleClassName?: string;
+  /** Optional center content in the header */
+  headerCenter?: React.ReactNode;
 }
 
-export function AppShell({ children, title, subtitle, backTo, backLabel, titleClassName }: AppShellProps) {
+export function AppShell({ children, title, subtitle, backTo, backLabel, titleClassName, headerCenter }: AppShellProps) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -24,7 +26,7 @@ export function AppShell({ children, title, subtitle, backTo, backLabel, titleCl
       {/* Header */}
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
         <div className="flex h-14 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {backTo && (
               <button
                 onClick={() => navigate(backTo)}
@@ -43,6 +45,11 @@ export function AppShell({ children, title, subtitle, backTo, backLabel, titleCl
               )}
             </div>
           </div>
+          {headerCenter && (
+            <div className="flex-1 flex justify-center min-w-0">
+              {headerCenter}
+            </div>
+          )}
           {user && (
             <button
               onClick={logout}

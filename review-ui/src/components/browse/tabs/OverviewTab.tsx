@@ -19,14 +19,6 @@ function parseHarvestMonths(raw: string | null): number[] {
   return [];
 }
 
-function parseAliases(raw: string | null): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-  } catch {}
-  return [];
-}
 
 interface OverviewTabProps {
   plant: BrowsePlant;
@@ -43,7 +35,6 @@ interface OverviewTabProps {
 
 export function OverviewTab({ plant, imageCount, varietyCount, documentCount, attachmentCount, recipeCount, editMode, onPlantUpdated, onSlugChanged, saveRef }: OverviewTabProps) {
   const harvestMonths = parseHarvestMonths(plant.Harvest_Months);
-  const aliases = parseAliases(plant.Aliases);
   const plantSlug = (plant as any).Id1 || plant.Id;
   const heroSrc = (plant as any).hero_image
     ? buildImageUrl((plant as any).hero_image)
@@ -229,14 +220,6 @@ export function OverviewTab({ plant, imageCount, varietyCount, documentCount, at
             <p className="italic text-muted-foreground">{plant.Botanical_Name}</p>
           )}
           <Badge variant="secondary">{plant.Category}</Badge>
-        </div>
-      )}
-
-      {/* Aliases */}
-      {aliases.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium mb-1">Also known as</h3>
-          <p className="text-sm text-muted-foreground">{aliases.join(', ')}</p>
         </div>
       )}
 

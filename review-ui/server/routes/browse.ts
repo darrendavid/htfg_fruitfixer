@@ -9,6 +9,37 @@ import db from '../lib/db.js';
 
 const router = Router();
 
+// ── Cached image count map (60s TTL) ────────────────────────────────────────
+let _imageCountCache: { map: Map<string, number>; expires: number } | null = null;
+
+async function getImageCountMap(): Promise<Map<string, number>> {
+  if (_imageCountCache && Date.now() < _imageCountCache.expires) {
+    return _imageCountCache.map;
+  }
+  const map = new Map<string, number>();
+  try {
+    let offset = 0;
+    while (true) {
+      const result = await nocodb.list('Images', {
+        where: '(Excluded,neq,true)~and(Status,neq,hidden)',
+        fields: ['Plant_Id'],
+        limit: 200,
+        offset,
+      });
+      for (const img of result.list) {
+        if (img.Plant_Id) map.set(img.Plant_Id, (map.get(img.Plant_Id) || 0) + 1);
+      }
+      if (result.pageInfo?.isLastPage || result.list.length === 0) break;
+      offset += 200;
+    }
+  } catch { /* return empty map on failure */ }
+  _imageCountCache = { map, expires: Date.now() + 300_000 }; // 5 minute TTL
+  return map;
+}
+
+/** Invalidate the image count cache — call only when plants/images are added/deleted/reassigned */
+function invalidateImageCountCache() { _imageCountCache = null; }
+
 // ── Helper: async route wrapper ──────────────────────────────────────────────
 function asyncHandler(fn: (req: Request, res: Response) => Promise<void>) {
   return (req: Request, res: Response, next: Function) => {
@@ -122,45 +153,31 @@ router.get('/', asyncHandler(async (req, res) => {
 
   const result = await nocodb.list('Plants', listOpts);
 
-  // Enrich each plant with a hero image path
-  // Check hero_images table first (user-selected), fall back to filesystem
-  const heroRows = db.prepare(`SELECT plant_id, file_path, rotation FROM hero_images`).all() as Array<{ plant_id: string; file_path: string; rotation: number }>;
-  const heroMap = new Map(heroRows.map((r) => [r.plant_id, { path: r.file_path, rotation: r.rotation ?? 0 }]));
+  // Live image counts — cached for 60s to avoid re-querying 11K records on every page load
+  const imageCountMap = await getImageCountMap();
 
   const enrichedPlants = result.list.map((plant: any) => {
     const slug = plant.Id1;
     if (!slug) return plant;
 
-    // Live image count from disk (overrides stale NocoDB Image_Count)
-    try {
-      const plantDir = path.join(config.IMAGE_MOUNT_PATH, slug, 'images');
-      const diskFiles = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
-      plant.Image_Count = diskFiles.length;
-    } catch {
-      plant.Image_Count = plant.Image_Count || 0;
-    }
+    // Live image count from NocoDB query
+    plant.Image_Count = imageCountMap.get(slug) ?? 0;
 
-    // Check for user-selected hero
-    const heroEntry = heroMap.get(slug);
-    if (heroEntry) {
-      plant.hero_image = heroEntry.path.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
-      if (heroEntry.rotation) plant.hero_rotation = heroEntry.rotation;
-      return plant;
+    // Hero image from NocoDB (canonical), fall back to first image on disk
+    if (plant.Hero_Image_Path) {
+      plant.hero_image = plant.Hero_Image_Path;
+      if (plant.Hero_Image_Rotation) plant.hero_rotation = plant.Hero_Image_Rotation;
+    } else {
+      try {
+        const plantDir = path.join(config.IMAGE_MOUNT_PATH, slug, 'images');
+        const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
+        if (files.length > 0) {
+          plant.hero_image = `${slug}/images/${files[0]}`;
+        }
+      } catch { /* no directory */ }
     }
-
-    // Fall back to first image on disk for hero
-    try {
-      const plantDir = path.join(config.IMAGE_MOUNT_PATH, slug, 'images');
-      const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
-      if (files.length > 0) {
-        plant.hero_image = `${slug}/images/${files[0]}`;
-      }
-    } catch { /* no directory */ }
     return plant;
   });
-
-  // Hero rotations are now stored in local SQLite hero_images table
-  // (set when hero is selected or image is rotated)
 
   res.json({
     plants: enrichedPlants,
@@ -361,6 +378,7 @@ router.post('/create-plant', requireAdmin, asyncHandler(async (req, res) => {
     Image_Count: 0,
     Source_Count: 0,
   });
+  invalidateImageCountCache();
   res.status(201).json(result);
 }));
 
@@ -404,8 +422,21 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const imageLimit = Math.min(200, Math.max(1, parseInt(req.query.imageLimit as string) || 50));
   const imageOffset = Math.max(0, parseInt(req.query.imageOffset as string) || 0);
 
+  // Fetch varieties with pagination (some plants like Avocado have 1000+)
+  async function fetchAllVarieties(): Promise<{ list: any[] }> {
+    const all: any[] = [];
+    let offset = 0;
+    while (true) {
+      const result = await nocodb.list('Varieties', { where: `(Plant_Id,eq,${plantSlug})`, limit: 200, offset });
+      all.push(...result.list);
+      if (result.pageInfo?.isLastPage || result.list.length === 0) break;
+      offset += 200;
+    }
+    return { list: all };
+  }
+
   const [varieties, nutritional, images, documents, attachments, recipes, ocr] = await Promise.all([
-    nocodb.list('Varieties', { where: `(Plant_Id,eq,${plantSlug})`, limit: 1000 }).catch(() => ({ list: [] })),
+    fetchAllVarieties().catch(() => ({ list: [] })),
     nocodb.list('Nutritional_Info', { where: `(Plant_Id,eq,${plantSlug})`, limit: 200 }).catch(() => ({ list: [] })),
     nocodb.list('Images', { where: `(Plant_Id,eq,${plantSlug})~and(Status,neq,hidden)`, limit: imageLimit, offset: imageOffset }).catch(() => ({ list: [], pageInfo: {} })),
     nocodb.list('Documents', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 100 }).catch(() => ({ list: [] })),
@@ -424,21 +455,18 @@ router.get('/:id', asyncHandler(async (req, res) => {
   `).all(plantSlug);
 
   // Add hero_image to plant — check hero_images table first, then filesystem
-  // Also look up rotation from NocoDB Images table
-  if (plantSlug) {
-    const heroRow = db.prepare(`SELECT file_path, rotation FROM hero_images WHERE plant_id = ?`).get(plantSlug) as { file_path: string; rotation: number } | undefined;
-    if (heroRow) {
-      plant.hero_image = heroRow.file_path.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
-      if (heroRow.rotation) plant.hero_rotation = heroRow.rotation;
-    } else {
-      try {
-        const plantDir = path.join(config.IMAGE_MOUNT_PATH, plantSlug, 'images');
-        const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
-        if (files.length > 0) {
-          plant.hero_image = `${plantSlug}/images/${files[0]}`;
-        }
-      } catch { /* no directory */ }
-    }
+  // Hero image from NocoDB, fall back to first image on disk
+  if (plant.Hero_Image_Path) {
+    plant.hero_image = plant.Hero_Image_Path;
+    if (plant.Hero_Image_Rotation) plant.hero_rotation = plant.Hero_Image_Rotation;
+  } else if (plantSlug) {
+    try {
+      const plantDir = path.join(config.IMAGE_MOUNT_PATH, plantSlug, 'images');
+      const files = readdirSync(plantDir).filter((f: string) => /\.(jpe?g|png|gif)$/i.test(f));
+      if (files.length > 0) {
+        plant.hero_image = `${plantSlug}/images/${files[0]}`;
+      }
+    } catch { /* no directory */ }
   }
 
   const enrichedImages = await enrichImagesWithVarietyName((images as any).list);
@@ -549,26 +577,18 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
       } catch { /* table may not have records */ }
     }
 
-    // Update local SQLite references
-    db.prepare(`UPDATE hero_images SET plant_id = ? WHERE plant_id = ?`).run(newSlug, oldSlug);
+    // Update local SQLite references (staff_notes only — hero is now in NocoDB)
     db.prepare(`UPDATE staff_notes SET plant_id = ? WHERE plant_id = ?`).run(newSlug, oldSlug);
   }
 
   await nocodb.update('Plants', rowId, fields);
   const updated = await nocodb.get('Plants', rowId);
 
-  // Enrich with hero_image (same lookup as GET) so client state doesn't lose it
-  const finalSlug = updated.Id1 || oldSlug;
-  try {
-    const heroRow = db.prepare(`SELECT file_path, rotation FROM hero_images WHERE plant_id = ?`).get(finalSlug) as { file_path: string; rotation: number } | undefined;
-    if (heroRow) {
-      updated.hero_image = heroRow.file_path
-        .replace(/^content\/pass_01\/assigned\//, '')
-        .replace(/^content\/parsed\//, '')
-        .replace(/^plants\//, '');
-      updated.hero_rotation = heroRow.rotation;
-    }
-  } catch { /* non-fatal */ }
+  // Enrich with hero_image from NocoDB fields
+  if (updated.Hero_Image_Path) {
+    updated.hero_image = updated.Hero_Image_Path;
+    if (updated.Hero_Image_Rotation) updated.hero_rotation = updated.Hero_Image_Rotation;
+  }
 
   res.json(updated);
 }));
@@ -611,13 +631,13 @@ router.delete('/plant/:id', requireAdmin, asyncHandler(async (req, res) => {
     }
   }
 
-  // Delete local SQLite data
+  // Delete local SQLite data (staff_notes only — hero is in NocoDB, deleted with plant)
   db.prepare(`DELETE FROM staff_notes WHERE plant_id = ?`).run(slug);
-  db.prepare(`DELETE FROM hero_images WHERE plant_id = ?`).run(slug);
 
   // Delete the plant itself
   await nocodb.delete('Plants', rowId);
 
+  invalidateImageCountCache();
   res.json({ success: true, deleted: slug });
 }));
 
@@ -730,6 +750,39 @@ router.post('/varieties/merge', requireAdmin, asyncHandler(async (req, res) => {
   const primary = await nocodb.get('Varieties', primary_id);
   if (!primary) return res.status(404).json({ error: 'Primary variety not found' });
 
+  // Merge metadata from source varieties into primary (fill empty fields)
+  const mergeableFields = [
+    'Description', 'Alternative_Names', 'Characteristics', 'Tasting_Notes',
+    'Genome_Group', 'Source',
+  ];
+  const primaryUpdate: Record<string, any> = {};
+  for (const mergedId of merge_ids) {
+    const source = await nocodb.get('Varieties', mergedId);
+    if (!source) continue;
+    for (const field of mergeableFields) {
+      const srcVal = source[field];
+      const priVal = primary[field] || primaryUpdate[field];
+      if (srcVal && !priVal) {
+        // Primary is empty, take source value
+        primaryUpdate[field] = srcVal;
+      } else if (srcVal && priVal && srcVal !== priVal) {
+        // Both have values — concatenate with separator for text fields
+        primaryUpdate[field] = (primaryUpdate[field] || priVal) + '; ' + srcVal;
+      }
+    }
+    // Merge Alternative_Names: combine variety name of merged variety as an alias
+    const srcName = source.Variety_Name;
+    if (srcName && srcName !== primary.Variety_Name) {
+      const existing = primaryUpdate.Alternative_Names || primary.Alternative_Names || '';
+      if (!existing.includes(srcName)) {
+        primaryUpdate.Alternative_Names = existing ? existing + ', ' + srcName : srcName;
+      }
+    }
+  }
+  if (Object.keys(primaryUpdate).length > 0) {
+    await nocodb.update('Varieties', primary_id, primaryUpdate);
+  }
+
   // Reassign images: update Variety_Id on images that reference any merged variety
   for (const mergedId of merge_ids) {
     const images = await nocodb.list('Images', {
@@ -748,7 +801,9 @@ router.post('/varieties/merge', requireAdmin, asyncHandler(async (req, res) => {
     await nocodb.delete('Varieties', id);
   }
 
-  res.json({ success: true, primary: primary.Variety_Name, merged_count: merge_ids.length });
+  // Return the updated primary
+  const updated = await nocodb.get('Varieties', primary_id);
+  res.json({ success: true, primary: updated.Variety_Name, merged_count: merge_ids.length, variety: updated });
 }));
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -794,12 +849,21 @@ router.post('/set-hero/:imageId', requireAdmin, asyncHandler(async (req, res) =>
     return;
   }
 
-  // Store hero preference in local SQLite with rotation
+  // Store hero in NocoDB on the Plant record
   const rotation = image.Rotation ?? 0;
-  db.prepare(`
-    INSERT OR REPLACE INTO hero_images (plant_id, image_id, file_path, rotation)
-    VALUES (?, ?, ?, ?)
-  `).run(plant_id, imageId, image.File_Path, rotation);
+  const heroPath = image.File_Path
+    .replace(/^content\/pass_01\/assigned\//, '')
+    .replace(/^content\/parsed\//, '')
+    .replace(/^plants\//, '');
+
+  // Find the plant's NocoDB row Id
+  const plantResult = await nocodb.list('Plants', { where: `(Id1,eq,${plant_id})`, limit: 1 });
+  if (plantResult.list.length > 0) {
+    await nocodb.update('Plants', plantResult.list[0].Id, {
+      Hero_Image_Path: heroPath,
+      Hero_Image_Rotation: rotation,
+    });
+  }
 
   res.json({ success: true, file_path: image.File_Path, rotation });
 }));
@@ -837,6 +901,7 @@ router.post('/bulk-reassign-images', requireAdmin, asyncHandler(async (req, res)
   for (let i = 0; i < updates.length; i += 100) {
     await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
   }
+  invalidateImageCountCache();
   res.json({ success: true, count: image_ids.length });
 }));
 
@@ -849,6 +914,150 @@ router.post('/bulk-set-variety', requireAdmin, asyncHandler(async (req, res) => 
     await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
   }
   res.json({ success: true, count: image_ids.length });
+}));
+
+// ── GET /infer-variety/:id — Infer variety for an image from filename/directory ──
+router.get('/infer-variety/:id', asyncHandler(async (req, res) => {
+  const img = await nocodb.get('Images', req.params.id);
+  if (!img || !img.Plant_Id) { res.json({ match: null }); return; }
+
+  // Fetch varieties for this plant
+  const varieties = await nocodb.list('Varieties', {
+    where: `(Plant_Id,eq,${img.Plant_Id})`,
+    fields: ['Id', 'Variety_Name'],
+    limit: 1000,
+  });
+  if (!varieties.list?.length) { res.json({ match: null }); return; }
+
+  // Build lookup
+  const normalize = (s: string) => s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\.(jpg|jpeg|gif|png|bmp|tiff?|psd)$/i, '')
+    .replace(/[-_\.]/g, ' ')
+    .replace(/[''`\u02BB]/g, '') // strip apostrophes/quotes/okina
+    .replace(/\s+/g, ' ').trim();
+
+  const stripSuffixes = (s: string) => s
+    .replace(/\s*(lg|sm|med|lrg|sml|tn|thumb)$/i, '').trim()
+    .replace(/\s*_\d+$/, '').trim()
+    .replace(/\s+\d+$/, '').trim();
+
+  const levenshtein = (a: string, b: string): number => {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    if (Math.abs(a.length - b.length) > 3) return 99;
+    const m: number[][] = [];
+    for (let i = 0; i <= b.length; i++) m[i] = [i];
+    for (let j = 0; j <= a.length; j++) m[0][j] = j;
+    for (let i = 1; i <= b.length; i++)
+      for (let j = 1; j <= a.length; j++)
+        m[i][j] = b[i-1] === a[j-1] ? m[i-1][j-1] : Math.min(m[i-1][j-1]+1, m[i][j-1]+1, m[i-1][j]+1);
+    return m[b.length][a.length];
+  };
+
+  const vLookup = new Map<string, { id: number; name: string }>();
+  const vNames: string[] = [];
+  for (const v of varieties.list) {
+    const record = { id: v.Id, name: v.Variety_Name };
+    // Split on " / " for alternate names (e.g. "Saba / Dippig / 'Opo'ulu")
+    const parts = v.Variety_Name.split(/\s*\/\s*/);
+    for (const part of parts) {
+      const n = normalize(part);
+      if (n.length >= 3 && !vLookup.has(n)) { vLookup.set(n, record); vNames.push(n); }
+    }
+    const fullN = normalize(v.Variety_Name);
+    if (fullN.length >= 3 && !vLookup.has(fullN)) { vLookup.set(fullN, record); vNames.push(fullN); }
+  }
+
+  const findExact = (t: string) => vLookup.get(t) || null;
+  const findSubstring = (text: string) => {
+    if (text.length < 3) return null;
+    let best: any = null, bestLen = 0;
+    for (const name of vNames) {
+      if (name.length < 3) continue;
+      const idx = text.indexOf(name);
+      if (idx !== -1 && name.length > bestLen) {
+        const b = idx > 0 ? text[idx-1] : ' ';
+        const a = idx+name.length < text.length ? text[idx+name.length] : ' ';
+        if ((/[\s]/.test(b) || idx === 0) && (/[\s]/.test(a) || idx+name.length === text.length)) {
+          bestLen = name.length; best = { ...vLookup.get(name)!, matched: name };
+        }
+      }
+      if (text.length >= 5 && text.length > bestLen && name.startsWith(text)) {
+        bestLen = text.length; best = { ...vLookup.get(name)!, matched: name };
+      }
+    }
+    return best;
+  };
+  const findFuzzy = (term: string) => {
+    if (term.length < 4) return null;
+    let best: any = null, bestDist = 3;
+    const max = term.length <= 5 ? 1 : 2;
+    for (const name of vNames) {
+      if (Math.abs(name.length - term.length) > max || name.length < 4) continue;
+      const d = levenshtein(term, name);
+      if (d > 0 && d <= max && d < bestDist && d / Math.max(term.length, name.length) <= 0.4) {
+        bestDist = d; best = { ...vLookup.get(name)!, matched: name, distance: d };
+      }
+    }
+    return best;
+  };
+
+  // Extract search terms from the image
+  const filePath = img.File_Path || '';
+  const filename = filePath.split('/').pop() || '';
+  const ext = path.extname(filename);
+  const stem = filename.replace(new RegExp(`\\${ext}$`, 'i'), '');
+  const normStem = normalize(stem);
+  const stripped = stripSuffixes(normStem);
+  const srcDir = (img.Source_Directory || '').replace(/\\/g, '/');
+  const origPath = (img.Original_Filepath || '').replace(/\\/g, '/');
+  const lastDir = normalize((origPath || srcDir).split('/').filter(Boolean).pop() || '');
+  const strippedDir = stripSuffixes(lastDir);
+  const caption = normalize(img.Caption || '');
+
+  // Try matching strategies in priority order
+  const strategies = [
+    () => { const m = findExact(normStem); return m ? { ...m, type: 'filename_exact' } : null; },
+    () => { if (stripped !== normStem) { const m = findExact(stripped); return m ? { ...m, type: 'filename_stripped' } : null; } return null; },
+    () => { const m = findSubstring(normStem); return m ? { ...m, type: 'filename_substring' } : null; },
+    () => { if (stripped !== normStem) { const m = findSubstring(stripped); return m ? { ...m, type: 'filename_stripped_sub' } : null; } return null; },
+    () => { const m = findFuzzy(normStem); return m ? { ...m, type: 'filename_fuzzy' } : null; },
+    () => { if (stripped !== normStem) { const m = findFuzzy(stripped); return m ? { ...m, type: 'filename_stripped_fuzzy' } : null; } return null; },
+    () => { if (lastDir.length >= 3) { const m = findExact(lastDir); return m ? { ...m, type: 'directory_exact' } : null; } return null; },
+    () => { if (strippedDir.length >= 3 && strippedDir !== lastDir) { const m = findExact(strippedDir); return m ? { ...m, type: 'directory_stripped' } : null; } return null; },
+    () => { if (lastDir.length >= 4) { const m = findSubstring(lastDir); return m ? { ...m, type: 'directory_substring' } : null; } return null; },
+    () => { if (lastDir.length >= 4) { const m = findFuzzy(lastDir); return m ? { ...m, type: 'directory_fuzzy' } : null; } return null; },
+    () => { if (caption.length >= 4) { const m = findExact(caption) || findSubstring(caption); return m ? { ...m, type: 'caption_match' } : null; } return null; },
+    // HTML gallery page context
+    () => {
+      try {
+        const ctxPath = path.resolve(config.CONTENT_ROOT, '..', 'content/parsed/html_image_context.json');
+        if (!existsSync(ctxPath)) return null;
+        const ctx = JSON.parse(readFileSync(ctxPath, 'utf-8'));
+        const entries = (ctx.entries || {})[filename.toLowerCase()] || [];
+        for (const entry of entries) {
+          if (!entry.variety_hint) continue;
+          const hint = normalize(entry.variety_hint);
+          if (hint.length < 3) continue;
+          const m = findExact(hint) || findSubstring(hint) || findFuzzy(hint);
+          if (m) return { ...m, type: 'html_gallery' };
+        }
+      } catch {}
+      return null;
+    },
+  ];
+
+  for (const strategy of strategies) {
+    const match = strategy();
+    if (match) {
+      res.json({ match: { variety_id: match.id, variety_name: match.name, match_type: match.type } });
+      return;
+    }
+  }
+
+  res.json({ match: null });
 }));
 
 // ── POST /set-image-variety/:id — Assign a variety to an image (admin) ────────
@@ -920,11 +1129,18 @@ router.post('/replace-image/:id', requireAdmin, replaceUpload.single('image'), a
   // Mark old image as hidden
   await nocodb.update('Images', id, { Excluded: true, Status: 'hidden' });
 
-  // If old image was hero, update hero to new image
-  const heroRow = db.prepare('SELECT plant_id FROM hero_images WHERE image_id = ?').get(id) as any;
-  if (heroRow) {
-    db.prepare('UPDATE hero_images SET image_id = ?, file_path = ?, rotation = 0 WHERE plant_id = ?')
-      .run(newRecord.Id, filePath, plantId);
+  // If old image was hero, update hero to new image in NocoDB
+  const oldImg = await nocodb.get('Images', id);
+  if (oldImg?.Plant_Id) {
+    const pResult = await nocodb.list('Plants', { where: `(Id1,eq,${oldImg.Plant_Id})`, limit: 1, fields: ['Id', 'Hero_Image_Path'] });
+    const p = pResult.list[0];
+    if (p) {
+      const oldRelPath = oldImg.File_Path?.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
+      if (p.Hero_Image_Path === oldRelPath) {
+        const newRelPath = filePath.replace(/^content\/pass_01\/assigned\//, '');
+        await nocodb.update('Plants', p.Id, { Hero_Image_Path: newRelPath, Hero_Image_Rotation: 0 });
+      }
+    }
   }
 
   // Fetch full new record
@@ -938,8 +1154,18 @@ router.post('/rotate-image/:id', requireAdmin, asyncHandler(async (req, res) => 
   const { rotation } = req.body ?? {};
   const deg = ((rotation ?? 0) % 360 + 360) % 360;
   await nocodb.update('Images', id, { Rotation: deg });
-  // Sync hero_images if this image is a hero
-  db.prepare(`UPDATE hero_images SET rotation = ? WHERE image_id = ?`).run(deg, id);
+  // Sync hero rotation in NocoDB Plants if this image is a hero
+  const img = await nocodb.get('Images', id);
+  if (img?.Plant_Id) {
+    const plantResult = await nocodb.list('Plants', { where: `(Id1,eq,${img.Plant_Id})`, limit: 1, fields: ['Id', 'Hero_Image_Path'] });
+    const plant = plantResult.list[0];
+    if (plant) {
+      const imgRelPath = img.File_Path?.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
+      if (plant.Hero_Image_Path === imgRelPath) {
+        await nocodb.update('Plants', plant.Id, { Hero_Image_Rotation: deg });
+      }
+    }
+  }
   res.json({ success: true, rotation: deg });
 }));
 
@@ -968,13 +1194,14 @@ router.post('/unassign-image/:id', requireAdmin, asyncHandler(async (req, res) =
 router.post('/bulk-set-status', requireAdmin, asyncHandler(async (req, res) => {
   const { image_ids, status } = req.body;
   if (!Array.isArray(image_ids) || !status) return res.status(400).json({ error: 'image_ids[] and status required' });
-  const validStatuses = ['assigned', 'hidden', 'unassigned', 'unclassified'];
+  const validStatuses = ['assigned', 'hidden', 'unassigned', 'unclassified', 'triage'];
   if (!validStatuses.includes(status)) return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
   const excluded = status === 'hidden';
   const updates = image_ids.map((id: number) => ({ Id: id, Status: status, Excluded: excluded }));
   for (let i = 0; i < updates.length; i += 100) {
     await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
   }
+  invalidateImageCountCache();
   res.json({ success: true, count: image_ids.length });
 }));
 
@@ -1056,17 +1283,18 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
     results.push({ filename: baseName, id: record.Id });
   }
 
-  // Auto-set first uploaded image as hero if plant has no hero yet
+  // Auto-set first uploaded image as hero if plant has no hero yet (in NocoDB)
   if (results.length > 0) {
-    const existing = db.prepare('SELECT plant_id FROM hero_images WHERE plant_id = ?').get(plantId);
-    if (!existing) {
+    const pResult = await nocodb.list('Plants', { where: `(Id1,eq,${plantId})`, limit: 1, fields: ['Id', 'Hero_Image_Path'] });
+    const p = pResult.list[0];
+    if (p && !p.Hero_Image_Path) {
       const firstFile = results[0];
-      const firstPath = `content/${path.relative(contentRoot, path.join(plantDir, firstFile.filename)).split(path.sep).join('/')}`;
-      db.prepare('INSERT OR REPLACE INTO hero_images (plant_id, image_id, file_path, rotation) VALUES (?, ?, ?, 0)')
-        .run(plantId, firstFile.id, firstPath);
+      const heroPath = `${plantId}/images/${firstFile.filename}`;
+      await nocodb.update('Plants', p.Id, { Hero_Image_Path: heroPath, Hero_Image_Rotation: 0 });
     }
   }
 
+  invalidateImageCountCache();
   res.json({ success: true, uploaded: results.length, files: results });
 }));
 

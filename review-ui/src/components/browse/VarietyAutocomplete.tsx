@@ -99,6 +99,12 @@ export function VarietyPicker({ plantId, currentVariety, externalInputRef, onSel
       e.preventDefault();
       e.stopPropagation();
 
+      // If confirm dialog is showing, Enter = Create & Assign
+      if (showConfirm) {
+        handleCreateAndAssign();
+        return;
+      }
+
       // If a dropdown item is highlighted, select it
       if (highlightIndex >= 0 && highlightIndex < suggestions.length) {
         handleSelectExisting(suggestions[highlightIndex]);

@@ -7,6 +7,9 @@ content/
 .claude/settings.local.json
 .claude/settings.json
 
+# Signal API credentials
+.env.signal
+
 # ===== Node.js =====
 
 # Logs

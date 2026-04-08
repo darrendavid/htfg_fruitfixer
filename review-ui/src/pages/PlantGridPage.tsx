@@ -123,8 +123,8 @@ export function PlantGridPage() {
       const q = debouncedSearch.toLowerCase();
       const name = p.Canonical_Name?.toLowerCase() ?? '';
       const botanical = (p.Botanical_Name ?? '').toLowerCase();
-      const aliases = (p.Aliases ?? '').toLowerCase();
-      if (!name.includes(q) && !botanical.includes(q) && !aliases.includes(q)) return false;
+      const altNames = ((p as any).Alternative_Names ?? '').toLowerCase();
+      if (!name.includes(q) && !botanical.includes(q) && !altNames.includes(q)) return false;
     }
     return true;
   });
@@ -259,16 +259,11 @@ export function PlantGridPage() {
             <p className="text-xs text-muted-foreground">{filteredPlants.length} plants</p>
           )}
 
-          {/* Loading skeleton */}
+          {/* Loading state */}
           {isLoading && (
-            <div className={PLANT_GRID_CLASSES[thumbSize]}>
-              {Array.from({ length: 20 }).map((_, i) => (
-                <div key={i} className="space-y-2">
-                  <Skeleton className="aspect-square w-full rounded-lg" />
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-              ))}
+            <div className="flex flex-col items-center justify-center py-16 gap-4">
+              <div className="animate-spin rounded-full h-10 w-10 border-4 border-muted border-t-foreground" />
+              <p className="text-sm text-muted-foreground">Loading plants...</p>
             </div>
           )}
 

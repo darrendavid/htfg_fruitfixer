@@ -98,3 +98,59 @@ export interface VarietyMatchItemsResponse {
   total: number;
   items: VarietyMatchItem[];
 }
+
+// ── Lost image types ────────────────────────────────────────────────────────
+
+export interface LostImageItem {
+  image_id: number;
+  plant_id: string;
+  plant_name: string;
+  original_filepath: string | null;
+  source_directory: string;
+  old_file_path: string;
+  new_file_path: string | null;
+  variety_id: number | null;
+  status: 'recovered' | 'source_missing' | 'no_original_path';
+}
+
+export interface LostImageGroup {
+  plant_id: string;
+  plant_name: string;
+  count: number;
+}
+
+export interface LostImageGroupsResponse {
+  total: number;
+  groups: LostImageGroup[];
+}
+
+export interface LostImageItemsResponse {
+  plant_id: string;
+  plant_name: string;
+  total: number;
+  items: LostImageItem[];
+}
+
+// ── Dedup review types ──────────────────────────────────────────────────────
+
+export interface DedupRecord {
+  id: number;
+  file_path: string;
+  plant_id: string | null;
+  variety_id: number | null;
+  status: string;
+  caption: string | null;
+}
+
+export interface DedupGroup {
+  original_filepath: string;
+  kept: DedupRecord[];
+  deleted: DedupRecord[];
+}
+
+export interface DedupReviewResponse {
+  total: number;
+  offset: number;
+  limit: number;
+  groups: DedupGroup[];
+}

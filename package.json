@@ -7,7 +7,11 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently -n server,client -c blue,green \"npm run server\" \"npm run client\"",
+    "server": "cd review-ui && npx tsx server/index.ts",
+    "client": "cd review-ui && npx vite --port 5173 --host 0.0.0.0",
+    "test": "cd review-ui && npx vitest run",
+    "build": "cd review-ui && npx vite build"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +28,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@playwright/cli": "^0.1.1"
+    "@playwright/cli": "^0.1.1",
+    "concurrently": "^9.2.1"
   }
 }

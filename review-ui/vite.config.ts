@@ -16,6 +16,7 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
+    allowedHosts: ['ulu.cozynet'],
     proxy: {
       '/api': 'http://localhost:3001',
       '/images': 'http://localhost:3001',

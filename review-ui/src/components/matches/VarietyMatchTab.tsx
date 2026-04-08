@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { PlantAutocomplete, type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
 import { VarietyMatchCard } from './variety-match-card';
+import { toast } from 'sonner';
 import type { VarietyMatchItem, VarietyMatchGroup, VarietyMatchGroupsResponse, VarietyMatchItemsResponse, UndoToken } from '@/types/matches';
 
 export function VarietyMatchTab() {
@@ -121,6 +123,57 @@ export function VarietyMatchTab() {
     } catch { alert('Bulk accept failed.'); }
     finally { setBulkBusy(false); }
   }, [selectedIds, items, bulkBusy, removeItem]);
+
+  const handleBulkReassign = useCallback(async (plant: PlantSuggestion) => {
+    if (selectedIds.size === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch('/api/browse/bulk-reassign-images', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_ids: [...selectedIds], plant_id: plant.Id1 }),
+      });
+      if (res.ok) {
+        toast.success(`Reassigned ${selectedIds.size} images to ${plant.Canonical_Name}`);
+        for (const id of selectedIds) removeItem(id);
+      } else { toast.error('Reassignment failed'); }
+    } catch { toast.error('Reassignment failed'); }
+    finally { setBulkBusy(false); }
+  }, [selectedIds, bulkBusy, removeItem]);
+
+  const handleBulkTriage = useCallback(async () => {
+    if (selectedIds.size === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch('/api/browse/bulk-set-status', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_ids: [...selectedIds], status: 'triage' }),
+      });
+      if (res.ok) {
+        toast.success(`Sent ${selectedIds.size} images to Triage`);
+        for (const id of selectedIds) removeItem(id);
+      } else { toast.error('Failed'); }
+    } catch { toast.error('Failed'); }
+    finally { setBulkBusy(false); }
+  }, [selectedIds, bulkBusy, removeItem]);
+
+  const handleBulkHide = useCallback(async () => {
+    if (selectedIds.size === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const res = await fetch('/api/browse/bulk-set-status', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_ids: [...selectedIds], status: 'hidden' }),
+      });
+      if (res.ok) {
+        toast.success(`Hidden ${selectedIds.size} images`);
+        for (const id of selectedIds) removeItem(id);
+      } else { toast.error('Failed'); }
+    } catch { toast.error('Failed'); }
+    finally { setBulkBusy(false); }
+  }, [selectedIds, bulkBusy, removeItem]);
 
   const handleUndo = useCallback(async () => {
     const token = undoStack[undoStack.length - 1];
@@ -285,14 +338,39 @@ export function VarietyMatchTab() {
 
       {/* Bulk selection bar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-0 left-[250px] right-0 z-50 bg-green-600 text-white p-2 shadow-lg">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium">{selectedIds.size} selected</span>
-            <Button size="sm" variant="secondary" className="h-6 text-xs px-3" disabled={bulkBusy}
+        <div className="fixed bottom-12 left-[250px] right-0 z-50 bg-blue-600 text-white p-2 shadow-lg">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium shrink-0">{selectedIds.size} selected</span>
+            <Button size="sm" variant="secondary" className="h-6 text-xs px-3 bg-green-100 hover:bg-green-200 text-green-800" disabled={bulkBusy}
               onClick={handleBulkAccept}>
-              {bulkBusy ? 'Accepting...' : `Accept ${selectedIds.size} suggestions`}
+              {bulkBusy ? '...' : `Accept ${selectedIds.size}`}
             </Button>
-            <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-white hover:text-white hover:bg-green-700 ml-auto"
+            <div className="min-w-[180px]">
+              <PlantAutocomplete
+                label=""
+                placeholder="Move to plant..."
+                inputClassName="h-6 text-xs bg-white text-black"
+                dropdownLeftClass="left-0"
+                onSelect={handleBulkReassign}
+                onCreateAndSelect={async (name, slug) => handleBulkReassign({ Id: 0, Id1: slug, Canonical_Name: name })}
+                createMessage={(name) => `Create "${name}" and move ${selectedIds.size} images?`}
+                createLabel="Create & Move"
+              />
+            </div>
+            <Button size="sm" variant="secondary" className="h-6 text-xs px-2" disabled={bulkBusy} onClick={handleBulkTriage}>
+              Triage
+            </Button>
+            <Button size="sm" variant="secondary" className="h-6 text-xs px-2 bg-red-100 hover:bg-red-200 text-red-800" disabled={bulkBusy} onClick={handleBulkHide}>
+              Hide
+            </Button>
+            <Button size="sm" variant="secondary" className="h-6 text-xs px-2" disabled={bulkBusy}
+              onClick={() => {
+                const selected = items.filter(m => selectedIds.has(m.image_id));
+                for (const m of selected) handleSkip(m);
+              }}>
+              Skip
+            </Button>
+            <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-white hover:text-white hover:bg-blue-700 ml-auto"
               onClick={() => setSelectedIds(new Set())}>
               Clear
             </Button>
