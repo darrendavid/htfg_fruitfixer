@@ -1,16 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useMultiSelect } from '@/hooks/useMultiSelect';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { PlantAutocomplete, type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
+import { type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
 import { ThumbSizeToggle } from '@/components/ui/thumb-size-toggle';
 import { ImagePreviewDialog } from './ImagePreviewDialog';
 import { toast } from 'sonner';
-
-const GRID_CLASSES = {
-  lg: 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2',
-  md: 'grid grid-cols-5 sm:grid-cols-6 lg:grid-cols-8 gap-2',
-  sm: 'grid grid-cols-8 sm:grid-cols-10 lg:grid-cols-12 gap-2',
-} as const;
+import { imgUrlFromFilePath, CLASSIFY_GRID_CLASSES } from '@/lib/gallery-utils';
+import { ClassifyActionBar } from './ClassifyActionBar';
 
 const IMG_EXTS = /\.(jpe?g|png|gif|bmp|tiff?|webp)$/i;
 const DOC_EXT_COLORS: Record<string, string> = {
@@ -38,16 +35,6 @@ function fileExt(filename: string): string {
   return filename.split('.').pop()?.toLowerCase() ?? '';
 }
 
-function imgUrl(item: TriageItem): string {
-  const fp = item.file_path;
-  const encode = (p: string) => p.split('/').map(s => encodeURIComponent(s)).join('/');
-  if (fp.startsWith('content/pass_01/assigned/'))
-    return `/images/${encode(fp.replace('content/pass_01/assigned/', ''))}`;
-  if (fp.startsWith('content/pass_01/unassigned/'))
-    return `/unassigned-images/${encode(fp.replace('content/pass_01/unassigned/', ''))}`;
-  return `/content-files/${encode(fp.replace(/^content\//, ''))}`;
-}
-
 function openUrl(item: TriageItem): string {
   const fp = item.file_path;
   const encode = (p: string) => p.split('/').map(s => encodeURIComponent(s)).join('/');
@@ -60,11 +47,15 @@ export function TriageTab() {
   const [totalDb, setTotalDb] = useState(0);
   const [offset, setOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null);
   const [thumbSize, setThumbSize] = useState<'lg' | 'md' | 'sm'>('md');
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const LIMIT = 100;
+
+  const allItems = useMemo(() => [...fsItems, ...dbItems], [fsItems, dbItems]);
+  const totalAll = totalDb + fsItems.length;
+
+  const { selectedIds, setSelectedIds, handleClick: multiSelectClick, clearSelection } =
+    useMultiSelect<TriageItem, string>(allItems, item => item.file_path);
 
   const fetchPage = useCallback((off: number) => {
     setIsLoading(true);
@@ -75,46 +66,25 @@ export function TriageTab() {
         if (off === 0) setFsItems(data.fs_items || []);
         setTotalDb(data.total_db);
         setOffset(off);
-        setSelectedIds(new Set());
-        setLastClickedIdx(null);
+        clearSelection();
       })
       .catch(() => {})
       .finally(() => setIsLoading(false));
-  }, []);
+  }, [clearSelection]);
 
   useEffect(() => { fetchPage(0); }, [fetchPage]);
 
-  const allItems = [...fsItems, ...dbItems];
-  const totalAll = totalDb + fsItems.length;
-
   const handleImageClick = useCallback((e: React.MouseEvent, item: TriageItem, idx: number) => {
-    const key = item.file_path;
-    if (e.shiftKey && lastClickedIdx !== null) {
-      e.preventDefault();
-      const lo = Math.min(lastClickedIdx, idx);
-      const hi = Math.max(lastClickedIdx, idx);
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        for (let i = lo; i <= hi; i++) if (allItems[i]) next.add(allItems[i].file_path);
-        return next;
-      });
-    } else if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        if (next.has(key)) next.delete(key); else next.add(key);
-        return next;
-      });
-      setLastClickedIdx(idx);
-    } else {
+    const result = multiSelectClick(e, item, idx);
+    if (result === 'plain') {
       // Plain click = preview image or open document
       if (isImageFile(item)) {
-        setPreviewSrc(imgUrl(item));
+        setPreviewSrc(imgUrlFromFilePath(item.file_path));
       } else {
         window.open(openUrl(item), '_blank');
       }
     }
-  }, [lastClickedIdx, allItems]);
+  }, [multiSelectClick]);
 
   const getSelectedItems = useCallback(() => {
     const lookup = new Map(allItems.map(i => [i.file_path, i]));
@@ -166,10 +136,10 @@ export function TriageTab() {
         }
       }
       toast.success(`Assigned ${dbIds.length + fsPaths.length} images to ${plant.Canonical_Name}`);
-      setSelectedIds(new Set());
+      clearSelection();
       fetchPage(offset);
     } catch { toast.error('Failed'); }
-  }, [selectedIds, getSelectedItems, offset, fetchPage]);
+  }, [selectedIds, getSelectedItems, offset, fetchPage, clearSelection]);
 
   const handleHide = useCallback(async () => {
     const { dbIds, fsPaths } = getSelectedItems();
@@ -198,10 +168,10 @@ export function TriageTab() {
         }
       }
       toast.success(`Hidden ${dbIds.length + fsPaths.length} images`);
-      setSelectedIds(new Set());
+      clearSelection();
       fetchPage(offset);
     } catch { toast.error('Failed'); }
-  }, [selectedIds, getSelectedItems, offset, fetchPage]);
+  }, [selectedIds, getSelectedItems, offset, fetchPage, clearSelection]);
 
 
   const totalPages = Math.ceil(totalDb / LIMIT);
@@ -229,7 +199,7 @@ export function TriageTab() {
             {selectedIds.size > 0 && (
               <p className="text-xs text-blue-600 font-medium mb-2">{selectedIds.size} selected (Esc to clear)</p>
             )}
-            <div className={GRID_CLASSES[thumbSize]}>
+            <div className={CLASSIFY_GRID_CLASSES[thumbSize]}>
               {allItems.map((item, idx) => {
                 const isSel = selectedIds.has(item.file_path);
                 const isImg = isImageFile(item);
@@ -242,7 +212,7 @@ export function TriageTab() {
                     >
                       {isImg ? (
                         <img
-                          src={imgUrl(item)}
+                          src={imgUrlFromFilePath(item.file_path)}
                           alt={item.caption ?? ''}
                           loading="lazy"
                           className={`w-full h-full object-cover ${isSel ? 'opacity-75' : ''}`}
@@ -289,28 +259,21 @@ export function TriageTab() {
         )}
       </div>
 
-      {selectedIds.size > 0 && (
-        <div className="fixed bottom-12 left-0 right-0 z-50 bg-blue-600 text-white p-2 shadow-lg">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium shrink-0">{selectedIds.size} selected</span>
-            <div className="flex-1 max-w-[300px]">
-              <PlantAutocomplete
-                label=""
-                placeholder="Assign to plant..."
-                inputClassName="h-6 text-xs bg-white text-black"
-                dropdownLeftClass="left-0"
-                onSelect={handleAssign}
-                onCreateAndSelect={async (name, slug) => handleAssign({ Id: 0, Id1: slug, Canonical_Name: name })}
-                createMessage={(name) => `Create "${name}" and assign ${selectedIds.size} images?`}
-                createLabel="Create & Assign"
-              />
-            </div>
-            <Button size="sm" variant="secondary" className="h-6 text-xs px-2 bg-red-100 hover:bg-red-200 text-red-800" onClick={handleHide}>Hide</Button>
-            <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-white hover:text-white hover:bg-blue-700 ml-auto"
-              onClick={() => setSelectedIds(new Set())}>Clear</Button>
-          </div>
-        </div>
-      )}
+      <ClassifyActionBar
+        selectedCount={selectedIds.size}
+        sidebarWidth={0}
+        plantPicker={{
+          placeholder: 'Assign to plant...',
+          onSelect: handleAssign,
+          onCreateAndSelect: async (name, slug) => handleAssign({ Id: 0, Id1: slug, Canonical_Name: name }),
+          createMessage: (name) => `Create "${name}" and assign ${selectedIds.size} images?`,
+          createLabel: 'Create & Assign',
+        }}
+        buttons={[
+          { label: 'Hide', onClick: handleHide, className: 'bg-red-100 hover:bg-red-200 text-red-800' },
+        ]}
+        onClear={clearSelection}
+      />
 
       <ImagePreviewDialog src={previewSrc} alt="" open={!!previewSrc} onOpenChange={o => { if (!o) setPreviewSrc(null); }} />
     </div>

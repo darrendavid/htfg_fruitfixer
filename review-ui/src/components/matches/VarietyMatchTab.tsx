@@ -85,7 +85,7 @@ export function VarietyMatchTab() {
       removeItem(item.image_id);
       setUndoStack((prev) => [...prev.slice(-19), data.undo_token]);
       setStats((s) => ({ ...s, accepted: s.accepted + 1 }));
-    } catch { alert('Failed to accept variety.'); }
+    } catch { toast.error('Failed to accept variety.'); }
   }, [removeItem]);
 
   const handleSkip = useCallback((item: VarietyMatchItem) => {
@@ -103,7 +103,7 @@ export function VarietyMatchTab() {
       if (!res.ok) throw new Error();
       removeItem(item.image_id);
       setStats((s) => ({ ...s, skipped: s.skipped + 1 }));
-    } catch { alert('Failed to hide image.'); }
+    } catch { toast.error('Failed to hide image.'); }
   }, [removeItem]);
 
   const handleBulkAccept = useCallback(async () => {
@@ -120,7 +120,7 @@ export function VarietyMatchTab() {
       if (!res.ok) throw new Error();
       for (const m of selected) removeItem(m.image_id);
       setStats((s) => ({ ...s, accepted: s.accepted + selected.length }));
-    } catch { alert('Bulk accept failed.'); }
+    } catch { toast.error('Bulk accept failed.'); }
     finally { setBulkBusy(false); }
   }, [selectedIds, items, bulkBusy, removeItem]);
 
@@ -187,7 +187,7 @@ export function VarietyMatchTab() {
       if (!res.ok) throw new Error();
       setUndoStack((prev) => prev.slice(0, -1));
       if (selectedPlant) loadPlant(selectedPlant);
-    } catch { alert('Undo failed.'); }
+    } catch { toast.error('Undo failed.'); }
   }, [undoStack, selectedPlant, loadPlant]);
 
   // ── Card click handler ────────────────────────────────────────────────────

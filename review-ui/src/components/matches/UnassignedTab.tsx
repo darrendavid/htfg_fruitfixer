@@ -1,16 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useMultiSelect } from '@/hooks/useMultiSelect';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { PlantAutocomplete, type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
+import { type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
 import { ThumbSizeToggle } from '@/components/ui/thumb-size-toggle';
 import { ImagePreviewDialog } from './ImagePreviewDialog';
 import { toast } from 'sonner';
-
-const GRID_CLASSES = {
-  lg: 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2',
-  md: 'grid grid-cols-5 sm:grid-cols-6 lg:grid-cols-8 gap-2',
-  sm: 'grid grid-cols-8 sm:grid-cols-10 lg:grid-cols-12 gap-2',
-} as const;
+import { imgUrlFromFilePath, CLASSIFY_GRID_CLASSES } from '@/lib/gallery-utils';
+import { ClassifyActionBar } from './ClassifyActionBar';
 
 export function UnassignedTab() {
   const [items, setItems] = useState<any[]>([]);
@@ -18,9 +15,10 @@ export function UnassignedTab() {
   const [offset, setOffset] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null);
   const [thumbSize, setThumbSize] = useState<'lg' | 'md' | 'sm'>('md');
+
+  const { selectedIds, setSelectedIds, handleClick: multiSelectClick, clearSelection } =
+    useMultiSelect<any, number>(items, item => item.Id);
   const LIMIT = 100;
 
   const fetchPage = useCallback((off: number) => {
@@ -34,48 +32,16 @@ export function UnassignedTab() {
       })
       .catch(() => {})
       .finally(() => setIsLoading(false));
-  }, []);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchPage(0); }, [fetchPage]);
 
-  function imgUrl(filePath: string): string {
-    const encode = (p: string) => p.split('/').map(s => encodeURIComponent(s)).join('/');
-    if (filePath.startsWith('content/pass_01/assigned/'))
-      return `/images/${encode(filePath.replace('content/pass_01/assigned/', ''))}`;
-    if (filePath.startsWith('content/pass_01/unassigned/'))
-      return `/unassigned-images/${encode(filePath.replace('content/pass_01/unassigned/', ''))}`;
-    return `/content-files/${encode(filePath.replace(/^content\//, ''))}`;
-  }
-
   const handleImageClick = useCallback((e: React.MouseEvent, item: any, idx: number) => {
-    if (e.shiftKey && lastClickedIdx !== null) {
-      e.preventDefault();
-      const lo = Math.min(lastClickedIdx, idx);
-      const hi = Math.max(lastClickedIdx, idx);
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        for (let i = lo; i <= hi; i++) if (items[i]) next.add(items[i].Id);
-        return next;
-      });
-    } else if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        if (next.has(item.Id)) next.delete(item.Id);
-        else next.add(item.Id);
-        return next;
-      });
-      setLastClickedIdx(idx);
-    } else {
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        if (next.has(item.Id)) next.delete(item.Id);
-        else next.add(item.Id);
-        return next;
-      });
-      setLastClickedIdx(idx);
+    const result = multiSelectClick(e, item, idx);
+    if (result === 'plain') {
+      setPreviewSrc(imgUrlFromFilePath(item.File_Path));
     }
-  }, [lastClickedIdx, items]);
+  }, [multiSelectClick]);
 
   const handleAssign = useCallback(async (plant: PlantSuggestion) => {
     if (selectedIds.size === 0) return;
@@ -91,10 +57,10 @@ export function UnassignedTab() {
         if (!res.ok) { toast.error('Assignment failed at batch ' + i); return; }
       }
       toast.success(`Assigned ${ids.length} images to ${plant.Canonical_Name}`);
-      setSelectedIds(new Set());
+      clearSelection();
       fetchPage(offset);
     } catch { toast.error('Assignment failed'); }
-  }, [selectedIds, offset, fetchPage]);
+  }, [selectedIds, offset, fetchPage, clearSelection]);
 
   const handleSendToTriage = useCallback(async () => {
     if (selectedIds.size === 0) return;
@@ -110,10 +76,10 @@ export function UnassignedTab() {
         if (!res.ok) { toast.error('Failed at batch ' + i); return; }
       }
       toast.success(`Sent ${ids.length} images to Triage`);
-      setSelectedIds(new Set());
+      clearSelection();
       fetchPage(offset);
     } catch { toast.error('Failed'); }
-  }, [selectedIds, offset, fetchPage]);
+  }, [selectedIds, offset, fetchPage, clearSelection]);
 
   const handleHide = useCallback(async () => {
     if (selectedIds.size === 0) return;
@@ -130,10 +96,10 @@ export function UnassignedTab() {
         if (!res.ok) { toast.error('Failed at batch ' + i); return; }
       }
       toast.success(`Hidden ${ids.length} images`);
-      setSelectedIds(new Set());
+      clearSelection();
       fetchPage(offset); // Re-fetch current page
     } catch { toast.error('Failed'); }
-  }, [selectedIds, offset, fetchPage]);
+  }, [selectedIds, offset, fetchPage, clearSelection]);
 
   const totalPages = Math.ceil(total / LIMIT);
   const currentPage = Math.floor(offset / LIMIT) + 1;
@@ -155,7 +121,7 @@ export function UnassignedTab() {
           <p className="text-sm text-muted-foreground text-center mt-12">No unassigned images.</p>
         ) : (
           <>
-            <div className={GRID_CLASSES[thumbSize]}>
+            <div className={CLASSIFY_GRID_CLASSES[thumbSize]}>
               {items.map((item, idx) => {
                 const isSel = selectedIds.has(item.Id);
                 return (
@@ -165,7 +131,7 @@ export function UnassignedTab() {
                       onClick={(e) => handleImageClick(e, item, idx)}
                     >
                       <img
-                        src={imgUrl(item.File_Path)}
+                        src={imgUrlFromFilePath(item.File_Path)}
                         alt={item.Caption ?? ''}
                         loading="lazy"
                         className={`w-full h-full object-cover ${isSel ? 'opacity-75' : ''}`}
@@ -176,7 +142,7 @@ export function UnassignedTab() {
                       )}
                       <button
                         className="absolute bottom-0.5 right-0.5 z-10 bg-black/50 text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] opacity-0 hover:opacity-100 transition-opacity"
-                        onClick={(e) => { e.stopPropagation(); setPreviewSrc(imgUrl(item.File_Path)); }}
+                        onClick={(e) => { e.stopPropagation(); setPreviewSrc(imgUrlFromFilePath(item.File_Path)); }}
                         title="Preview"
                       >🔍</button>
                     </div>
@@ -204,34 +170,22 @@ export function UnassignedTab() {
         )}
       </div>
 
-      {/* Assignment bar */}
-      {selectedIds.size > 0 && (
-        <div className="fixed bottom-12 left-0 right-0 z-50 bg-blue-600 text-white p-2 shadow-lg">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium shrink-0">{selectedIds.size} selected</span>
-            <div className="flex-1 max-w-[300px]">
-              <PlantAutocomplete
-                label=""
-                placeholder="Assign to plant..."
-                inputClassName="h-6 text-xs bg-white text-black"
-                dropdownLeftClass="left-0"
-                onSelect={handleAssign}
-                onCreateAndSelect={async (name, slug) => handleAssign({ Id: 0, Id1: slug, Canonical_Name: name })}
-                createMessage={(name) => `Create "${name}" and assign ${selectedIds.size} images?`}
-                createLabel="Create & Assign"
-              />
-            </div>
-            <Button size="sm" variant="secondary" className="h-6 text-xs px-2" onClick={handleSendToTriage}>
-              Triage
-            </Button>
-            <Button size="sm" variant="secondary" className="h-6 text-xs px-2 bg-red-100 hover:bg-red-200 text-red-800" onClick={handleHide}>
-              Hide
-            </Button>
-            <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-white hover:text-white hover:bg-blue-700 ml-auto"
-              onClick={() => setSelectedIds(new Set())}>Clear</Button>
-          </div>
-        </div>
-      )}
+      <ClassifyActionBar
+        selectedCount={selectedIds.size}
+        sidebarWidth={0}
+        plantPicker={{
+          placeholder: 'Assign to plant...',
+          onSelect: handleAssign,
+          onCreateAndSelect: async (name, slug) => handleAssign({ Id: 0, Id1: slug, Canonical_Name: name }),
+          createMessage: (name) => `Create "${name}" and assign ${selectedIds.size} images?`,
+          createLabel: 'Create & Assign',
+        }}
+        buttons={[
+          { label: 'Triage', onClick: handleSendToTriage },
+          { label: 'Hide', onClick: handleHide, className: 'bg-red-100 hover:bg-red-200 text-red-800' },
+        ]}
+        onClear={clearSelection}
+      />
 
       <ImagePreviewDialog src={previewSrc} alt="" open={!!previewSrc} onOpenChange={o => { if (!o) setPreviewSrc(null); }} />
     </div>

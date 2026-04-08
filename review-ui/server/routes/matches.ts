@@ -1,9 +1,11 @@
-import { Router, type Request, type Response } from 'express';
+import { Router } from 'express';
 import path from 'path';
-import { existsSync, mkdirSync, copyFileSync, unlinkSync, renameSync, readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'fs';
 import { requireAdmin } from '../middleware/auth.js';
 import { nocodb } from '../lib/nocodb.js';
 import { config } from '../config.js';
+import { asyncHandler } from '../lib/route-helpers.js';
+import { moveFile, resolveDestFilename, walkFiles, IMG_EXTS, DOC_EXTS, type WalkEntry } from '../lib/file-ops.js';
 
 const router = Router();
 
@@ -27,58 +29,6 @@ const PASS01_BASE = path.resolve(config.IMAGE_MOUNT_PATH, '..');
 
 // Unassigned root — scanned directly for all images
 const UNASSIGNED_ROOT = path.join(PASS01_BASE, 'unassigned', '_to_triage');
-
-// Image extensions
-const IMG_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif']);
-// Document extensions (shown as attachments in the UI)
-const DOC_EXTS = new Set(['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.txt']);
-
-// ── Helper: async route wrapper ──────────────────────────────────────────────
-function asyncHandler(fn: (req: Request, res: Response) => Promise<void>) {
-  return (req: Request, res: Response, next: Function) => {
-    fn(req, res).catch(next);
-  };
-}
-
-// ── Helper: safe cross-device move ───────────────────────────────────────────
-function moveFile(src: string, dest: string): void {
-  try {
-    renameSync(src, dest);
-  } catch {
-    // Cross-device link — fall back to copy + delete
-    copyFileSync(src, dest);
-    unlinkSync(src);
-  }
-}
-
-// ── Helper: resolve unique dest filename (no collision) ───────────────────────
-function resolveDestFilename(dir: string, filename: string): string {
-  const ext = path.extname(filename);
-  const stem = path.basename(filename, ext);
-  let candidate = filename;
-  let counter = 1;
-  while (existsSync(path.join(dir, candidate))) {
-    candidate = `${stem}_${counter}${ext}`;
-    counter++;
-  }
-  return candidate;
-}
-
-// ── Helper: recursively walk directory for image + document files ─────────────
-function walkFiles(dir: string, results: Array<{ abs: string; rel: string; fileType: 'image' | 'document' }>, baseDir: string): void {
-  try {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walkFiles(full, results, baseDir);
-      } else {
-        const ext = path.extname(entry.name).toLowerCase();
-        if (IMG_EXTS.has(ext)) results.push({ abs: full, rel: path.relative(baseDir, full), fileType: 'image' });
-        else if (DOC_EXTS.has(ext)) results.push({ abs: full, rel: path.relative(baseDir, full), fileType: 'document' });
-      }
-    }
-  } catch { /* skip unreadable dirs */ }
-}
 
 // ── Helper: load inference map from JSON (keyed by file_path) ────────────────
 // Must be keyed by file_path, not filename — many files share the same name
@@ -145,7 +95,7 @@ router.get('/triage', asyncHandler(async (req, res) => {
   // Also scan _to_triage/ folder for filesystem-based items
   const fsItems: any[] = [];
   if (existsSync(UNASSIGNED_ROOT)) {
-    const files: Array<{ abs: string; rel: string; fileType: 'image' | 'document' }> = [];
+    const files: WalkEntry[] = [];
     walkFiles(UNASSIGNED_ROOT, files, UNASSIGNED_ROOT);
     for (const { abs, rel, fileType } of files) {
       fsItems.push({
@@ -308,7 +258,7 @@ router.get('/', asyncHandler(async (req, res) => {
       ? UNASSIGNED_ROOT
       : path.join(UNASSIGNED_ROOT, folderParam.replace(/\//g, path.sep));
 
-    const files: Array<{ abs: string; rel: string; fileType: 'image' | 'document' }> = [];
+    const files: WalkEntry[] = [];
     if (existsSync(targetDir)) walkFiles(targetDir, files, UNASSIGNED_ROOT);
 
     const inferenceMap = loadInferenceMap();
@@ -352,7 +302,7 @@ router.get('/', asyncHandler(async (req, res) => {
   }
 
   // ── Folder-list mode (no statSync, no file reads) ────────────────────────
-  const files: Array<{ abs: string; rel: string; fileType: 'image' | 'document' }> = [];
+  const files: WalkEntry[] = [];
   walkFiles(UNASSIGNED_ROOT, files, UNASSIGNED_ROOT);
 
   // Load inferred file_paths for matched counts (keyed by file_path, same as buildItem)

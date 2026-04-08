@@ -1,4 +1,4 @@
-import { Router, type Request, type Response } from 'express';
+import { Router } from 'express';
 import path from 'path';
 import { readdirSync, existsSync, mkdirSync } from 'fs';
 import multer from 'multer';
@@ -6,6 +6,9 @@ import { requireAdmin } from '../middleware/auth.js';
 import { nocodb, type ListOptions } from '../lib/nocodb.js';
 import { config } from '../config.js';
 import db from '../lib/db.js';
+import { asyncHandler } from '../lib/route-helpers.js';
+import { resolveDestFilename } from '../lib/file-ops.js';
+import { batchedBulkUpdate } from '../lib/nocodb-helpers.js';
 
 const router = Router();
 
@@ -39,13 +42,6 @@ async function getImageCountMap(): Promise<Map<string, number>> {
 
 /** Invalidate the image count cache — call only when plants/images are added/deleted/reassigned */
 function invalidateImageCountCache() { _imageCountCache = null; }
-
-// ── Helper: async route wrapper ──────────────────────────────────────────────
-function asyncHandler(fn: (req: Request, res: Response) => Promise<void>) {
-  return (req: Request, res: Response, next: Function) => {
-    fn(req, res).catch(next);
-  };
-}
 
 // ── Helper: collect plant IDs from a NocoDB list result ──────────────────────
 function extractPlantIds(list: Record<string, any>[], field: string): string[] {
@@ -312,18 +308,8 @@ router.post('/upload-attachment/:plantId', requireAdmin, attachUpload.single('fi
   const attachDir = path.join(config.IMAGE_MOUNT_PATH, plantId, 'attachments');
   if (!existsSync(attachDir)) mkdirSync(attachDir, { recursive: true });
 
-  let baseName = file.originalname.replace(/[<>:"/\\|?*]/g, '_');
-  let destPath = path.join(attachDir, baseName);
-  if (existsSync(destPath)) {
-    const ext = path.extname(baseName);
-    const stem = baseName.slice(0, -ext.length || undefined);
-    let counter = 1;
-    while (existsSync(destPath)) {
-      baseName = `${stem}_${counter}${ext}`;
-      destPath = path.join(attachDir, baseName);
-      counter++;
-    }
-  }
+  const baseName = resolveDestFilename(attachDir, file.originalname.replace(/[<>:"/\\|?*]/g, '_'));
+  const destPath = path.join(attachDir, baseName);
 
   const { writeFileSync } = await import('fs');
   writeFileSync(destPath, file.buffer);
@@ -545,9 +531,7 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
         const records = await nocodb.list(table, { where: `(${field},eq,${oldSlug})`, limit: 1000 });
         if (records.list.length > 0) {
           const updates = records.list.map((r: any) => ({ Id: r.Id, [field]: newSlug }));
-          for (let i = 0; i < updates.length; i += 100) {
-            await nocodb.bulkUpdate(table, updates.slice(i, i + 100));
-          }
+          await batchedBulkUpdate(table, updates);
         }
       } catch { /* table may not have records */ }
     }
@@ -570,9 +554,7 @@ router.patch('/:id', requireAdmin, asyncHandler(async (req, res) => {
               return null;
             })
             .filter(Boolean) as any[];
-          for (let i = 0; i < updates.length; i += 100) {
-            await nocodb.bulkUpdate(table, updates.slice(i, i + 100));
-          }
+          await batchedBulkUpdate(table, updates);
         }
       } catch { /* table may not have records */ }
     }
@@ -792,7 +774,7 @@ router.post('/varieties/merge', requireAdmin, asyncHandler(async (req, res) => {
     });
     if (images.list.length > 0) {
       const updates = images.list.map((img: any) => ({ Id: img.Id, Variety_Id: primary_id }));
-      await nocodb.bulkUpdate('Images', updates);
+      await batchedBulkUpdate('Images', updates);
     }
   }
 
@@ -898,9 +880,7 @@ router.post('/bulk-reassign-images', requireAdmin, asyncHandler(async (req, res)
   const { image_ids, plant_id } = req.body ?? {};
   if (!image_ids?.length || !plant_id) { res.status(400).json({ error: 'image_ids[] and plant_id required' }); return; }
   const updates = image_ids.map((id: number) => ({ Id: id, Plant_Id: plant_id }));
-  for (let i = 0; i < updates.length; i += 100) {
-    await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
-  }
+  await batchedBulkUpdate('Images', updates);
   invalidateImageCountCache();
   res.json({ success: true, count: image_ids.length });
 }));
@@ -910,9 +890,7 @@ router.post('/bulk-set-variety', requireAdmin, asyncHandler(async (req, res) => 
   const { image_ids, variety_id } = req.body ?? {};
   if (!image_ids?.length) { res.status(400).json({ error: 'image_ids[] required' }); return; }
   const updates = image_ids.map((id: number) => ({ Id: id, Variety_Id: variety_id || null }));
-  for (let i = 0; i < updates.length; i += 100) {
-    await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
-  }
+  await batchedBulkUpdate('Images', updates);
   res.json({ success: true, count: image_ids.length });
 }));
 
@@ -1092,18 +1070,8 @@ router.post('/replace-image/:id', requireAdmin, replaceUpload.single('image'), a
   if (!existsSync(plantDir)) mkdirSync(plantDir, { recursive: true });
 
   // Generate filename (avoid conflicts)
-  let baseName = file.originalname.replace(/[<>:"/\\|?*]/g, '_');
-  let destPath = path.join(plantDir, baseName);
-  if (existsSync(destPath)) {
-    const ext = path.extname(baseName);
-    const stem = baseName.slice(0, -ext.length || undefined);
-    let counter = 1;
-    while (existsSync(destPath)) {
-      baseName = `${stem}_${counter}${ext}`;
-      destPath = path.join(plantDir, baseName);
-      counter++;
-    }
-  }
+  const baseName = resolveDestFilename(plantDir, file.originalname.replace(/[<>:"/\\|?*]/g, '_'));
+  const destPath = path.join(plantDir, baseName);
 
   // Write file
   const { writeFileSync } = await import('fs');
@@ -1198,9 +1166,7 @@ router.post('/bulk-set-status', requireAdmin, asyncHandler(async (req, res) => {
   if (!validStatuses.includes(status)) return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
   const excluded = status === 'hidden';
   const updates = image_ids.map((id: number) => ({ Id: id, Status: status, Excluded: excluded }));
-  for (let i = 0; i < updates.length; i += 100) {
-    await nocodb.bulkUpdate('Images', updates.slice(i, i + 100));
-  }
+  await batchedBulkUpdate('Images', updates);
   invalidateImageCountCache();
   res.json({ success: true, count: image_ids.length });
 }));
@@ -1248,18 +1214,8 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
 
   for (const file of files) {
     // Generate unique filename — add numeric suffix if conflict
-    let baseName = file.originalname.replace(/[<>:"/\\|?*]/g, '_');
-    let destPath = path.join(plantDir, baseName);
-    if (existsSync(destPath)) {
-      const ext = path.extname(baseName);
-      const stem = baseName.slice(0, -ext.length || undefined);
-      let counter = 1;
-      while (existsSync(destPath)) {
-        baseName = `${stem}_${counter}${ext}`;
-        destPath = path.join(plantDir, baseName);
-        counter++;
-      }
-    }
+    const baseName = resolveDestFilename(plantDir, file.originalname.replace(/[<>:"/\\|?*]/g, '_'));
+    const destPath = path.join(plantDir, baseName);
 
     // Write file to disk
     const { writeFileSync } = await import('fs');

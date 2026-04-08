@@ -4,20 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { ImagePreviewDialog } from './ImagePreviewDialog';
+import { imgUrlFromFilePath } from '@/lib/gallery-utils';
 import type { DedupGroup, DedupRecord, DedupReviewResponse } from '@/types/matches';
-
-function imgUrl(filePath: string): string {
-  const encode = (p: string) => p.split('/').map(s => encodeURIComponent(s)).join('/');
-
-  if (filePath.startsWith('content/pass_01/assigned/')) {
-    return `/images/${encode(filePath.replace('content/pass_01/assigned/', ''))}`;
-  }
-  if (filePath.startsWith('content/pass_01/unassigned/')) {
-    return `/unassigned-images/${encode(filePath.replace('content/pass_01/unassigned/', ''))}`;
-  }
-  // Anything else (content/parsed/, etc.) — use content-files
-  return `/content-files/${encode(filePath.replace(/^content\//, ''))}`;
-}
 
 function sourceImgUrl(origPath: string): string {
   const encode = (p: string) => p.split('/').map(s => encodeURIComponent(s)).join('/');
@@ -114,11 +102,11 @@ export function DedupReviewTab() {
                     <div key={rec.id} className="flex items-center gap-2 py-1 text-xs">
                       <div className="shrink-0 w-[60px] h-[45px] bg-muted rounded overflow-hidden">
                         <img
-                          src={imgUrl(rec.file_path)}
+                          src={imgUrlFromFilePath(rec.file_path)}
                           alt=""
                           className="w-full h-full object-cover cursor-zoom-in"
                           loading="lazy"
-                          onClick={() => setPreviewSrc(imgUrl(rec.file_path))}
+                          onClick={() => setPreviewSrc(imgUrlFromFilePath(rec.file_path))}
                         />
                       </div>
                       <div className="flex-1 min-w-0">

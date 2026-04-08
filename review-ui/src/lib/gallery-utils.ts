@@ -53,3 +53,22 @@ export function rotationClass(deg: number | undefined | null): string {
   if (d === 270) return '-rotate-90';
   return '';
 }
+
+/**
+ * Convert a content/pass_01/ file path to a usable image URL.
+ * Works for assigned/, unassigned/, and other content paths.
+ */
+export function imgUrlFromFilePath(filePath: string): string {
+  const encode = (p: string) => p.split('/').map(s => encodeURIComponent(s)).join('/');
+  if (filePath.startsWith('content/pass_01/assigned/'))
+    return `/images/${encode(filePath.replace('content/pass_01/assigned/', ''))}`;
+  if (filePath.startsWith('content/pass_01/unassigned/'))
+    return `/unassigned-images/${encode(filePath.replace('content/pass_01/unassigned/', ''))}`;
+  return `/content-files/${encode(filePath.replace(/^content\//, ''))}`;
+}
+
+export const CLASSIFY_GRID_CLASSES = {
+  lg: 'grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2',
+  md: 'grid grid-cols-5 sm:grid-cols-6 lg:grid-cols-8 gap-2',
+  sm: 'grid grid-cols-8 sm:grid-cols-10 lg:grid-cols-12 gap-2',
+} as const;

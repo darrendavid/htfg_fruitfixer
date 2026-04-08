@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useMultiSelect } from '@/hooks/useMultiSelect';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PlantAutocomplete, type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
 import { ImagePreviewDialog } from './ImagePreviewDialog';
 import { toast } from 'sonner';
+import { imgUrlFromFilePath } from '@/lib/gallery-utils';
+import { PlantGroupSidebar } from './PlantGroupSidebar';
 import type { LostImageItem, LostImageGroup, LostImageGroupsResponse, LostImageItemsResponse } from '@/types/matches';
 
 export function LostImageTab() {
@@ -16,9 +19,8 @@ export function LostImageTab() {
   const [totalRecovered, setTotalRecovered] = useState(0);
   const [previewSrc, setPreviewSrc] = useState<string | null>(null);
 
-  // Multi-select
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null);
+  const { selectedIds, setSelectedIds, handleClick: multiSelectClick, clearSelection } =
+    useMultiSelect<LostImageItem, number>(items, item => item.image_id);
 
   useEffect(() => {
     fetch('/api/matches/lost-images', { credentials: 'include' })
@@ -36,59 +38,32 @@ export function LostImageTab() {
     setSelectedPlant(plantId);
     setIsLoadingItems(true);
     setItems([]);
-    setSelectedIds(new Set());
-    setLastClickedIdx(null);
+    clearSelection();
 
     fetch(`/api/matches/lost-images?plant=${encodeURIComponent(plantId)}`, { credentials: 'include' })
       .then((r) => r.json())
       .then((data: LostImageItemsResponse) => setItems(data.items))
       .catch(() => {})
       .finally(() => setIsLoadingItems(false));
-  }, []);
+  }, [clearSelection]);
 
   function imgUrl(item: LostImageItem): string {
     if (!item.new_file_path) return '';
-    const encode = (p: string) => p.split('/').map(s => encodeURIComponent(s)).join('/');
-    if (item.new_file_path.startsWith('content/pass_01/assigned/'))
-      return `/images/${encode(item.new_file_path.replace('content/pass_01/assigned/', ''))}`;
-    if (item.new_file_path.startsWith('content/pass_01/unassigned/'))
-      return `/unassigned-images/${encode(item.new_file_path.replace('content/pass_01/unassigned/', ''))}`;
-    return `/content-files/${encode(item.new_file_path.replace(/^content\//, ''))}`;
+    return imgUrlFromFilePath(item.new_file_path);
   }
 
   const handleImageClick = useCallback((e: React.MouseEvent, item: LostImageItem, idx: number) => {
-    if (e.shiftKey && lastClickedIdx !== null) {
-      e.preventDefault();
-      const lo = Math.min(lastClickedIdx, idx);
-      const hi = Math.max(lastClickedIdx, idx);
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        for (let i = lo; i <= hi; i++) if (items[i]) next.add(items[i].image_id);
-        return next;
-      });
-    } else if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        if (next.has(item.image_id)) next.delete(item.image_id); else next.add(item.image_id);
-        return next;
-      });
-      setLastClickedIdx(idx);
-    } else {
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        if (next.has(item.image_id)) next.delete(item.image_id); else next.add(item.image_id);
-        return next;
-      });
-      setLastClickedIdx(idx);
+    const result = multiSelectClick(e, item, idx);
+    if (result === 'plain') {
+      setPreviewSrc(imgUrl(item));
     }
-  }, [lastClickedIdx, items]);
+  }, [multiSelectClick]);
 
   const removeSelected = useCallback(() => {
     setItems(prev => prev.filter(i => !selectedIds.has(i.image_id)));
     setTotalRecovered(prev => prev - selectedIds.size);
-    setSelectedIds(new Set());
-  }, [selectedIds]);
+    clearSelection();
+  }, [selectedIds, clearSelection]);
 
   const handleAssign = useCallback(async (plant: PlantSuggestion) => {
     if (selectedIds.size === 0) return;
@@ -137,38 +112,14 @@ export function LostImageTab() {
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-[250px] shrink-0 border-r flex flex-col overflow-hidden">
-        <div className="p-3 border-b">
-          <h2 className="text-sm font-semibold">Recovered Images</h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            {totalRecovered} images recovered from source
-          </p>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {isLoadingGroups ? (
-            <div className="p-3 space-y-1">
-              {[1, 2, 3].map((n) => <Skeleton key={n} className="h-7 w-full" />)}
-            </div>
-          ) : groups.length === 0 ? (
-            <p className="p-3 text-xs text-muted-foreground">No recovered images.</p>
-          ) : (
-            groups.map((g) => (
-              <button
-                key={g.plant_id}
-                className={`w-full text-left px-3 py-2 text-xs transition-colors border-b truncate ${
-                  selectedPlant === g.plant_id ? 'bg-accent font-medium' : 'hover:bg-muted'
-                }`}
-                onClick={() => loadPlant(g.plant_id)}
-                title={g.plant_name}
-              >
-                {g.plant_name}
-                <span className="float-right text-muted-foreground">{g.count}</span>
-              </button>
-            ))
-          )}
-        </div>
-      </aside>
+      <PlantGroupSidebar
+        title="Recovered Images"
+        subtitle={`${totalRecovered} images recovered from source`}
+        groups={groups.map(g => ({ id: g.plant_id, label: g.plant_name, count: g.count }))}
+        selectedId={selectedPlant}
+        isLoading={isLoadingGroups}
+        onSelect={loadPlant}
+      />
 
       {/* Content */}
       <main className="flex-1 overflow-y-auto p-4 pb-24">
@@ -263,7 +214,7 @@ export function LostImageTab() {
             <Button size="sm" variant="secondary" className="h-6 text-xs px-2" onClick={handleTriage}>Triage</Button>
             <Button size="sm" variant="secondary" className="h-6 text-xs px-2 bg-red-100 hover:bg-red-200 text-red-800" onClick={handleHide}>Hide</Button>
             <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-white hover:text-white hover:bg-blue-700 ml-auto"
-              onClick={() => setSelectedIds(new Set())}>Clear</Button>
+              onClick={clearSelection}>Clear</Button>
           </div>
         </div>
       )}
