@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { PlantCard } from '@/components/browse/PlantCard';
+import { PlantAutocomplete, type PlantSuggestion } from '@/components/browse/PlantAutocomplete';
 import { useThumbSize } from '@/hooks/use-thumb-size';
 import { ThumbSizeToggle } from '@/components/ui/thumb-size-toggle';
 import { ViewToggle, type ViewMode } from '@/components/ui/view-toggle';
@@ -68,6 +69,12 @@ export function PlantGridPage() {
   const [newBotanical, setNewBotanical] = useState('');
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  // Merge dialog
+  const [showMerge, setShowMerge] = useState(false);
+  const [mergePrimary, setMergePrimary] = useState<PlantSuggestion | null>(null);
+  const [mergeSources, setMergeSources] = useState<PlantSuggestion[]>([]);
+  const [isMerging, setIsMerging] = useState(false);
+  const [mergeSourceResetKey, setMergeSourceResetKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState(saved.current?.search ?? '');
   const [category, setCategory] = useState(saved.current?.category ?? 'all');
@@ -247,9 +254,14 @@ export function PlantGridPage() {
             <ViewToggle value={viewMode} onChange={setViewMode} />
             {viewMode === 'card' && <ThumbSizeToggle value={thumbSize} onChange={setThumbSize} />}
             {isAdmin && (
-              <Button size="sm" className="shrink-0" onClick={() => setShowNewPlant(true)}>
-                + New Plant
-              </Button>
+              <>
+                <Button size="sm" className="shrink-0" onClick={() => setShowNewPlant(true)}>
+                  + New Plant
+                </Button>
+                <Button size="sm" variant="outline" className="shrink-0" onClick={() => { setShowMerge(true); setMergePrimary(null); setMergeSources([]); }}>
+                  Merge Plants
+                </Button>
+              </>
             )}
           </div>
 
@@ -385,6 +397,94 @@ export function PlantGridPage() {
               </Button>
               <Button onClick={handleCreatePlant} disabled={isCreating || !newName.trim()}>
                 {isCreating ? 'Creating...' : `Create${newFiles.length > 0 ? ` + ${newFiles.length} photo${newFiles.length !== 1 ? 's' : ''}` : ''}`}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Merge Plants dialog ──────────────────────────────────────── */}
+        <Dialog open={showMerge} onOpenChange={(open) => { if (!open) setShowMerge(false); }}>
+          <DialogContent className="max-w-md">
+            <DialogTitle>Merge Plants</DialogTitle>
+            <p className="text-sm text-muted-foreground mb-4">
+              Select a primary plant to keep, then add one or more plants to merge into it.
+              Images, varieties, and metadata will be reassigned. Merged plants will be deleted.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Keep (Primary)</label>
+                {mergePrimary ? (
+                  <div className="flex items-center justify-between text-sm bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
+                    <span className="font-medium">{mergePrimary.Canonical_Name}</span>
+                    <button className="text-blue-400 hover:text-blue-600 ml-2 text-xs" onClick={() => setMergePrimary(null)}>change</button>
+                  </div>
+                ) : (
+                  <PlantAutocomplete
+                    onSelect={(p) => setMergePrimary(p)}
+                    placeholder="Search for primary plant..."
+                    label=""
+                  />
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">
+                  Merge into primary (will be deleted)
+                </label>
+                <PlantAutocomplete
+                  resetKey={mergeSourceResetKey}
+                  onSelect={(p) => {
+                    if (p.Id1 !== mergePrimary?.Id1 && !mergeSources.find(s => s.Id1 === p.Id1)) {
+                      setMergeSources(prev => [...prev, p]);
+                      setMergeSourceResetKey(k => k + 1);
+                    }
+                  }}
+                  excludePlantId={mergePrimary?.Id1}
+                  placeholder="Add a plant to merge..."
+                  label=""
+                />
+                {mergeSources.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {mergeSources.map(s => (
+                      <div key={s.Id1} className="flex items-center justify-between text-xs bg-red-50 border border-red-200 rounded px-2 py-1">
+                        <span className="font-medium">{s.Canonical_Name}</span>
+                        <button className="text-red-500 hover:text-red-700 ml-2" onClick={() => setMergeSources(prev => prev.filter(x => x.Id1 !== s.Id1))}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <Button variant="outline" onClick={() => setShowMerge(false)}>Cancel</Button>
+              <Button
+                variant="destructive"
+                disabled={!mergePrimary || mergeSources.length === 0 || isMerging}
+                onClick={async () => {
+                  if (!mergePrimary || mergeSources.length === 0) return;
+                  setIsMerging(true);
+                  try {
+                    const res = await fetch('/api/browse/plants/merge', {
+                      method: 'POST', credentials: 'include',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ primary_id: mergePrimary.Id1, merge_ids: mergeSources.map(s => s.Id1) }),
+                    });
+                    const result = await res.json();
+                    if (res.ok) {
+                      toast.success(`Merged ${result.merged_count} plant(s) into "${mergePrimary.Canonical_Name}"`);
+                      setShowMerge(false);
+                      // Reload plant list
+                      setAllPlants(prev => prev.filter(p => !mergeSources.find(s => s.Id1 === (p as any).Id1)));
+                    } else {
+                      toast.error(result.error || 'Merge failed');
+                    }
+                  } catch { toast.error('Merge failed'); }
+                  finally { setIsMerging(false); }
+                }}
+              >
+                {isMerging ? 'Merging...' : `Merge ${mergeSources.length} plant(s) into "${mergePrimary?.Canonical_Name ?? '...'}"`}
               </Button>
             </div>
           </DialogContent>

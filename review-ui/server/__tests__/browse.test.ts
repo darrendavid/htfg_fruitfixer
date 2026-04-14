@@ -946,7 +946,7 @@ describe('Browse API', () => {
         .set('Cookie', cookie);
 
       expect(mockNocodb.list).toHaveBeenCalledWith('Images', expect.objectContaining({
-        where: expect.stringContaining('Status,neq,hidden'),
+        where: expect.stringContaining('Status,eq,assigned'),
       }));
     });
   });
@@ -1076,6 +1076,8 @@ describe('Browse API', () => {
   describe('POST /api/browse/exclude-image/:id', () => {
     it('marks image as excluded', async () => {
       const cookie = await getAdminCookie();
+      // Route now fetches record first to get File_Path for file move
+      mockNocodb.get.mockResolvedValue({ Id: 42, File_Path: null, Plant_Id: 'mango', Status: 'assigned' });
       mockNocodb.update.mockResolvedValue(undefined);
 
       const res = await request(app)
@@ -1084,11 +1086,11 @@ describe('Browse API', () => {
         .send({});
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', {
+      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', expect.objectContaining({
         Excluded: true,
         Needs_Review: false,
         Status: 'hidden',
-      });
+      }));
     });
   });
 
@@ -1132,6 +1134,8 @@ describe('Browse API', () => {
   describe('POST /api/browse/reassign-image/:id', () => {
     it('reassigns image to a different plant', async () => {
       const cookie = await getAdminCookie();
+      // Route now fetches record first for file move
+      mockNocodb.get.mockResolvedValue({ Id: 42, File_Path: null, Plant_Id: 'mango', Status: 'assigned' });
       mockNocodb.update.mockResolvedValue(undefined);
 
       const res = await request(app)
@@ -1141,7 +1145,11 @@ describe('Browse API', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.plant_id).toBe('fig');
-      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', { Plant_Id: 'fig' });
+      expect(mockNocodb.update).toHaveBeenCalledWith('Images', '42', expect.objectContaining({
+        Plant_Id: 'fig',
+        Status: 'assigned',
+        Excluded: false,
+      }));
     });
 
     it('returns 400 when plant_id is missing', async () => {
@@ -1162,6 +1170,10 @@ describe('Browse API', () => {
   describe('POST /api/browse/bulk-reassign-images', () => {
     it('reassigns multiple images', async () => {
       const cookie = await getAdminCookie();
+      // Route now fetches each record individually for file moves
+      mockNocodb.get.mockImplementation((_table: string, id: string) =>
+        Promise.resolve({ Id: parseInt(id), File_Path: null, Plant_Id: 'mango', Status: 'assigned' })
+      );
       mockNocodb.bulkUpdate.mockResolvedValue(undefined);
 
       const res = await request(app)
@@ -1171,11 +1183,11 @@ describe('Browse API', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.count).toBe(3);
-      expect(mockNocodb.bulkUpdate).toHaveBeenCalledWith('Images', [
-        { Id: 1, Plant_Id: 'fig' },
-        { Id: 2, Plant_Id: 'fig' },
-        { Id: 3, Plant_Id: 'fig' },
-      ]);
+      expect(mockNocodb.bulkUpdate).toHaveBeenCalledWith('Images', expect.arrayContaining([
+        expect.objectContaining({ Id: 1, Plant_Id: 'fig', Status: 'assigned' }),
+        expect.objectContaining({ Id: 2, Plant_Id: 'fig', Status: 'assigned' }),
+        expect.objectContaining({ Id: 3, Plant_Id: 'fig', Status: 'assigned' }),
+      ]));
     });
 
     it('returns 400 when image_ids is empty', async () => {
@@ -1198,6 +1210,9 @@ describe('Browse API', () => {
 
     it('batches updates in groups of 100', async () => {
       const cookie = await getAdminCookie();
+      mockNocodb.get.mockImplementation((_table: string, id: string) =>
+        Promise.resolve({ Id: parseInt(id), File_Path: null, Plant_Id: 'mango', Status: 'assigned' })
+      );
       mockNocodb.bulkUpdate.mockResolvedValue(undefined);
 
       const imageIds = Array.from({ length: 150 }, (_, i) => i + 1);
@@ -1914,9 +1929,10 @@ describe('Browse API', () => {
         .set('Cookie', cookie);
       expect(res.status).toBe(200);
 
-      // The where clause should include the Excluded filter
+      // The default where clause should filter to assigned images only
       const whereArg = mockNocodb.list.mock.calls[0][1]?.where;
-      expect(whereArg).toContain('(Status,neq,hidden)');
+      expect(whereArg).toContain('Status,eq,assigned');
+      expect(whereArg).toContain('File_Path,isnot,null');
     });
 
     it('works with showDeleted=true and all=true combined', async () => {
@@ -2047,6 +2063,253 @@ describe('Browse API', () => {
         { Id: 1, Variety_Id: 5 },
         { Id: 2, Variety_Id: 5 },
       ]);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BinaryDocuments CRUD
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('BinaryDocuments', () => {
+    const sampleDoc = {
+      Id: 10,
+      Title: 'test.pdf',
+      File_Path: 'content/pass_02/documents/triage/test.pdf',
+      File_Name: 'test.pdf',
+      File_Type: 'pdf',
+      Size_Bytes: 12345,
+      Plant_Id: null,
+      Status: 'triage',
+      Excluded: false,
+      Description: null,
+    };
+
+    // ── GET /browse/binary-documents ────────────────────────────────────────
+
+    it('GET /binary-documents returns 401 without auth', async () => {
+      const res = await request(app).get('/api/browse/binary-documents');
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /binary-documents lists docs with no filter', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.list.mockResolvedValue({ list: [sampleDoc], pageInfo: { totalRows: 1, isLastPage: true } });
+
+      const res = await request(app)
+        .get('/api/browse/binary-documents')
+        .set('Cookie', cookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.list).toHaveLength(1);
+      expect(mockNocodb.list).toHaveBeenCalledWith('BinaryDocuments', expect.objectContaining({ limit: 50, offset: 0 }));
+    });
+
+    it('GET /binary-documents filters by status', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.list.mockResolvedValue({ list: [], pageInfo: { totalRows: 0, isLastPage: true } });
+
+      await request(app)
+        .get('/api/browse/binary-documents?status=triage')
+        .set('Cookie', cookie);
+
+      expect(mockNocodb.list).toHaveBeenCalledWith('BinaryDocuments', expect.objectContaining({
+        where: expect.stringContaining('triage'),
+      }));
+    });
+
+    it('GET /binary-documents filters by plant_id', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.list.mockResolvedValue({ list: [], pageInfo: { totalRows: 0, isLastPage: true } });
+
+      await request(app)
+        .get('/api/browse/binary-documents?plant_id=mango')
+        .set('Cookie', cookie);
+
+      expect(mockNocodb.list).toHaveBeenCalledWith('BinaryDocuments', expect.objectContaining({
+        where: expect.stringContaining('mango'),
+      }));
+    });
+
+    it('GET /binary-documents combines status and plant_id filters', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.list.mockResolvedValue({ list: [], pageInfo: { totalRows: 0, isLastPage: true } });
+
+      await request(app)
+        .get('/api/browse/binary-documents?status=assigned&plant_id=fig')
+        .set('Cookie', cookie);
+
+      const call = mockNocodb.list.mock.calls[0];
+      expect(call[1].where).toContain('assigned');
+      expect(call[1].where).toContain('fig');
+    });
+
+    // ── PATCH /browse/binary-documents/:id ──────────────────────────────────
+
+    it('PATCH /binary-documents/:id returns 401 without auth', async () => {
+      const res = await request(app)
+        .patch('/api/browse/binary-documents/10')
+        .send({ Title: 'updated' });
+      expect(res.status).toBe(401);
+    });
+
+    it('PATCH /binary-documents/:id updates and returns record', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.update.mockResolvedValue(undefined);
+      mockNocodb.get.mockResolvedValue({ ...sampleDoc, Title: 'updated.pdf' });
+
+      const res = await request(app)
+        .patch('/api/browse/binary-documents/10')
+        .set('Cookie', cookie)
+        .send({ Title: 'updated.pdf' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.Title).toBe('updated.pdf');
+      expect(mockNocodb.update).toHaveBeenCalledWith('BinaryDocuments', '10', { Title: 'updated.pdf' });
+    });
+
+    // ── DELETE /browse/binary-documents/:id ─────────────────────────────────
+
+    it('DELETE /binary-documents/:id returns 401 without auth', async () => {
+      const res = await request(app).delete('/api/browse/binary-documents/10');
+      expect(res.status).toBe(401);
+    });
+
+    it('DELETE /binary-documents/:id deletes record and returns success', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.delete.mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .delete('/api/browse/binary-documents/10')
+        .set('Cookie', cookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(mockNocodb.delete).toHaveBeenCalledWith('BinaryDocuments', '10');
+    });
+
+    // ── POST /browse/binary-documents/:id/assign ────────────────────────────
+
+    it('POST /binary-documents/:id/assign returns 401 without auth', async () => {
+      const res = await request(app)
+        .post('/api/browse/binary-documents/10/assign')
+        .send({ plant_id: 'mango' });
+      expect(res.status).toBe(401);
+    });
+
+    it('POST /binary-documents/:id/assign returns 400 when plant_id missing', async () => {
+      const cookie = await getAdminCookie();
+
+      const res = await request(app)
+        .post('/api/browse/binary-documents/10/assign')
+        .set('Cookie', cookie)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/plant_id/i);
+    });
+
+    it('POST /binary-documents/:id/assign returns 404 when doc not found', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.get.mockResolvedValue(null);
+
+      const res = await request(app)
+        .post('/api/browse/binary-documents/99/assign')
+        .set('Cookie', cookie)
+        .send({ plant_id: 'mango' });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('POST /binary-documents/:id/assign assigns plant and updates record (no file)', async () => {
+      const cookie = await getAdminCookie();
+      // Doc has no file on disk (File_Path is null)
+      mockNocodb.get.mockResolvedValue({ ...sampleDoc, File_Path: null });
+      mockNocodb.update.mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post('/api/browse/binary-documents/10/assign')
+        .set('Cookie', cookie)
+        .send({ plant_id: 'mango' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.plant_id).toBe('mango');
+      expect(mockNocodb.update).toHaveBeenCalledWith('BinaryDocuments', '10', expect.objectContaining({
+        Plant_Id: 'mango',
+        Status: 'assigned',
+        Excluded: false,
+      }));
+    });
+
+    // ── POST /browse/binary-documents/:id/hide ──────────────────────────────
+
+    it('POST /binary-documents/:id/hide returns 401 without auth', async () => {
+      const res = await request(app).post('/api/browse/binary-documents/10/hide');
+      expect(res.status).toBe(401);
+    });
+
+    it('POST /binary-documents/:id/hide returns 404 when doc not found', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.get.mockResolvedValue(null);
+
+      const res = await request(app)
+        .post('/api/browse/binary-documents/99/hide')
+        .set('Cookie', cookie);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('POST /binary-documents/:id/hide sets Status=hidden Excluded=true (no file)', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.get.mockResolvedValue({ ...sampleDoc, File_Path: null });
+      mockNocodb.update.mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post('/api/browse/binary-documents/10/hide')
+        .set('Cookie', cookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(mockNocodb.update).toHaveBeenCalledWith('BinaryDocuments', '10', expect.objectContaining({
+        Status: 'hidden',
+        Excluded: true,
+      }));
+    });
+
+    // ── POST /browse/binary-documents/:id/triage ────────────────────────────
+
+    it('POST /binary-documents/:id/triage returns 401 without auth', async () => {
+      const res = await request(app).post('/api/browse/binary-documents/10/triage');
+      expect(res.status).toBe(401);
+    });
+
+    it('POST /binary-documents/:id/triage returns 404 when doc not found', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.get.mockResolvedValue(null);
+
+      const res = await request(app)
+        .post('/api/browse/binary-documents/99/triage')
+        .set('Cookie', cookie);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('POST /binary-documents/:id/triage clears Plant_Id and sets Status=triage (no file)', async () => {
+      const cookie = await getAdminCookie();
+      mockNocodb.get.mockResolvedValue({ ...sampleDoc, Plant_Id: 'mango', File_Path: null });
+      mockNocodb.update.mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post('/api/browse/binary-documents/10/triage')
+        .set('Cookie', cookie);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(mockNocodb.update).toHaveBeenCalledWith('BinaryDocuments', '10', expect.objectContaining({
+        Plant_Id: null,
+        Status: 'triage',
+        Excluded: false,
+      }));
     });
   });
 });

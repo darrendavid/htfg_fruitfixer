@@ -105,7 +105,7 @@ const GalleryThumbnail = memo(function GalleryThumbnail({
 
   const imgStatus = (img as any).Status || 'assigned';
   const statusOverlay = imgStatus === 'hidden' ? { bg: 'bg-red-500/40', label: 'HIDDEN', labelBg: 'bg-red-600/80' }
-    : imgStatus === 'unassigned' ? { bg: 'bg-amber-500/30', label: 'UNASSIGNED', labelBg: 'bg-amber-600/80' }
+    : imgStatus === 'triage' ? { bg: 'bg-amber-500/30', label: 'TRIAGE', labelBg: 'bg-amber-600/80' }
     : imgStatus === 'unclassified' ? { bg: 'bg-gray-500/30', label: 'UNCLASSIFIED', labelBg: 'bg-gray-600/80' }
     : null;
 
@@ -218,6 +218,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   const lightboxImgRef = useRef<HTMLImageElement>(null);
   const plantInputRef = useRef<HTMLInputElement>(null);
   const varietyInputRef = useRef<HTMLInputElement>(null);
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (currentHeroPath) setHeroPath(currentHeroPath);
@@ -246,6 +247,11 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   }, [viewMode, isLoading]);
 
   const fetchImages = useCallback(async () => {
+    // Cancel any in-flight request before starting a new one
+    fetchAbortRef.current?.abort();
+    const controller = new AbortController();
+    fetchAbortRef.current = controller;
+
     setIsLoading(true);
     try {
       const useAll = viewMode !== 'grid';
@@ -253,7 +259,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
       const url = useAll
         ? `/api/browse/${plantId}/images?all=true${deletedParam}`
         : `/api/browse/${plantId}/images?page=${page}&limit=${PAGE_SIZE}${deletedParam}`;
-      const res = await fetch(url, { credentials: 'include' });
+      const res = await fetch(url, { credentials: 'include', signal: controller.signal });
       if (res.ok) {
         const data = await res.json();
         setImages(data.list ?? []);
@@ -261,10 +267,10 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         setTotalRows(total);
         setTotalPages(Math.max(1, Math.ceil(total / PAGE_SIZE)));
       }
-    } catch {
-      // Network error
+    } catch (err) {
+      if ((err as DOMException)?.name !== 'AbortError') console.error('[GalleryTab] fetch error:', err);
     } finally {
-      setIsLoading(false);
+      if (!controller.signal.aborted) setIsLoading(false);
     }
   }, [plantId, page, viewMode, showDeleted]);
 
@@ -285,22 +291,21 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   };
 
   const goNext = useCallback(() => {
-    if (lightboxIndex === null) return;
-    if (lightboxIndex < displayImagesLenRef.current - 1) {
-      setLightboxIndex(lightboxIndex + 1);
-      setImageDimensions(null);
-    } else {
-      closeLightbox();
-    }
-  }, [lightboxIndex]);
+    setLightboxIndex((prev) => {
+      if (prev === null) return null;
+      if (prev < displayImagesLenRef.current - 1) return prev + 1;
+      return null; // past last image — close lightbox
+    });
+    setImageDimensions(null);
+  }, []);
 
   const goPrev = useCallback(() => {
-    if (lightboxIndex === null) return;
-    if (lightboxIndex > 0) {
-      setLightboxIndex(lightboxIndex - 1);
-      setImageDimensions(null);
-    }
-  }, [lightboxIndex]);
+    setLightboxIndex((prev) => {
+      if (prev === null || prev <= 0) return prev;
+      return prev - 1;
+    });
+    setImageDimensions(null);
+  }, []);
 
   const handleImageLoad = () => {
     const el = lightboxImgRef.current;
@@ -491,6 +496,27 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     return result;
   }, [images, filenameFilter, sortOrder]);
 
+  // O(n²) union-find — computed once when images change, NOT on filter/sort changes
+  const similarityClusterMap = useMemo((): Map<number, number> | null => {
+    const hasHashes = images.some((i: any) => i.Perceptual_Hash);
+    if (!hasHashes) return null;
+    const parent: Record<number, number> = {};
+    const find = (x: number): number => { if (parent[x] !== x) parent[x] = find(parent[x]); return parent[x]; };
+    const union = (a: number, b: number) => { parent[find(a)] = find(b); };
+    images.forEach((img) => { parent[img.Id] = img.Id; });
+    const hashed = images.filter((i: any) => i.Perceptual_Hash);
+    for (let i = 0; i < hashed.length; i++) {
+      for (let j = i + 1; j < hashed.length; j++) {
+        const h1 = (hashed[i] as any).Perceptual_Hash as string;
+        const h2 = (hashed[j] as any).Perceptual_Hash as string;
+        if (h1 && h2 && hammingDistance(h1, h2) <= 8) union(hashed[i].Id, hashed[j].Id);
+      }
+    }
+    const map = new Map<number, number>();
+    images.forEach((img) => map.set(img.Id, find(img.Id)));
+    return map;
+  }, [images]);
+
   const groupedImages = useMemo(() => {
     if (viewMode === 'grid') return [];
 
@@ -537,32 +563,14 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     }
 
     if (viewMode === 'similarity') {
-      // Group by perceptual hash similarity (Hamming distance ≤ 8)
-      // Fall back to filename stem if no hashes available
-      const hasHashes = images.some((i: any) => i.Perceptual_Hash);
+      // Use pre-computed cluster map (keyed on images only, not filteredImages)
+      // to avoid re-running the O(n²) union-find when only filter/sort changes
+      const imageIndexMap = new Map(images.map((img, i) => [img, i]));
 
-      if (hasHashes) {
-        // Union-Find for grouping similar hashes
-        const parent: Record<number, number> = {};
-        const find = (x: number): number => { if (parent[x] !== x) parent[x] = find(parent[x]); return parent[x]; };
-        const union = (a: number, b: number) => { parent[find(a)] = find(b); };
-        images.forEach((img) => { parent[img.Id] = img.Id; });
-
-        // Compare all pairs with hashes — O(n²) but fine for <1000 images
-        const hashed = images.filter((i: any) => i.Perceptual_Hash);
-        for (let i = 0; i < hashed.length; i++) {
-          for (let j = i + 1; j < hashed.length; j++) {
-            const h1 = (hashed[i] as any).Perceptual_Hash as string;
-            const h2 = (hashed[j] as any).Perceptual_Hash as string;
-            if (h1 && h2 && hammingDistance(h1, h2) <= 8) {
-              union(hashed[i].Id, hashed[j].Id);
-            }
-          }
-        }
-
+      if (similarityClusterMap) {
         const clusters: Record<number, BrowseImage[]> = {};
         for (const img of filteredImages) {
-          const root = find(img.Id);
+          const root = similarityClusterMap.get(img.Id) ?? img.Id;
           if (!clusters[root]) clusters[root] = [];
           clusters[root].push(img);
         }
@@ -573,16 +581,11 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
           const label = imgs[0].Caption || imgs[0].File_Path.split('/').pop()?.replace(/\.\w+$/, '') || 'similar';
           result.push([label + (imgs.length >= 2 ? ` (${imgs.length})` : ''), imgs]);
         }
-        // Sort by first image's position in the flat array for visual stability
-        result.sort((a, b) => {
-          const aIdx = images.indexOf(a[1][0]);
-          const bIdx = images.indexOf(b[1][0]);
-          return aIdx - bIdx;
-        });
+        result.sort((a, b) => (imageIndexMap.get(a[1][0]) ?? 0) - (imageIndexMap.get(b[1][0]) ?? 0));
         return result;
       }
 
-      // Fallback: group by filename stem
+      // Fallback: group by filename stem (no hashes available)
       const groups: Record<string, BrowseImage[]> = {};
       for (const img of filteredImages) {
         const filename = img.File_Path.split('/').pop() || '';
@@ -597,17 +600,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
         if (hideSingletonSimGroups && imgs.length < 2) continue;
         result.push([key + (imgs.length >= 2 ? ` (${imgs.length})` : ''), imgs]);
       }
-      // Sort by first image's position for visual stability
-      result.sort((a, b) => {
-        const aIdx = images.indexOf(a[1][0]);
-        const bIdx = images.indexOf(b[1][0]);
-        return aIdx - bIdx;
-      });
+      result.sort((a, b) => (imageIndexMap.get(a[1][0]) ?? 0) - (imageIndexMap.get(b[1][0]) ?? 0));
       return result;
     }
 
     return [];
-  }, [filteredImages, viewMode, hideSingletonSimGroups]);
+  }, [filteredImages, viewMode, hideSingletonSimGroups, similarityClusterMap]);
 
   // Display order: in grouped modes, flatten groupedImages to get visual order
   const displayImages = useMemo(() => {
@@ -631,32 +629,31 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
   // Selection handlers
   const handleImageClick = useCallback((e: React.MouseEvent, imgId: number, flatIdx: number) => {
     if (e.shiftKey && lastClickedIdx !== null) {
-      // Range select — use displayImages for correct visual order
+      // Range select — use displayImagesRef to avoid capturing stale displayImages
       const start = Math.min(lastClickedIdx, flatIdx);
       const end = Math.max(lastClickedIdx, flatIdx);
-      const rangeIds = displayImages.slice(start, end + 1).map((i) => i.Id);
+      const rangeIds = displayImagesRef.current.slice(start, end + 1).map((i) => i.Id);
       setSelectedIds((prev) => {
         const next = new Set(prev);
         rangeIds.forEach((id) => next.add(id));
         return next;
       });
     } else if (e.ctrlKey || e.metaKey) {
-      // Toggle individual — only update lastClickedIdx on select, not deselect
-      const isDeselect = selectedIds.has(imgId);
+      // Toggle individual — read current selection via functional updater to avoid stale closure
       setSelectedIds((prev) => {
         const next = new Set(prev);
-        if (next.has(imgId)) next.delete(imgId);
-        else next.add(imgId);
+        const isDeselect = next.has(imgId);
+        if (isDeselect) next.delete(imgId);
+        else { next.add(imgId); setLastClickedIdx(flatIdx); }
         return next;
       });
-      if (!isDeselect) setLastClickedIdx(flatIdx);
     } else {
       // Normal click — open lightbox (no selection)
       openLightbox(flatIdx);
       return;
     }
     // Don't open lightbox on shift/ctrl clicks
-  }, [lastClickedIdx, selectedIds, displayImages, openLightbox]);
+  }, [lastClickedIdx, openLightbox]);
 
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
@@ -685,11 +682,11 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
     const ids = [...selectedIds];
     if (ids.length === 0) return;
     try {
-      const res = await fetch('/api/browse/bulk-set-status', {
+      const res = await fetch('/api/browse/bulk-unassign-images', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ image_ids: ids, status: 'unassigned' }),
+        body: JSON.stringify({ image_ids: ids }),
       });
       if (res.ok) {
         setImages((prev) => prev.filter((i) => !selectedIds.has(i.Id)));
@@ -1127,12 +1124,12 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                   className="object-contain rounded"
                   style={{
                     maxWidth: '100%',
-                    maxHeight: '100%',
+                    maxHeight: '50dvh',
                     ...rotationStyle((lightboxImage as any).Rotation),
-                    // For 90/270 rotation, scale down so the rotated image fits the container
+                    // For 90/270 rotation, swap viewport dimension limits
                     ...(((((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 90 ||
                          (((lightboxImage as any).Rotation ?? 0) % 360 + 360) % 360 === 270)
-                      ? { maxWidth: '60vh', maxHeight: '80vw' }
+                      ? { maxWidth: '50dvh', maxHeight: '80vw' }
                       : {}),
                   }}
                   onLoad={handleImageLoad}
@@ -1313,7 +1310,7 @@ export function GalleryTab({ plantId, currentHeroPath, onHeroChanged }: GalleryT
                     >
                       {isHero(lightboxImage) ? '★ Hero' : 'Hero (h)'}
                     </Button>
-                    {(lightboxImage as any).Status === 'hidden' || (lightboxImage as any).Status === 'unassigned' ? (
+                    {(lightboxImage as any).Status === 'hidden' || (lightboxImage as any).Status === 'triage' ? (
                       <Button
                         variant="outline"
                         size="sm"

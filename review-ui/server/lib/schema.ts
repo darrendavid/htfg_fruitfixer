@@ -137,4 +137,20 @@ export const SCHEMA_SQL = `
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  -- Recovered images dismissed from the Recovered tab (image_id from lost_image_recovery.json)
+  CREATE TABLE IF NOT EXISTS recovered_dismissed (
+    image_id   INTEGER PRIMARY KEY
+  );
+
+  -- Attachment OCR field decisions (accepted or ignored per field per image)
+  CREATE TABLE IF NOT EXISTS attachment_ocr_decisions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path  TEXT NOT NULL,
+    field_key  TEXT NOT NULL,  -- e.g. "description", "scientific_name", "variety:Blue Java", "nutrition:Protein"
+    action     TEXT NOT NULL,  -- "accepted" | "ignored"
+    decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(file_path, field_key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_ocr_decisions_file ON attachment_ocr_decisions(file_path);
+
 `;

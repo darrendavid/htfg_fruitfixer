@@ -29,6 +29,7 @@ export const config = {
     10,
   ),
   CONTENT_ROOT: process.env.CONTENT_ROOT || '',
+  PASS02_ROOT: process.env.PASS02_ROOT || '',
   NOCODB_URL: process.env.NOCODB_URL || 'https://nocodb.djjd.us',
   NOCODB_API_KEY: requireEnv('NOCODB_API_KEY'),
   IMAGES_AUTO_ATTRIBUTION: process.env.IMAGES_AUTO_ATTRIBUTION || '',

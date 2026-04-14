@@ -12,19 +12,23 @@ export function hammingDistance(h1: string, h2: string): number {
 
 /**
  * Strip all known path prefixes to get the path relative to IMAGE_MOUNT_PATH.
- * Input could be: content/pass_01/assigned/slug/images/file.jpg
+ * Input could be: content/pass_02/plants/slug/images/file.jpg
+ *                 content/pass_01/assigned/slug/images/file.jpg
  *                 content/parsed/plants/slug/images/file.jpg
  *                 pass_01/assigned/slug/images/file.jpg
  *                 assigned/slug/images/file.jpg
  *                 plants/slug/images/file.jpg
  *                 slug/images/file.jpg
  * Output should be: slug/images/file.jpg
+ * For triage/ignored paths (no plant slug): returns as-is after content/ strip.
  */
 export function toRelativeImagePath(filePath: string): string {
   return filePath
+    .replace(/^content\/pass_02\/plants\//, '')  // pass_02 assigned/hidden plant images
     .replace(/^content\/pass_01\/assigned\//, '')
     .replace(/^content\/parsed\//, '')
     .replace(/^content\//, '')
+    .replace(/^pass_02\/plants\//, '')
     .replace(/^pass_01\/assigned\//, '')
     .replace(/^assigned\//, '')
     .replace(/^plants\//, '')
@@ -55,11 +59,18 @@ export function rotationClass(deg: number | undefined | null): string {
 }
 
 /**
- * Convert a content/pass_01/ file path to a usable image URL.
- * Works for assigned/, unassigned/, and other content paths.
+ * Convert a file path to a usable image URL.
+ * Handles pass_02 and legacy pass_01 paths.
  */
 export function imgUrlFromFilePath(filePath: string): string {
   const encode = (p: string) => p.split('/').map(s => encodeURIComponent(s)).join('/');
+  // pass_02 assigned/hidden plant images → served via IMAGE_MOUNT_PATH (/images/)
+  if (filePath.startsWith('content/pass_02/plants/'))
+    return `/images/${encode(filePath.replace('content/pass_02/plants/', ''))}`;
+  // pass_02 triage/ignored/documents → served via /content-files/
+  if (filePath.startsWith('content/pass_02/'))
+    return `/content-files/${encode(filePath.replace(/^content\//, ''))}`;
+  // Legacy pass_01 paths
   if (filePath.startsWith('content/pass_01/assigned/'))
     return `/images/${encode(filePath.replace('content/pass_01/assigned/', ''))}`;
   if (filePath.startsWith('content/pass_01/unassigned/'))

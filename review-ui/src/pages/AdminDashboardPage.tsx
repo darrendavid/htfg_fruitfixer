@@ -35,6 +35,8 @@ export function AdminDashboardPage() {
   const [importStarting, setImportStarting] = useState(false);
   const [repairResult, setRepairResult] = useState<{ ok: boolean; fixed?: number; removed?: number; unfixable?: number; alreadyOk?: number; error?: string } | null>(null);
   const [repairRunning, setRepairRunning] = useState(false);
+  const [backupRunning, setBackupRunning] = useState(false);
+  const [backupResult, setBackupResult] = useState<{ ok: boolean; summary?: Record<string, number>; filename?: string; error?: string } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function loadData() {
@@ -91,6 +93,38 @@ export function AdminDashboardPage() {
     }
   }
 
+  async function runBackup() {
+    setBackupRunning(true);
+    setBackupResult(null);
+    try {
+      const res = await fetch('/api/admin/backup', { method: 'POST', credentials: 'include' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Backup failed' }));
+        setBackupResult({ ok: false, error: err.error || 'Backup failed' });
+        return;
+      }
+      const contentDisposition = res.headers.get('Content-Disposition') ?? '';
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] ?? 'nocodb-backup.json';
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      // Parse summary from blob
+      const text = await blob.text().catch(() => '{}');
+      let summary: Record<string, number> | undefined;
+      try { summary = JSON.parse(text).summary; } catch {}
+      setBackupResult({ ok: true, summary, filename });
+    } catch (err: any) {
+      setBackupResult({ ok: false, error: err.message || 'Backup failed' });
+    } finally {
+      setBackupRunning(false);
+    }
+  }
+
   async function startImport(skipThumbnails: boolean) {
     setImportStarting(true);
     try {
@@ -132,13 +166,28 @@ export function AdminDashboardPage() {
           </Button>
           <Button
             variant="outline"
-            className="w-full mb-4"
-            onClick={() => {
-              window.open('/api/admin/export', '_blank');
-            }}
+            className="w-full mb-2"
+            onClick={runBackup}
+            disabled={backupRunning}
           >
-            Export Database (JSON)
+            {backupRunning ? 'Backing up NocoDB…' : 'Backup NocoDB'}
           </Button>
+          {backupResult && (
+            <div className={`text-xs rounded px-3 py-2 mb-2 ${backupResult.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>
+              {backupResult.ok ? (
+                <>
+                  <span className="font-medium">Backup saved:</span> {backupResult.filename}
+                  {backupResult.summary && (
+                    <span className="ml-2 text-green-600">
+                      ({Object.values(backupResult.summary).filter(v => typeof v === 'number').reduce((a, b) => a + b, 0).toLocaleString()} records)
+                    </span>
+                  )}
+                </>
+              ) : (
+                backupResult.error
+              )}
+            </div>
+          )}
           <Tabs defaultValue="overview">
             <TabsList className="w-full mb-4">
               <TabsTrigger value="overview" className="flex-1 text-xs">Overview</TabsTrigger>

@@ -3,12 +3,15 @@ import { TriageTab } from '@/components/matches/TriageTab';
 import { VarietyMatchTab } from '@/components/matches/VarietyMatchTab';
 import { LostImageTab } from '@/components/matches/LostImageTab';
 import { DedupReviewTab } from '@/components/matches/DedupReviewTab';
+import { AttachmentOcrTab } from '@/components/matches/AttachmentOcrTab';
 import { UnmatchedTab } from '@/components/matches/UnmatchedTab';
 import { UnassignedTab } from '@/components/matches/UnassignedTab';
 import { HiddenTab } from '@/components/matches/HiddenTab';
+import { DocumentsTab } from '@/components/matches/DocumentsTab';
+import { SwapCandidatesTab } from '@/components/matches/SwapCandidatesTab';
 import { BottomNav } from '@/components/layout/BottomNav';
 
-type ClassifyTab = 'triage' | 'varieties' | 'unmatched' | 'unassigned' | 'hidden' | 'lost' | 'dedup';
+type ClassifyTab = 'triage' | 'varieties' | 'unmatched' | 'unassigned' | 'hidden' | 'lost' | 'dedup' | 'attachment-ocr' | 'documents' | 'swaps';
 
 export function MatchReviewPage() {
   const [activeTab, setActiveTab] = useState<ClassifyTab>('triage');
@@ -33,7 +36,7 @@ export function MatchReviewPage() {
         >
           Variety Matches
         </button>
-        {(['unmatched', 'unassigned', 'hidden', 'lost', 'dedup'] as ClassifyTab[]).map(tab => (
+        {(['unmatched', 'unassigned', 'hidden', 'lost', 'dedup', 'attachment-ocr', 'documents', 'swaps'] as ClassifyTab[]).map(tab => (
           <button
             key={tab}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -41,7 +44,7 @@ export function MatchReviewPage() {
             }`}
             onClick={() => setActiveTab(tab)}
           >
-            {{ unmatched: 'No Variety', unassigned: 'No Plant', hidden: 'Hidden', lost: 'Recovered', dedup: 'Dedup Review' }[tab]}
+            {{ unmatched: 'No Variety', unassigned: 'No Plant', hidden: 'Hidden', lost: 'Recovered', dedup: 'Dedup Review', 'attachment-ocr': 'Attachment OCR', documents: 'Documents', swaps: 'Res Swaps' }[tab]}
           </button>
         ))}
       </div>
@@ -54,7 +57,10 @@ export function MatchReviewPage() {
          activeTab === 'unassigned' ? <UnassignedTab /> :
          activeTab === 'hidden' ? <HiddenTab /> :
          activeTab === 'lost' ? <LostImageTab /> :
-         <DedupReviewTab />}
+         activeTab === 'dedup' ? <DedupReviewTab /> :
+         activeTab === 'documents' ? <DocumentsTab /> :
+         activeTab === 'swaps' ? <SwapCandidatesTab /> :
+         <AttachmentOcrTab />}
       </div>
       <BottomNav />
     </div>

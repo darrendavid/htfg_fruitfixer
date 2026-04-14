@@ -6,6 +6,8 @@ import { nocodb } from '../lib/nocodb.js';
 import { config } from '../config.js';
 import { asyncHandler } from '../lib/route-helpers.js';
 import { moveFile, resolveDestFilename, walkFiles, IMG_EXTS, DOC_EXTS, type WalkEntry } from '../lib/file-ops.js';
+import { fetchAllPages } from '../lib/nocodb-helpers.js';
+import db from '../lib/db.js';
 
 const router = Router();
 
@@ -805,12 +807,11 @@ router.get('/unmatched-images', asyncHandler(async (req, res) => {
   const plantParam = req.query.plant as string | undefined;
 
   if (plantParam !== undefined) {
-    const result = await nocodb.list('Images', {
+    const items = await fetchAllPages('Images', {
       where: `(Plant_Id,eq,${plantParam})~and(Variety_Id,blank)~and(Excluded,neq,true)~and(Status,neq,hidden)~and(Status,neq,triage)`,
       fields: ['Id', 'File_Path', 'Plant_Id', 'Caption', 'Original_Filepath', 'Source_Directory', 'Size_Bytes'],
-      limit: 200,
     });
-    res.json({ plant_id: plantParam, total: result.list.length, items: result.list });
+    res.json({ plant_id: plantParam, total: items.length, items });
     return;
   }
 
@@ -873,12 +874,11 @@ router.get('/hidden-images', asyncHandler(async (req, res) => {
     const where = plantParam === '__none__'
       ? '(Status,eq,hidden)~and(Plant_Id,blank)'
       : `(Status,eq,hidden)~and(Plant_Id,eq,${plantParam})`;
-    const result = await nocodb.list('Images', {
+    const items = await fetchAllPages('Images', {
       where,
       fields: ['Id', 'File_Path', 'Plant_Id', 'Caption', 'Original_Filepath', 'Size_Bytes', 'Variety_Id'],
-      limit: 200,
     });
-    res.json({ plant_id: plantParam, total: result.pageInfo?.totalRows ?? result.list.length, items: result.list });
+    res.json({ plant_id: plantParam, total: items.length, items });
     return;
   }
 
@@ -974,7 +974,36 @@ router.get('/dedup-review', asyncHandler(async (req, res) => {
   const offset = parseInt(req.query.offset as string) || 0;
   const limit = parseInt(req.query.limit as string) || 50;
   const page = allGroups.slice(offset, offset + limit);
-  res.json({ total: allGroups.length, offset, limit, groups: page });
+
+  // Enrich kept records with live NocoDB data, matched by file_path (stable across re-inserts).
+  // Fetch by plant_id (a handful per page) then do in-memory file_path lookup.
+  const plantIds = new Set<string>();
+  for (const g of page) for (const k of (g.kept || [])) if (k.plant_id) plantIds.add(k.plant_id);
+
+  const liveByPath = new Map<string, { Id: number; Status: string; Plant_Id: string | null; Variety_Id: number | null }>();
+  for (const plantId of plantIds) {
+    try {
+      const result = await nocodb.list('Images', {
+        where: `(Plant_Id,eq,${plantId})`,
+        fields: ['Id', 'File_Path', 'Status', 'Plant_Id', 'Variety_Id'],
+        limit: 200,
+      });
+      for (const r of result.list) {
+        if (r.File_Path) liveByPath.set(r.File_Path, { Id: r.Id, Status: r.Status, Plant_Id: r.Plant_Id ?? null, Variety_Id: r.Variety_Id ?? null });
+      }
+    } catch { /* fall back to JSON data */ }
+  }
+
+  const enrichedPage = page.map((g: any) => ({
+    ...g,
+    kept: (g.kept || []).map((k: any) => {
+      const live = liveByPath.get(k.file_path);
+      if (!live) return k;
+      return { ...k, id: live.Id, status: live.Status ?? k.status, plant_id: live.Plant_Id ?? k.plant_id, variety_id: live.Variety_Id ?? k.variety_id };
+    }),
+  }));
+
+  res.json({ total: allGroups.length, offset, limit, groups: enrichedPage });
 }));
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1056,11 +1085,44 @@ router.get('/lost-images', asyncHandler(async (req, res) => {
     res.json({ total: 0, groups: [] });
     return;
   }
-  const allItems: any[] = (parsed.lost_images || []).filter((i: any) => i.status === 'recovered');
+  const rawItems: any[] = (parsed.lost_images || []).filter((i: any) => i.status === 'recovered');
+
+  // Filter out images the user has explicitly dismissed from this tab (tracked in SQLite)
+  const dismissedRows = db.prepare('SELECT image_id FROM recovered_dismissed').all() as { image_id: number }[];
+  const dismissedSet = new Set(dismissedRows.map(r => r.image_id));
+  const allItems = rawItems.filter((i: any) => !dismissedSet.has(i.image_id));
+
   const plantParam = req.query.plant as string | undefined;
 
   if (plantParam !== undefined) {
-    const items = allItems.filter((i: any) => i.plant_id === plantParam);
+    const jsonItems = allItems.filter((i: any) => i.plant_id === plantParam);
+
+    // Enrich with live NocoDB data — JSON's new_file_path may be stale after slug remaps
+    const ids = jsonItems.map((i: any) => i.image_id as number).filter(Boolean);
+    const liveMap = new Map<number, any>();
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100);
+      try {
+        const result = await nocodb.list('Images', {
+          where: `(Id,in,${batch.join(',')})`,
+          fields: ['Id', 'File_Path', 'Plant_Id', 'Status', 'Variety_Id', 'Caption'],
+          limit: 100,
+        });
+        for (const r of result.list) liveMap.set(r.Id, r);
+      } catch { /* fall back to JSON data */ }
+    }
+
+    const items = jsonItems.map((i: any) => {
+      const live = liveMap.get(i.image_id);
+      return {
+        ...i,
+        // Use live File_Path if available (corrects stale paths after slug remaps)
+        new_file_path: live?.File_Path ?? i.new_file_path,
+        status: live?.Status ?? i.status,
+        plant_id: live?.Plant_Id ?? i.plant_id,
+      };
+    });
+
     res.json({ plant_id: plantParam, plant_name: items[0]?.plant_name ?? plantParam, total: items.length, items });
     return;
   }
@@ -1075,6 +1137,22 @@ router.get('/lost-images', asyncHandler(async (req, res) => {
     .map(([plant_id, { plant_name, count }]) => ({ plant_id, plant_name, count }));
 
   res.json({ total: allItems.length, groups });
+}));
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /api/matches/dismiss-lost-images — Mark recovered images as reviewed/dismissed
+//   Body: { image_ids: number[] }
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/dismiss-lost-images', requireAdmin, asyncHandler(async (req, res) => {
+  const { image_ids } = req.body as { image_ids: number[] };
+  if (!Array.isArray(image_ids) || image_ids.length === 0) {
+    res.status(400).json({ error: 'image_ids array required' });
+    return;
+  }
+  const insert = db.prepare('INSERT OR IGNORE INTO recovered_dismissed (image_id) VALUES (?)');
+  const insertMany = db.transaction((ids: number[]) => { for (const id of ids) insert.run(id); });
+  insertMany(image_ids);
+  res.json({ success: true, dismissed: image_ids.length });
 }));
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1177,6 +1255,300 @@ router.post('/undo', requireAdmin, asyncHandler(async (req, res) => {
   }
 
   res.json({ success: true, restored_path: original_path });
+}));
+
+// ── Attachment OCR routes ────────────────────────────────────────────────────
+
+const ATTACHMENT_OCR_JSON = path.resolve(PROJECT_ROOT, 'content/parsed/attachment_ocr_results.json');
+
+function loadAttachmentOcr(): any[] {
+  if (!existsSync(ATTACHMENT_OCR_JSON)) return [];
+  try {
+    const data = JSON.parse(readFileSync(ATTACHMENT_OCR_JSON, 'utf-8'));
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
+}
+
+// GET /api/matches/attachment-ocr — list plants with OCR data
+router.get('/attachment-ocr', requireAdmin, asyncHandler(async (req, res) => {
+  const results = loadAttachmentOcr();
+  if (results.length === 0) {
+    return res.json({ total: 0, groups: [] });
+  }
+
+  // Load decisions from SQLite
+  const decisionRows = db.prepare(
+    'SELECT file_path, field_key, action FROM attachment_ocr_decisions'
+  ).all() as { file_path: string; field_key: string; action: string }[];
+  const decisionsByFile = new Map<string, Record<string, string>>();
+  for (const row of decisionRows) {
+    if (!decisionsByFile.has(row.file_path)) decisionsByFile.set(row.file_path, {});
+    decisionsByFile.get(row.file_path)![row.field_key] = row.action;
+  }
+
+  // Group by plant
+  const byPlant = new Map<string, any[]>();
+  for (const r of results) {
+    if (!r.extraction) continue;
+    if (!byPlant.has(r.plant_id)) byPlant.set(r.plant_id, []);
+    byPlant.get(r.plant_id)!.push(r);
+  }
+
+  // Fetch plant names from NocoDB
+  const plantIds = [...byPlant.keys()];
+  const plantNames = new Map<string, string>();
+  try {
+    for (let i = 0; i < plantIds.length; i += 50) {
+      const batch = plantIds.slice(i, i + 50);
+      const whereClause = batch.map(id => `(Id1,eq,${id})`).join('~or');
+      const rows = await fetchAllPages('Plants', { where: whereClause, fields: ['Id1', 'Canonical_Name'] });
+      for (const row of rows) {
+        plantNames.set(row.Id1, row.Canonical_Name);
+      }
+    }
+  } catch (err) {
+    console.warn('[attachment-ocr] Could not fetch plant names:', err);
+  }
+
+  // Build groups with pending count
+  const groups = [];
+  for (const [plantId, items] of byPlant) {
+    // Count fields that still need a decision
+    let totalFields = 0;
+    let decidedFields = 0;
+    for (const item of items) {
+      const dec = decisionsByFile.get(item.file_path) ?? {};
+      const e = item.extraction;
+      if (!e) continue;
+      const fields = [
+        e.scientific_name && 'scientific_name',
+        e.description && 'description',
+        e.origin && 'origin',
+        ...(e.nutrition || []).map((n: any) => `nutrition:${n.nutrient}`),
+        ...(e.varieties || []).map((v: any) => `variety:${v.name}`),
+        ...(e.key_facts || []).map((f: any) => `fact:${f.field}`),
+      ].filter(Boolean) as string[];
+      totalFields += fields.length;
+      decidedFields += fields.filter(f => dec[f]).length;
+    }
+    groups.push({
+      plant_id: plantId,
+      plant_name: plantNames.get(plantId) ?? plantId,
+      count: items.length,
+      pending: totalFields - decidedFields,
+    });
+  }
+
+  groups.sort((a, b) => b.pending - a.pending || a.plant_id.localeCompare(b.plant_id));
+
+  res.json({ total: results.length, groups });
+}));
+
+// GET /api/matches/attachment-ocr-plant/:plantId — get OCR results for a plant
+router.get('/attachment-ocr-plant/:plantId', requireAdmin, asyncHandler(async (req, res) => {
+  const { plantId } = req.params;
+  const results = loadAttachmentOcr().filter(r => r.plant_id === plantId && r.extraction);
+
+  // Load decisions
+  const filePaths = results.map(r => r.file_path);
+  const decisionsByFile = new Map<string, Record<string, string>>();
+  if (filePaths.length > 0) {
+    const placeholders = filePaths.map(() => '?').join(',');
+    const rows = db.prepare(
+      `SELECT file_path, field_key, action FROM attachment_ocr_decisions WHERE file_path IN (${placeholders})`
+    ).all(...filePaths) as { file_path: string; field_key: string; action: string }[];
+    for (const row of rows) {
+      if (!decisionsByFile.has(row.file_path)) decisionsByFile.set(row.file_path, {});
+      decisionsByFile.get(row.file_path)![row.field_key] = row.action;
+    }
+  }
+
+  // Fetch plant from NocoDB
+  let existingPlant: any = null;
+  let existingVarieties: any[] = [];
+  try {
+    const plantRows = await nocodb.list('Plants', {
+      where: `(Id1,eq,${plantId})`,
+      fields: ['Id', 'Id1', 'Canonical_Name', 'Botanical_Names', 'Alternative_Names', 'Description', 'Origin', 'Primary_Use', 'Distribution', 'Elevation_Range', 'Culinary_Regions'],
+      limit: 1,
+    });
+    existingPlant = plantRows.list?.[0] ?? null;
+
+    if (existingPlant) {
+      existingVarieties = await fetchAllPages('Varieties', {
+        where: `(Plant_Id,eq,${plantId})`,
+        fields: ['Id', 'Name', 'Alternative_Name'],
+      });
+    }
+  } catch (err) {
+    console.warn('[attachment-ocr-plant] NocoDB fetch failed:', err);
+  }
+
+  const enriched = results.map(r => ({
+    ...r,
+    decisions: decisionsByFile.get(r.file_path) ?? {},
+  }));
+
+  res.json({
+    plant_id: plantId,
+    plant_name: existingPlant?.Canonical_Name ?? plantId,
+    existing_plant: existingPlant,
+    existing_varieties: existingVarieties.map((v: any) => ({
+      id: v.Id,
+      name: v.Name,
+      alternative_name: v.Alternative_Name ?? null,
+    })),
+    results: enriched,
+  });
+}));
+
+// POST /api/matches/accept-ocr-field — accept a field and apply to NocoDB
+router.post('/accept-ocr-field', requireAdmin, asyncHandler(async (req, res) => {
+  const { file_path, field_key, plant_id, field_type, value } = req.body;
+  if (!file_path || !field_key || !plant_id || !field_type) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  // Record decision
+  db.prepare(
+    'INSERT OR REPLACE INTO attachment_ocr_decisions (file_path, field_key, action) VALUES (?, ?, ?)'
+  ).run(file_path, field_key, 'accepted');
+
+  // Apply to NocoDB
+  try {
+    // Find plant by Id1
+    const plantRows = await nocodb.list('Plants', {
+      where: `(Id1,eq,${plant_id})`,
+      fields: ['Id', 'Id1'],
+      limit: 1,
+    });
+    const plant = plantRows.list?.[0];
+    if (!plant) return res.status(404).json({ error: 'Plant not found' });
+
+    if (field_type === 'plant_field') {
+      // Map field_key to NocoDB column name
+      const FIELD_MAP: Record<string, string> = {
+        scientific_name: 'Botanical_Names',
+        description: 'Description',
+        origin: 'Origin',
+      };
+      const column = FIELD_MAP[field_key];
+      if (!column) return res.status(400).json({ error: `Unknown field: ${field_key}` });
+
+      await nocodb.update('Plants', plant.Id, { [column]: value });
+    } else if (field_type === 'key_fact') {
+      // Append to Description or create a new field based on fact name
+      // For now, we store key facts that don't map to specific fields in Notes/Description
+      // This is a best-effort mapping
+      const factFieldMap: Record<string, string> = {
+        'elevation': 'Elevation_Range',
+        'elevation range': 'Elevation_Range',
+        'origin': 'Origin',
+        'distribution': 'Distribution',
+        'primary use': 'Primary_Use',
+        'culinary use': 'Culinary_Regions',
+      };
+      const normalizedField = field_key.toLowerCase().replace(/^fact:/, '');
+      const column = factFieldMap[normalizedField];
+      if (column) {
+        await nocodb.update('Plants', plant.Id, { [column]: value });
+      }
+      // If no direct mapping, we just record the decision without updating NocoDB
+    } else if (field_type === 'nutrition') {
+      // Nutrition facts go to Nutritional_Info table
+      // Find or create record for this plant
+      const nutrientName = field_key.replace(/^nutrition:/, '');
+      const existingNutrition = await nocodb.list('Nutritional_Info', {
+        where: `(Plant_Id,eq,${plant_id})~and(Nutrient,eq,${nutrientName})`,
+        limit: 1,
+      });
+      if (existingNutrition.list?.length === 0) {
+        await nocodb.create('Nutritional_Info', {
+          Plant_Id: plant_id,
+          Nutrient: nutrientName,
+          Value: value,
+          Source: 'Attachment OCR',
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[accept-ocr-field] NocoDB update failed:', err);
+    // Still return success — decision is recorded locally
+  }
+
+  res.json({ success: true });
+}));
+
+// POST /api/matches/accept-ocr-variety — add a variety to NocoDB
+router.post('/accept-ocr-variety', requireAdmin, asyncHandler(async (req, res) => {
+  const { file_path, field_key, plant_id, variety_name, variety_notes } = req.body;
+  if (!file_path || !field_key || !plant_id || !variety_name) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  // Record decision
+  db.prepare(
+    'INSERT OR REPLACE INTO attachment_ocr_decisions (file_path, field_key, action) VALUES (?, ?, ?)'
+  ).run(file_path, field_key, 'accepted');
+
+  // Create variety in NocoDB
+  try {
+    await nocodb.create('Varieties', {
+      Name: variety_name,
+      Plant_Id: plant_id,
+      Alternative_Name: variety_notes ?? null,
+      Source: 'Attachment OCR',
+    });
+  } catch (err) {
+    console.warn('[accept-ocr-variety] NocoDB create failed:', err);
+  }
+
+  res.json({ success: true });
+}));
+
+// POST /api/matches/ignore-ocr-field — mark a field as ignored
+router.post('/ignore-ocr-field', requireAdmin, asyncHandler(async (req, res) => {
+  const { file_path, field_key } = req.body;
+  if (!file_path || !field_key) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  db.prepare(
+    'INSERT OR REPLACE INTO attachment_ocr_decisions (file_path, field_key, action) VALUES (?, ?, ?)'
+  ).run(file_path, field_key, 'ignored');
+
+  res.json({ success: true });
+}));
+
+// ── GET /api/matches/swap-candidates ─────────────────────────────────────────
+// Serves the phash-swap-candidates.json produced by find-phash-swap-candidates.mjs.
+// Query params: resolution=triage_higher|assigned_higher|similar|all (default all)
+//               offset, limit
+router.get('/swap-candidates', asyncHandler(async (req, res) => {
+  const jsonPath = path.resolve(PROJECT_ROOT, 'content/backups/phash-swap-candidates.json');
+  if (!existsSync(jsonPath)) {
+    res.json({ candidates: [], totals: {}, generated_at: null, threshold: null });
+    return;
+  }
+  const data = JSON.parse(readFileSync(jsonPath, 'utf-8'));
+  const { resolution, offset: oq, limit: lq } = req.query as Record<string, string>;
+  const offset = Math.max(0, parseInt(oq) || 0);
+  const limit  = Math.min(200, Math.max(1, parseInt(lq) || 50));
+
+  let list = data.candidates as any[];
+  if (resolution && resolution !== 'all') {
+    list = list.filter((c: any) => c.resolution === resolution);
+  }
+
+  res.json({
+    generated_at: data.generated_at,
+    threshold:    data.threshold,
+    totals:       data.totals,
+    total:        list.length,
+    offset,
+    limit,
+    candidates:   list.slice(offset, offset + limit),
+  });
 }));
 
 export default router;

@@ -16,7 +16,6 @@ import { NutritionTab } from '@/components/browse/tabs/NutritionTab';
 import { DocumentsTab } from '@/components/browse/tabs/DocumentsTab';
 import { AttachmentsTab } from '@/components/browse/tabs/AttachmentsTab';
 import { RecipesTab } from '@/components/browse/tabs/RecipesTab';
-import { OcrTab } from '@/components/browse/tabs/OcrTab';
 import { NotesTab } from '@/components/browse/tabs/NotesTab';
 import type { PlantDetail, BrowsePlant, BrowseVariety, BrowseNutrient, BrowseAttachment, StaffNote } from '@/types/browse';
 
@@ -204,7 +203,6 @@ export function PlantDetailPage() {
                 <TabsTrigger value="documents">Docs</TabsTrigger>
                 <TabsTrigger value="attachments">Attachments</TabsTrigger>
                 <TabsTrigger value="recipes">Recipes</TabsTrigger>
-                <TabsTrigger value="ocr">OCR</TabsTrigger>
                 <TabsTrigger value="notes">Notes</TabsTrigger>
               </TabsList>
             </div>
@@ -300,10 +298,6 @@ export function PlantDetailPage() {
                   recipes={detail.recipes}
                   onRecipesChanged={(recipes) => setDetail(prev => prev ? { ...prev, recipes } : prev)}
                 />
-              </TabsContent>
-
-              <TabsContent value="ocr" className="mt-0" forceMount>
-                <OcrTab ocrExtractions={detail.ocr} plantId={(detail.plant as any).Id1 || detail.plant.Id} />
               </TabsContent>
 
               <TabsContent value="notes" className="mt-0" forceMount>

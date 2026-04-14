@@ -1,8 +1,12 @@
 import { Router } from 'express';
+import { mkdirSync, writeFileSync } from 'fs';
+import path from 'path';
 import * as dal from '../lib/dal.js';
 import { importProgress, runImport, repairPaths } from '../scripts/import.js';
 import { nocodb } from '../lib/nocodb.js';
 import db from '../lib/db.js';
+
+const PROJECT_ROOT = path.resolve(import.meta.dirname, '../../..');
 
 const router = Router();
 // Note: requireAdmin is already applied at the router level in server/index.ts
@@ -117,6 +121,57 @@ router.get('/export', async (_req, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Export failed' });
+  }
+});
+
+// ── POST /api/admin/backup — Full NocoDB backup, saves to disk + returns download ─
+router.post('/backup', async (_req, res) => {
+  const PAGE_SIZE = 1000;
+  try {
+    const tables = nocodb.getTableNames();
+    const data: Record<string, any[]> = {};
+    const summary: Record<string, number> = {};
+
+    for (const table of tables) {
+      const all: any[] = [];
+      let offset = 0;
+      while (true) {
+        const result = await nocodb.list(table, { limit: PAGE_SIZE, offset });
+        all.push(...result.list);
+        if (result.pageInfo?.isLastPage || result.list.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+      }
+      data[table] = all;
+      summary[table] = all.length;
+    }
+
+    // Also snapshot local SQLite tables
+    data._sqlite_staff_notes = db.prepare('SELECT * FROM staff_notes').all() as any[];
+    data._sqlite_attachment_ocr_decisions = db.prepare('SELECT * FROM attachment_ocr_decisions').all() as any[];
+    summary._sqlite_staff_notes = (data._sqlite_staff_notes as any[]).length;
+    summary._sqlite_attachment_ocr_decisions = (data._sqlite_attachment_ocr_decisions as any[]).length;
+
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    const payload = {
+      exported_at: new Date().toISOString(),
+      summary,
+      data,
+    };
+
+    // Save to disk
+    const outDir = path.join(PROJECT_ROOT, 'content', 'backups', `nocodb-${timestamp}`);
+    mkdirSync(outDir, { recursive: true });
+    for (const [name, records] of Object.entries(data)) {
+      writeFileSync(path.join(outDir, `${name}.json`), JSON.stringify(records, null, 2));
+    }
+    writeFileSync(path.join(outDir, '_summary.json'), JSON.stringify({ exported_at: payload.exported_at, tables: summary }, null, 2));
+
+    // Return as download
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="nocodb-backup-${timestamp}.json"`);
+    res.json(payload);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Backup failed' });
   }
 });
 

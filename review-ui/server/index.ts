@@ -62,8 +62,11 @@ app.use('/api/ocr-review', requireAuth, ocrReviewRouter);
 app.use('/api/browse', requireAuth, browseRouter);
 app.use('/api/matches', requireAuth, matchesRouter);
 
-// Serve unassigned images for match review UI
-const unassignedPath = path.resolve(config.IMAGE_MOUNT_PATH, '..', 'unassigned');
+// Serve unassigned images for match review UI (legacy pass_01 path)
+// In pass_02, triage/ignored images are served via /content-files/pass_02/...
+const unassignedPath = config.PASS02_ROOT
+  ? path.join(config.PASS02_ROOT, 'triage')
+  : path.resolve(config.IMAGE_MOUNT_PATH, '..', 'unassigned');
 app.use('/unassigned-images', requireAuth, express.static(unassignedPath),
   (_req: Request, res: Response) => res.sendStatus(404));
 

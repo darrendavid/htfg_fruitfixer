@@ -154,3 +154,63 @@ export interface DedupReviewResponse {
   limit: number;
   groups: DedupGroup[];
 }
+
+// ── Attachment OCR types ─────────────────────────────────────────────────────
+
+export interface OcrNutrient {
+  nutrient: string;
+  value: string;
+}
+
+export interface OcrVariety {
+  name: string;
+  notes: string | null;
+}
+
+export interface OcrKeyFact {
+  field: string;
+  value: string;
+}
+
+export interface AttachmentOcrExtraction {
+  title: string | null;
+  content_type: string | null;
+  extracted_text: string | null;
+  scientific_name: string | null;
+  description: string | null;
+  origin: string | null;
+  nutrition: OcrNutrient[];
+  varieties: OcrVariety[];
+  key_facts: OcrKeyFact[];
+  source_context: string | null;
+}
+
+export interface AttachmentOcrResult {
+  plant_id: string;
+  file_path: string;
+  basename: string;
+  extraction: AttachmentOcrExtraction | null;
+  error?: string;
+  timestamp: string;
+  decisions: Record<string, 'accepted' | 'ignored'>;
+}
+
+export interface AttachmentOcrPlantGroup {
+  plant_id: string;
+  plant_name: string;
+  count: number;
+  pending: number;
+}
+
+export interface AttachmentOcrGroupsResponse {
+  total: number;
+  groups: AttachmentOcrPlantGroup[];
+}
+
+export interface AttachmentOcrPlantResponse {
+  plant_id: string;
+  plant_name: string;
+  existing_plant: Record<string, any> | null;
+  existing_varieties: Array<{ id: number; name: string; alternative_name: string | null }>;
+  results: AttachmentOcrResult[];
+}

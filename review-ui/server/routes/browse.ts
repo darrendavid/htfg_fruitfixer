@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import path from 'path';
-import { readdirSync, existsSync, mkdirSync } from 'fs';
+import { readdirSync, existsSync, mkdirSync, renameSync, copyFileSync, unlinkSync } from 'fs';
 import multer from 'multer';
 import { requireAdmin } from '../middleware/auth.js';
 import { nocodb, type ListOptions } from '../lib/nocodb.js';
@@ -11,6 +11,73 @@ import { resolveDestFilename } from '../lib/file-ops.js';
 import { batchedBulkUpdate } from '../lib/nocodb-helpers.js';
 
 const router = Router();
+
+// ── pass_02 file-move helpers ────────────────────────────────────────────────
+
+const PASS02_ROOT = config.PASS02_ROOT || path.resolve(config.IMAGE_MOUNT_PATH, '..');
+const CONTENT_ROOT_ABS = config.CONTENT_ROOT || path.resolve(config.IMAGE_MOUNT_PATH, '..', '..');
+
+/** Resolve a NocoDB File_Path string to an absolute filesystem path. */
+function absFromFilePath(filePath: string): string {
+  if (!filePath) return '';
+  if (path.isAbsolute(filePath)) return filePath;
+  return path.join(CONTENT_ROOT_ABS, filePath.replace(/^content[\\/]/, ''));
+}
+
+/** Given a new status and plantId, compute the pass_02 relative File_Path for an image. */
+function imgDestFilePath(status: string, plantId: string | null, filename: string): string {
+  if (plantId) {
+    if (status === 'hidden') return `content/pass_02/plants/${plantId}/images/hidden/${filename}`;
+    return `content/pass_02/plants/${plantId}/images/${filename}`;
+  }
+  if (status === 'hidden') return `content/pass_02/ignored/${filename}`;
+  return `content/pass_02/triage/${filename}`;
+}
+
+/**
+ * Move an image file to its correct pass_02 location.
+ * Returns the new File_Path string (relative, content/pass_02/...) or null if move failed.
+ */
+function moveImageToPass02(
+  currentFilePath: string,
+  newStatus: string,
+  newPlantId: string | null,
+): string | null {
+  if (!currentFilePath) return null;
+  const srcAbs = absFromFilePath(currentFilePath);
+  if (!existsSync(srcAbs)) return null;
+
+  const filename = path.basename(srcAbs);
+  const newFilePathRel = imgDestFilePath(newStatus, newPlantId, filename);
+  const destAbs = absFromFilePath(newFilePathRel);
+
+  if (srcAbs === destAbs) return newFilePathRel; // already in the right place
+
+  const destDir = path.dirname(destAbs);
+  if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+
+  try {
+    renameSync(srcAbs, destAbs);
+  } catch (err: any) {
+    if (err.code === 'EXDEV') {
+      // Cross-device: copy then delete
+      copyFileSync(srcAbs, destAbs);
+      unlinkSync(srcAbs);
+    } else {
+      console.error(`[moveImageToPass02] rename failed ${srcAbs} → ${destAbs}: ${err.message}`);
+      return null;
+    }
+  }
+  return newFilePathRel;
+}
+
+/** Stub the pass_02 directory tree for a new plant slug. */
+function stubPlantDirs(slug: string): void {
+  for (const sub of ['images', 'images/hidden', 'documents', 'documents/hidden']) {
+    const abs = path.join(PASS02_ROOT, 'plants', slug, sub);
+    if (!existsSync(abs)) mkdirSync(abs, { recursive: true });
+  }
+}
 
 // ── Cached image count map (60s TTL) ────────────────────────────────────────
 let _imageCountCache: { map: Map<string, number>; expires: number } | null = null;
@@ -226,7 +293,9 @@ router.get('/:plantId/images', asyncHandler(async (req, res) => {
   const { plantId } = req.params;
   const all = req.query.all === 'true';
   const showDeleted = req.query.showDeleted === 'true';
-  const statusFilter = showDeleted ? '' : '~and(Status,neq,hidden)';
+  const statusFilter = showDeleted
+    ? ''
+    : '~and(Status,eq,assigned)~and(File_Path,isnot,null)';
   const where = `(Plant_Id,eq,${plantId})${statusFilter}`;
 
   if (all) {
@@ -305,7 +374,8 @@ router.post('/upload-attachment/:plantId', requireAdmin, attachUpload.single('fi
   const file = req.file;
   if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
-  const attachDir = path.join(config.IMAGE_MOUNT_PATH, plantId, 'attachments');
+  // Use pass_02 documents folder for uploads
+  const attachDir = path.join(PASS02_ROOT, 'plants', plantId, 'documents');
   if (!existsSync(attachDir)) mkdirSync(attachDir, { recursive: true });
 
   const baseName = resolveDestFilename(attachDir, file.originalname.replace(/[<>:"/\\|?*]/g, '_'));
@@ -314,14 +384,13 @@ router.post('/upload-attachment/:plantId', requireAdmin, attachUpload.single('fi
   const { writeFileSync } = await import('fs');
   writeFileSync(destPath, file.buffer);
 
-  const contentRoot = path.resolve(config.IMAGE_MOUNT_PATH, '..');
-  const relPath = path.relative(contentRoot, destPath).split(path.sep).join('/');
+  const filePath = `content/pass_02/plants/${plantId}/documents/${baseName}`;
   const ext = path.extname(baseName).replace('.', '').toLowerCase();
   const title = req.body.title || baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' ');
 
   const record = await nocodb.create('Attachments', {
     Title: title,
-    File_Path: `content/${relPath}`,
+    File_Path: filePath,
     File_Name: baseName,
     File_Type: ext || 'bin',
     File_Size: file.size,
@@ -364,6 +433,8 @@ router.post('/create-plant', requireAdmin, asyncHandler(async (req, res) => {
     Image_Count: 0,
     Source_Count: 0,
   });
+  // Stub pass_02 directory tree for this new plant
+  stubPlantDirs(slug);
   invalidateImageCountCache();
   res.status(201).json(result);
 }));
@@ -379,6 +450,145 @@ router.get('/plants-search', asyncHandler(async (req, res) => {
     fields: ['Id', 'Id1', 'Canonical_Name', 'Category'],
   });
   res.json(result.list);
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BINARY DOCUMENTS ENDPOINTS (BinaryDocuments NocoDB table)
+// Must be registered BEFORE /:id to avoid the plant catch-all matching these paths.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── GET /binary-documents — List BinaryDocuments (status/plant filter) ────────
+router.get('/binary-documents', asyncHandler(async (req, res) => {
+  const { status, plant_id, limit: lq, offset: oq } = req.query as Record<string, string>;
+  const parts: string[] = [];
+  if (status) parts.push(`(Status,eq,${status})`);
+  if (plant_id) parts.push(`(Plant_Id,eq,${plant_id})`);
+  const where = parts.join('~and') || undefined;
+  const limit = Math.min(200, Math.max(1, parseInt(lq) || 50));
+  const offset = Math.max(0, parseInt(oq) || 0);
+  const result = await nocodb.list('BinaryDocuments', { where, limit, offset });
+  res.json(result);
+}));
+
+// ── PATCH /binary-documents/:id — Update a BinaryDocument (admin) ─────────────
+router.patch('/binary-documents/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.update('BinaryDocuments', id, req.body);
+  const updated = await nocodb.get('BinaryDocuments', id);
+  res.json(updated);
+}));
+
+// ── DELETE /binary-documents/:id — Delete a BinaryDocument record (admin) ─────
+router.delete('/binary-documents/:id', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  await nocodb.delete('BinaryDocuments', id);
+  res.json({ success: true });
+}));
+
+// ── POST /binary-documents/:id/assign — Assign doc to a plant, move file ──────
+router.post('/binary-documents/:id/assign', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { plant_id } = req.body ?? {};
+  if (!plant_id) { res.status(400).json({ error: 'plant_id required' }); return; }
+
+  const doc = await nocodb.get('BinaryDocuments', id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  let newFilePath = doc.File_Path;
+  if (doc.File_Path) {
+    const srcAbs = absFromFilePath(doc.File_Path);
+    if (existsSync(srcAbs)) {
+      const docDir = path.join(PASS02_ROOT, 'plants', plant_id, 'documents');
+      if (!existsSync(docDir)) mkdirSync(docDir, { recursive: true });
+      const filename = resolveDestFilename(docDir, path.basename(srcAbs));
+      const destAbs = path.join(docDir, filename);
+      try {
+        renameSync(srcAbs, destAbs);
+      } catch (err: any) {
+        if (err.code === 'EXDEV') { copyFileSync(srcAbs, destAbs); unlinkSync(srcAbs); }
+      }
+      newFilePath = `content/pass_02/plants/${plant_id}/documents/${filename}`;
+    }
+  }
+
+  await nocodb.update('BinaryDocuments', id, {
+    Plant_Id: plant_id,
+    Status: 'assigned',
+    Excluded: false,
+    File_Path: newFilePath,
+  });
+  res.json({ success: true, plant_id, file_path: newFilePath });
+}));
+
+// ── POST /binary-documents/:id/hide — Hide a BinaryDocument, move file ────────
+router.post('/binary-documents/:id/hide', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const doc = await nocodb.get('BinaryDocuments', id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  let newFilePath = doc.File_Path;
+  if (doc.File_Path) {
+    const srcAbs = absFromFilePath(doc.File_Path);
+    if (existsSync(srcAbs)) {
+      let destDir: string;
+      let newRelPath: string;
+      if (doc.Plant_Id) {
+        destDir = path.join(PASS02_ROOT, 'plants', doc.Plant_Id, 'documents', 'hidden');
+        newRelPath = `content/pass_02/plants/${doc.Plant_Id}/documents/hidden`;
+      } else {
+        destDir = path.join(PASS02_ROOT, 'documents', 'ignored');
+        newRelPath = 'content/pass_02/documents/ignored';
+      }
+      if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+      const filename = resolveDestFilename(destDir, path.basename(srcAbs));
+      const destAbs = path.join(destDir, filename);
+      try {
+        renameSync(srcAbs, destAbs);
+      } catch (err: any) {
+        if (err.code === 'EXDEV') { copyFileSync(srcAbs, destAbs); unlinkSync(srcAbs); }
+      }
+      newFilePath = `${newRelPath}/${filename}`;
+    }
+  }
+
+  await nocodb.update('BinaryDocuments', id, {
+    Status: 'hidden',
+    Excluded: true,
+    File_Path: newFilePath,
+  });
+  res.json({ success: true });
+}));
+
+// ── POST /binary-documents/:id/triage — Move doc to triage (remove plant) ─────
+router.post('/binary-documents/:id/triage', requireAdmin, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const doc = await nocodb.get('BinaryDocuments', id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  let newFilePath = doc.File_Path;
+  if (doc.File_Path) {
+    const srcAbs = absFromFilePath(doc.File_Path);
+    if (existsSync(srcAbs)) {
+      const destDir = path.join(PASS02_ROOT, 'documents', 'triage');
+      if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
+      const filename = resolveDestFilename(destDir, path.basename(srcAbs));
+      const destAbs = path.join(destDir, filename);
+      try {
+        renameSync(srcAbs, destAbs);
+      } catch (err: any) {
+        if (err.code === 'EXDEV') { copyFileSync(srcAbs, destAbs); unlinkSync(srcAbs); }
+      }
+      newFilePath = `content/pass_02/documents/triage/${filename}`;
+    }
+  }
+
+  await nocodb.update('BinaryDocuments', id, {
+    Plant_Id: null,
+    Status: 'triage',
+    Excluded: false,
+    File_Path: newFilePath,
+  });
+  res.json({ success: true });
 }));
 
 // ── GET /:id — Full plant detail ─────────────────────────────────────────────
@@ -424,7 +634,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const [varieties, nutritional, images, documents, attachments, recipes, ocr] = await Promise.all([
     fetchAllVarieties().catch(() => ({ list: [] })),
     nocodb.list('Nutritional_Info', { where: `(Plant_Id,eq,${plantSlug})`, limit: 200 }).catch(() => ({ list: [] })),
-    nocodb.list('Images', { where: `(Plant_Id,eq,${plantSlug})~and(Status,neq,hidden)`, limit: imageLimit, offset: imageOffset }).catch(() => ({ list: [], pageInfo: {} })),
+    nocodb.list('Images', { where: `(Plant_Id,eq,${plantSlug})~and(Status,eq,assigned)~and(File_Path,isnot,null)`, limit: imageLimit, offset: imageOffset }).catch(() => ({ list: [], pageInfo: {} })),
     nocodb.list('Documents', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 100 }).catch(() => ({ list: [] })),
     nocodb.list('Attachments', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 200 }).catch(() => ({ list: [] })),
     nocodb.list('Recipes', { where: `(Plant_Ids,like,%${plantSlug}%)`, limit: 100 }).catch(() => ({ list: [] })),
@@ -788,6 +998,110 @@ router.post('/varieties/merge', requireAdmin, asyncHandler(async (req, res) => {
   res.json({ success: true, primary: updated.Variety_Name, merged_count: merge_ids.length, variety: updated });
 }));
 
+// ── POST /plants/merge — Merge source plants into a primary plant (admin) ────
+router.post('/plants/merge', requireAdmin, asyncHandler(async (req, res) => {
+  const { primary_id, merge_ids } = req.body;
+  if (!primary_id || !Array.isArray(merge_ids) || merge_ids.length === 0) {
+    return res.status(400).json({ error: 'primary_id and merge_ids[] required' });
+  }
+
+  // Resolve primary plant by Id1 (slug)
+  const primaryRows = await nocodb.list('Plants', { where: `(Id1,eq,${primary_id})`, limit: 1 });
+  const primary = primaryRows.list?.[0];
+  if (!primary) return res.status(404).json({ error: `Primary plant not found: ${primary_id}` });
+
+  const mergeableTextFields = [
+    'Botanical_Names', 'Alternative_Names', 'Description', 'Origin',
+    'Distribution', 'Primary_Use', 'Culinary_Regions', 'Elevation_Range',
+    'Flower_Colors', 'Parent_Species', 'Classification_Methods', 'Chromosome_Groups',
+  ];
+
+  const primaryUpdate: Record<string, any> = {};
+
+  for (const mergedId of merge_ids) {
+    const sourceRows = await nocodb.list('Plants', { where: `(Id1,eq,${mergedId})`, limit: 1 });
+    const source = sourceRows.list?.[0];
+    if (!source) { console.warn(`[plants/merge] source not found: ${mergedId}`); continue; }
+
+    // Merge text fields — fill empty primary fields from source
+    for (const field of mergeableTextFields) {
+      const srcVal = source[field];
+      const priVal = primary[field] || primaryUpdate[field];
+      if (srcVal && !priVal) {
+        primaryUpdate[field] = srcVal;
+      } else if (srcVal && priVal && !priVal.includes(srcVal)) {
+        primaryUpdate[field] = priVal + '; ' + srcVal;
+      }
+    }
+
+    // Add source plant name as an Alternative_Name on primary
+    const srcName = source.Canonical_Name;
+    if (srcName && srcName !== primary.Canonical_Name) {
+      const existing = primaryUpdate.Alternative_Names || primary.Alternative_Names || '';
+      if (!existing.includes(srcName)) {
+        primaryUpdate.Alternative_Names = existing ? existing + ', ' + srcName : srcName;
+      }
+    }
+
+    // Reassign Images: Plant_Id → primary_id
+    const allImages = await fetchAllPages('Images', {
+      where: `(Plant_Id,eq,${mergedId})`,
+      fields: ['Id'],
+    });
+    if (allImages.length > 0) {
+      await batchedBulkUpdate('Images', allImages.map((i: any) => ({ Id: i.Id, Plant_Id: primary_id })));
+    }
+
+    // Reassign Varieties: Plant_Id → primary_id
+    const allVarieties = await fetchAllPages('Varieties', {
+      where: `(Plant_Id,eq,${mergedId})`,
+      fields: ['Id'],
+    });
+    if (allVarieties.length > 0) {
+      await batchedBulkUpdate('Varieties', allVarieties.map((v: any) => ({ Id: v.Id, Plant_Id: primary_id })));
+    }
+
+    // Reassign Nutritional_Info: Plant_Id → primary_id
+    const allNutrition = await fetchAllPages('Nutritional_Info', {
+      where: `(Plant_Id,eq,${mergedId})`,
+      fields: ['Id'],
+    });
+    if (allNutrition.length > 0) {
+      await batchedBulkUpdate('Nutritional_Info', allNutrition.map((n: any) => ({ Id: n.Id, Plant_Id: primary_id })));
+    }
+
+    // Update JSON array Plant_Ids in Documents, Recipes, OCR_Extractions, Attachments
+    for (const tableName of ['Documents', 'Recipes', 'OCR_Extractions', 'Attachments']) {
+      const rows = await fetchAllPages(tableName, {
+        where: `(Plant_Ids,like,%${mergedId}%)`,
+        fields: ['Id', 'Plant_Ids'],
+      });
+      for (const row of rows) {
+        let ids: string[] = [];
+        try { ids = JSON.parse(row.Plant_Ids || '[]'); } catch { continue; }
+        if (!ids.includes(mergedId)) continue;
+        const updated = [...new Set(ids.map((id: string) => id === mergedId ? primary_id : id))];
+        await nocodb.update(tableName, row.Id, { Plant_Ids: JSON.stringify(updated) });
+      }
+    }
+
+    // Update SQLite staff_notes
+    db.prepare('UPDATE staff_notes SET plant_id = ? WHERE plant_id = ?').run(primary_id, mergedId);
+
+    // Delete the source plant
+    await nocodb.delete('Plants', source.Id);
+    console.log(`[plants/merge] Merged ${mergedId} → ${primary_id}`);
+  }
+
+  // Apply accumulated field updates to primary
+  if (Object.keys(primaryUpdate).length > 0) {
+    await nocodb.update('Plants', primary.Id, primaryUpdate);
+  }
+
+  const updated = await nocodb.list('Plants', { where: `(Id1,eq,${primary_id})`, limit: 1 });
+  res.json({ success: true, primary: primary_id, merged_count: merge_ids.length, plant: updated.list?.[0] });
+}));
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NUTRITIONAL ENDPOINTS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -834,6 +1148,7 @@ router.post('/set-hero/:imageId', requireAdmin, asyncHandler(async (req, res) =>
   // Store hero in NocoDB on the Plant record
   const rotation = image.Rotation ?? 0;
   const heroPath = image.File_Path
+    .replace(/^content\/pass_02\/plants\//, '')
     .replace(/^content\/pass_01\/assigned\//, '')
     .replace(/^content\/parsed\//, '')
     .replace(/^plants\//, '');
@@ -855,7 +1170,15 @@ router.post('/reassign-image/:id', requireAdmin, asyncHandler(async (req, res) =
   const { id } = req.params;
   const { plant_id } = req.body ?? {};
   if (!plant_id) { res.status(400).json({ error: 'plant_id required' }); return; }
-  await nocodb.update('Images', id, { Plant_Id: plant_id });
+  const img = await nocodb.get('Images', id);
+  const newFilePath = img?.File_Path ? moveImageToPass02(img.File_Path, 'assigned', plant_id) : null;
+  await nocodb.update('Images', id, {
+    Plant_Id: plant_id,
+    Status: 'assigned',
+    Excluded: false,
+    ...(newFilePath ? { File_Path: newFilePath } : {}),
+  });
+  invalidateImageCountCache();
   res.json({ success: true, plant_id });
 }));
 
@@ -879,10 +1202,17 @@ router.delete('/ocr-extractions/:id', requireAdmin, asyncHandler(async (req, res
 router.post('/bulk-reassign-images', requireAdmin, asyncHandler(async (req, res) => {
   const { image_ids, plant_id } = req.body ?? {};
   if (!image_ids?.length || !plant_id) { res.status(400).json({ error: 'image_ids[] and plant_id required' }); return; }
-  const updates = image_ids.map((id: number) => ({ Id: id, Plant_Id: plant_id }));
+  // Fetch current records for file moves
+  const records = await Promise.all(image_ids.map((id: number) => nocodb.get('Images', String(id)).catch(() => null)));
+  const updates: Record<string, any>[] = [];
+  for (const img of records) {
+    if (!img) continue;
+    const newFilePath = img.File_Path ? moveImageToPass02(img.File_Path, 'assigned', plant_id) : null;
+    updates.push({ Id: img.Id, Plant_Id: plant_id, Status: 'assigned', Excluded: false, ...(newFilePath ? { File_Path: newFilePath } : {}) });
+  }
   await batchedBulkUpdate('Images', updates);
   invalidateImageCountCache();
-  res.json({ success: true, count: image_ids.length });
+  res.json({ success: true, count: updates.length });
 }));
 
 // ── POST /bulk-set-variety — Set variety on multiple images (admin) ───────────
@@ -1066,7 +1396,10 @@ router.post('/replace-image/:id', requireAdmin, replaceUpload.single('image'), a
   if (!oldImage) return res.status(404).json({ error: 'Image not found' });
 
   const plantId = oldImage.Plant_Id;
-  const plantDir = path.join(config.IMAGE_MOUNT_PATH, plantId, 'images');
+  // Use pass_02 plants directory for new uploads
+  const plantDir = plantId
+    ? path.join(PASS02_ROOT, 'plants', plantId, 'images')
+    : path.join(PASS02_ROOT, 'triage');
   if (!existsSync(plantDir)) mkdirSync(plantDir, { recursive: true });
 
   // Generate filename (avoid conflicts)
@@ -1077,25 +1410,32 @@ router.post('/replace-image/:id', requireAdmin, replaceUpload.single('image'), a
   const { writeFileSync } = await import('fs');
   writeFileSync(destPath, file.buffer);
 
-  // Create new NocoDB record with same caption/variety
-  const contentRoot = path.resolve(config.IMAGE_MOUNT_PATH, '..');
-  const relFromContent = path.relative(contentRoot, destPath).split(path.sep).join('/');
-  const filePath = `content/${relFromContent}`;
+  // Build pass_02 File_Path
+  const filePath = plantId
+    ? `content/pass_02/plants/${plantId}/images/${baseName}`
+    : `content/pass_02/triage/${baseName}`;
   const newRecord = await nocodb.create('Images', {
     File_Path: filePath,
-    Plant_Id: plantId,
+    Plant_Id: plantId || null,
     Caption: oldImage.Caption || baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' '),
     Variety_Id: oldImage.Variety_Id || null,
     Attribution: oldImage.Attribution || config.IMAGES_AUTO_ATTRIBUTION || null,
     License: oldImage.License || null,
-    Source_Directory: path.relative(contentRoot, plantDir).split(path.sep).join('/'),
+    Source_Directory: plantId ? `plants/${plantId}/images` : 'triage',
     Size_Bytes: file.size,
-    Status: 'assigned',
+    Status: plantId ? 'assigned' : 'triage',
     Excluded: false,
   });
 
-  // Mark old image as hidden
-  await nocodb.update('Images', id, { Excluded: true, Status: 'hidden' });
+  // Move old image to hidden location and update its File_Path
+  const oldHiddenPath = oldImage.File_Path
+    ? moveImageToPass02(oldImage.File_Path, 'hidden', plantId || null)
+    : null;
+  await nocodb.update('Images', id, {
+    Excluded: true,
+    Status: 'hidden',
+    ...(oldHiddenPath ? { File_Path: oldHiddenPath } : {}),
+  });
 
   // If old image was hero, update hero to new image in NocoDB
   const oldImg = await nocodb.get('Images', id);
@@ -1103,9 +1443,9 @@ router.post('/replace-image/:id', requireAdmin, replaceUpload.single('image'), a
     const pResult = await nocodb.list('Plants', { where: `(Id1,eq,${oldImg.Plant_Id})`, limit: 1, fields: ['Id', 'Hero_Image_Path'] });
     const p = pResult.list[0];
     if (p) {
-      const oldRelPath = oldImg.File_Path?.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
+      const oldRelPath = oldImg.File_Path?.replace(/^content\/pass_02\/plants\//, '').replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
       if (p.Hero_Image_Path === oldRelPath) {
-        const newRelPath = filePath.replace(/^content\/pass_01\/assigned\//, '');
+        const newRelPath = filePath.replace(/^content\/pass_02\/plants\//, '').replace(/^content\/pass_01\/assigned\//, '');
         await nocodb.update('Plants', p.Id, { Hero_Image_Path: newRelPath, Hero_Image_Rotation: 0 });
       }
     }
@@ -1128,7 +1468,7 @@ router.post('/rotate-image/:id', requireAdmin, asyncHandler(async (req, res) => 
     const plantResult = await nocodb.list('Plants', { where: `(Id1,eq,${img.Plant_Id})`, limit: 1, fields: ['Id', 'Hero_Image_Path'] });
     const plant = plantResult.list[0];
     if (plant) {
-      const imgRelPath = img.File_Path?.replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
+      const imgRelPath = img.File_Path?.replace(/^content\/pass_02\/plants\//, '').replace(/^content\/pass_01\/assigned\//, '').replace(/^content\/parsed\//, '').replace(/^plants\//, '');
       if (plant.Hero_Image_Path === imgRelPath) {
         await nocodb.update('Plants', plant.Id, { Hero_Image_Rotation: deg });
       }
@@ -1140,63 +1480,139 @@ router.post('/rotate-image/:id', requireAdmin, asyncHandler(async (req, res) => 
 // ── POST /restore-image/:id — Restore a hidden image to assigned (admin) ─────
 router.post('/restore-image/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  await nocodb.update('Images', id, { Excluded: false, Status: 'assigned' });
+  const img = await nocodb.get('Images', id);
+  if (!img) return res.status(404).json({ error: 'Image not found' });
+  const newFilePath = img.File_Path
+    ? moveImageToPass02(img.File_Path, 'assigned', img.Plant_Id || null)
+    : null;
+  await nocodb.update('Images', id, {
+    Excluded: false,
+    Status: 'assigned',
+    ...(newFilePath ? { File_Path: newFilePath } : {}),
+  });
   res.json({ success: true });
 }));
 
 // ── POST /exclude-image/:id — Hide image (admin) ────────────────────────────
 router.post('/exclude-image/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  await nocodb.update('Images', id, { Excluded: true, Needs_Review: false, Status: 'hidden' });
+  const img = await nocodb.get('Images', id);
+  if (!img) return res.status(404).json({ error: 'Image not found' });
+  const newFilePath = img.File_Path
+    ? moveImageToPass02(img.File_Path, 'hidden', img.Plant_Id || null)
+    : null;
+  await nocodb.update('Images', id, {
+    Excluded: true,
+    Needs_Review: false,
+    Status: 'hidden',
+    ...(newFilePath ? { File_Path: newFilePath } : {}),
+  });
   res.json({ success: true });
 }));
 
-// ── POST /unassign-image/:id — Mark image as unassigned for later triage ─────
+// ── POST /unassign-image/:id — Clear plant assignment and flag for triage ────
 router.post('/unassign-image/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
-  await nocodb.update('Images', id, { Status: 'unassigned' });
+  const img = await nocodb.get('Images', id);
+  if (!img) return res.status(404).json({ error: 'Image not found' });
+  const newFilePath = img.File_Path
+    ? moveImageToPass02(img.File_Path, 'triage', null)
+    : null;
+  await nocodb.update('Images', id, {
+    Plant_Id: null,
+    Variety_Id: null,
+    Status: 'triage',
+    ...(newFilePath ? { File_Path: newFilePath } : {}),
+  });
+  invalidateImageCountCache();
   res.json({ success: true });
+}));
+
+// ── POST /bulk-unassign-images — Clear plant/variety and flag for triage ─────
+router.post('/bulk-unassign-images', requireAdmin, asyncHandler(async (req, res) => {
+  const { image_ids } = req.body;
+  if (!Array.isArray(image_ids) || image_ids.length === 0) return res.status(400).json({ error: 'image_ids[] required' });
+  // Fetch current records to get File_Paths for file moves
+  const records = await Promise.all(image_ids.map((id: number) => nocodb.get('Images', String(id)).catch(() => null)));
+  const updates: Record<string, any>[] = [];
+  for (const img of records) {
+    if (!img) continue;
+    const newFilePath = img.File_Path ? moveImageToPass02(img.File_Path, 'triage', null) : null;
+    updates.push({ Id: img.Id, Plant_Id: null, Variety_Id: null, Status: 'triage', ...(newFilePath ? { File_Path: newFilePath } : {}) });
+  }
+  await batchedBulkUpdate('Images', updates);
+  invalidateImageCountCache();
+  res.json({ success: true, count: updates.length });
 }));
 
 // ── POST /bulk-set-status — Set status on multiple images (admin) ────────────
 router.post('/bulk-set-status', requireAdmin, asyncHandler(async (req, res) => {
   const { image_ids, status } = req.body;
   if (!Array.isArray(image_ids) || !status) return res.status(400).json({ error: 'image_ids[] and status required' });
-  const validStatuses = ['assigned', 'hidden', 'unassigned', 'unclassified', 'triage'];
+  const validStatuses = ['assigned', 'hidden', 'triage'];
   if (!validStatuses.includes(status)) return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
   const excluded = status === 'hidden';
-  const updates = image_ids.map((id: number) => ({ Id: id, Status: status, Excluded: excluded }));
+  // Fetch current records to move files
+  const records = await Promise.all(image_ids.map((id: number) => nocodb.get('Images', String(id)).catch(() => null)));
+  const updates: Record<string, any>[] = [];
+  for (const img of records) {
+    if (!img) continue;
+    const plantIdForStatus = (status === 'triage') ? null : (img.Plant_Id || null);
+    const newFilePath = img.File_Path ? moveImageToPass02(img.File_Path, status, plantIdForStatus) : null;
+    updates.push({ Id: img.Id, Status: status, Excluded: excluded, ...(newFilePath ? { File_Path: newFilePath } : {}) });
+  }
   await batchedBulkUpdate('Images', updates);
   invalidateImageCountCache();
-  res.json({ success: true, count: image_ids.length });
+  res.json({ success: true, count: updates.length });
 }));
 
-// ── POST /image-to-attachment/:id — Move image to Attachments table (admin) ──
+// ── POST /image-to-attachment/:id — Move image to BinaryDocuments (admin) ────
 router.post('/image-to-attachment/:id', requireAdmin, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const image = await nocodb.get('Images', id);
   if (!image) return res.status(404).json({ error: 'Image not found' });
 
-  const title = req.body.title || image.Caption || path.basename(image.File_Path).replace(/\.\w+$/, '');
-  const plantIds = image.Plant_Id ? JSON.stringify([image.Plant_Id]) : null;
-  const fileName = path.basename(image.File_Path);
+  const title = req.body.title || image.Caption || path.basename(image.File_Path || '').replace(/\.\w+$/, '');
+  const fileName = path.basename(image.File_Path || `image_${id}`);
   const ext = path.extname(fileName).replace('.', '').toLowerCase();
 
-  // Create attachment record
-  const attachment = await nocodb.create('Attachments', {
+  // Move file to pass_02 documents folder
+  let finalFilePath = image.File_Path;
+  if (image.File_Path) {
+    const srcAbs = absFromFilePath(image.File_Path);
+    if (existsSync(srcAbs) && image.Plant_Id) {
+      const docDir = path.join(PASS02_ROOT, 'plants', image.Plant_Id, 'documents');
+      mkdirSync(docDir, { recursive: true });
+      const resolvedName = resolveDestFilename(docDir, fileName);
+      const destAbs = path.join(docDir, resolvedName);
+      try {
+        renameSync(srcAbs, destAbs);
+      } catch (err: any) {
+        if (err.code === 'EXDEV') { copyFileSync(srcAbs, destAbs); unlinkSync(srcAbs); }
+      }
+      finalFilePath = `content/pass_02/plants/${image.Plant_Id}/documents/${resolvedName}`;
+    }
+  }
+
+  // Create BinaryDocuments record
+  const doc = await nocodb.create('BinaryDocuments', {
     Title: title,
-    File_Path: image.File_Path,
+    File_Path: finalFilePath,
     File_Name: fileName,
     File_Type: ext || 'jpg',
-    File_Size: image.Size_Bytes || 0,
-    Plant_Ids: plantIds,
+    Size_Bytes: image.Size_Bytes || 0,
+    Plant_Id: image.Plant_Id || null,
+    Status: image.Plant_Id ? 'assigned' : 'triage',
+    Excluded: false,
     Description: null,
+    Original_File_Path: image.File_Path || null,
   });
 
-  // Hide image from gallery (moved to attachments)
-  await nocodb.update('Images', id, { Excluded: true, Needs_Review: false, Status: 'hidden' });
+  // Delete the Image record
+  await nocodb.delete('Images', parseInt(id, 10));
+  invalidateImageCountCache();
 
-  res.json({ success: true, attachment });
+  res.json({ success: true, document: doc });
 }));
 
 // ── POST /upload-images/:plantId — Upload images to a plant (admin) ──────────
@@ -1206,9 +1622,9 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
   const files = req.files as Express.Multer.File[];
   if (!files || files.length === 0) return res.status(400).json({ error: 'No files uploaded' });
 
-  const plantDir = path.join(config.IMAGE_MOUNT_PATH, plantId, 'images');
+  // Use pass_02 plants directory for uploads
+  const plantDir = path.join(PASS02_ROOT, 'plants', plantId, 'images');
   if (!existsSync(plantDir)) mkdirSync(plantDir, { recursive: true });
-  const contentRoot = path.resolve(config.IMAGE_MOUNT_PATH, '..');
 
   const results: Array<{ filename: string; id: number }> = [];
 
@@ -1220,9 +1636,7 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
     // Write file to disk
     const { writeFileSync } = await import('fs');
     writeFileSync(destPath, file.buffer);
-    const relFromContent = path.relative(contentRoot, destPath).split(path.sep).join('/');
-    const filePath = `content/${relFromContent}`;
-    const relDir = path.relative(contentRoot, plantDir).split(path.sep).join('/');
+    const filePath = `content/pass_02/plants/${plantId}/images/${baseName}`;
     const varietyId = req.body?.variety_id ? parseInt(req.body.variety_id, 10) : null;
     const record = await nocodb.create('Images', {
       File_Path: filePath,
@@ -1230,7 +1644,7 @@ router.post('/upload-images/:plantId', requireAdmin, upload.array('images', 50),
       Caption: baseName.replace(/\.\w+$/, '').replace(/[_-]/g, ' '),
       Variety_Id: varietyId,
       Attribution: config.IMAGES_AUTO_ATTRIBUTION || null,
-      Source_Directory: relDir,
+      Source_Directory: `plants/${plantId}/images`,
       Size_Bytes: file.size,
       Status: 'assigned',
       Excluded: false,
